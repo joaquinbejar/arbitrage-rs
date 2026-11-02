@@ -264,3 +264,106 @@ fn spread_cost_and_fee_are_exact_near_max() {
         dec!(47536897508558602556126380.201)
     );
 }
+
+/// Cross-check of the band control of the deep hedging experiment
+/// (`experiments/deep_hedging.py`, M5-06) against `plan_band_hedge`.
+///
+/// The experiment runs the band in Python `decimal` on exported, rounded
+/// values (prices and deltas to 1e-6, holdings and sizes on the 1e-4 lot)
+/// and writes each decision to `tests/fixtures/deep_hedging_band.csv`: 600
+/// steps of 20 test paths (holdings after rejected and capped fills
+/// included) and hand-made cases at the band edges, one quantum outside on
+/// both sides, without liquidity, below the lot and capped by the quoted
+/// size. Every row is recomputed here; decisions, sides and quantities
+/// must match exactly, and so must the fee and the spread cost, because
+/// both sides compute them exactly.
+mod deep_hedging_band {
+    use super::*;
+    use std::str::FromStr;
+
+    fn dec(field: &str) -> Decimal {
+        Decimal::from_str(field).unwrap()
+    }
+    fn level(price: &str, size: &str) -> Option<Level> {
+        (!price.is_empty()).then(|| lvl(dec(price), dec(size)))
+    }
+
+    #[test]
+    fn plan_band_hedge_reproduces_every_exported_band_decision() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/deep_hedging_band.csv"
+        );
+        let text = std::fs::read_to_string(path).unwrap();
+        let mut lines = text.lines();
+        let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+        let col = |name: &str| header.iter().position(|h| *h == name).unwrap();
+        let mut checked = 0;
+        for line in lines {
+            let f: Vec<&str> = line.split(',').collect();
+            let get = |name: &str| f[col(name)];
+            let lot = q(dec(get("lot")));
+            let view = PositionView {
+                as_of: Timestamp::from_millis(0),
+                quote_currency: usd(),
+                exposure: dec(get("holding")) - dec(get("delta")),
+                band: Band::symmetric(dec(get("w"))).unwrap(),
+                instrument: Instrument::undated(InstrumentId::new("XYZ").unwrap()),
+                book: TopOfBook {
+                    bid: level(get("bid"), get("bid_size")),
+                    ask: level(get("ask"), get("ask_size")),
+                },
+                fee: FeeRate::from_bps(dec(get("fee_bps"))).unwrap(),
+                lot_size: Some(lot),
+                max_quantity: None,
+            };
+            let case = get("case");
+            let side = |s: &str| match s {
+                "buy" => Action::Buy,
+                "sell" => Action::Sell,
+                other => panic!("{case}: unknown side {other}"),
+            };
+            match (get("decision"), plan_band_hedge(&view).unwrap()) {
+                ("inside", HedgeDecision::NoHedge { reason, .. }) => {
+                    assert_eq!(reason, NoHedgeReason::InsideBand, "{case}");
+                }
+                ("no_liquidity", HedgeDecision::NoHedge { reason, .. }) => {
+                    assert_eq!(
+                        reason,
+                        NoHedgeReason::NoLiquidity {
+                            side: side(get("side"))
+                        },
+                        "{case}"
+                    );
+                }
+                ("below_lot", HedgeDecision::NoHedge { reason, .. }) => {
+                    assert_eq!(
+                        reason,
+                        NoHedgeReason::BelowLotSize {
+                            executable: q(dec(get("quantity"))),
+                            lot_size: lot,
+                        },
+                        "{case}"
+                    );
+                }
+                ("hedge", HedgeDecision::Hedge(plan)) => {
+                    assert_eq!(plan.leg.side, side(get("side")), "{case}");
+                    assert_eq!(plan.leg.quantity.value(), dec(get("quantity")), "{case}");
+                    assert_eq!(
+                        plan.expected_fee.money().amount(),
+                        dec(get("fee")),
+                        "{case}"
+                    );
+                    assert_eq!(
+                        plan.expected_spread_cost.map(|c| c.money().amount()),
+                        Some(dec(get("spread_cost"))),
+                        "{case}"
+                    );
+                }
+                (expected, got) => panic!("{case}: expected {expected}, got {got:?}"),
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 608);
+    }
+}

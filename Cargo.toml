@@ -13,13 +13,14 @@ keywords = ["finance", "arbitrage", "hedging", "trading", "quantitative"]
 categories = ["finance", "mathematics"]
 publish = true
 include = [
-    "src/**/*",
-    "tests/**/*.rs",
-    "docs/exact-arithmetic.md",
-    "Cargo.toml",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
+    "/src/**/*",
+    "/tests/**/*.rs",
+    "/tests/fixtures/deep_hedging_band.csv",
+    "/docs/exact-arithmetic.md",
+    "/Cargo.toml",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
 ]
 
 [lib]

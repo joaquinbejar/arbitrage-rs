@@ -1,1 +1,5 @@
 /target
+
+# Python experiments
+experiments/.venv/
+__pycache__/
