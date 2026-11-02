@@ -19,8 +19,8 @@
 //!   rounded between the two multiplications. A venue's settlement quantum is
 //!   applied with [`funding_cashflow_rounded`]: **one** rounding of that
 //!   exact product, to [`SettlementRounding::dp`] decimal places in the quote
-//!   currency, with an explicit [`Rounding`] mode (Xynthex ECON 15.3 uses
-//!   half-even). Rounding the two-step product, or rounding an
+//!   currency, with an explicit [`Rounding`] mode (for example half-even, as
+//!   a venue may specify). Rounding the two-step product, or rounding an
 //!   already-rounded amount again, is never done.
 //!
 //! ## Estimated and published rates

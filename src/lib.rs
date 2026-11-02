@@ -23,7 +23,7 @@
 //!   admission of both legs without borrowing capital across venues;
 //! - [`hedge_action::hedge_plan_from_action`] (M4-04): a bounded, audited
 //!   conversion of an external policy's hedge action into a hedge plan;
-//! - [`parity::evaluate_parity`] (XM2-17a-1): the executable edge of
+//! - [`parity::evaluate_parity`] (#18): the executable edge of
 //!   put-call parity against a same-expiry future, in both directions, after
 //!   the fees of all three legs.
 //!
@@ -131,3 +131,8 @@ pub use instrument::{
 pub use money::{Currency, MAX_CURRENCY_LEN, Money, Rounding};
 pub use rust_decimal::Decimal;
 pub use units::{Price, Quantity};
+
+/// The README examples, compiled and run as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
