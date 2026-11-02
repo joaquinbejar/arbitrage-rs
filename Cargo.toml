@@ -20,8 +20,6 @@ include = [
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "Makefile",
-    "rust-toolchain.toml",
 ]
 
 [lib]
