@@ -2,14 +2,18 @@
 
 **Decision: adopt for further validation, synthetic setting only.** The
 predeclared criterion is met. In model, at a 5 bp half spread, the learned
-hedge has a lower CVaR95 than the best band, and the upper bound of the 95 %
+hedge has a lower CVaR95 than the best band tested (the crate's
+constant-width band that re-hedges to its centre, at the best width of a
+fixed grid), and the upper bound of the 95 %
 paired bootstrap interval is below zero for each of the five training seeds.
 Out of model (Heston) no seed is significantly worse; every interval is
 below zero there too. This is evidence about one synthetic setting. It is
 not a shipped capability, and it says nothing yet about real markets
 (M5-06c, which waits on market-maker-rs#77) or against the library's own
 pricing and volatility surface (M5-06b, which waits on market-maker-rs#95
-and #96).
+and #96). Before any adoption beyond research, the learned hedge must
+also be compared with a state-dependent band that re-hedges to its nearest
+edge (see Limitations).
 
 ## Hypothesis
 
@@ -166,11 +170,12 @@ first run, before anything was changed, and does not enter the decision.
 - **The gain grows with costs.** At 50 bp the learned hedge cuts CVaR95 by
   0.15 to 0.18 against the best band (w = 0.15), trading at every step with
   small adjustments where the band trades about 7 times.
-- **Without costs the learned hedge is close to delta.** At ε = 0 the band
-  collapses to the smallest grid width and matches delta; the learned hedge
-  is 0.006 to 0.032 lower in CVaR95, and for one seed the interval crosses
-  zero, which is inconclusive. That is consistent with the paper's
-  frictionless benchmark, where the learned hedge recovers delta.
+- **Without spread the learned hedge is close to delta.** ε = 0 removes the
+  spread but keeps the 2 bp fee and every execution limit, so it is not a
+  frictionless case. There the band collapses to the smallest grid width
+  and matches delta; the learned hedge is 0.006 to 0.032 lower in CVaR95,
+  and for one seed the interval crosses zero, which is inconclusive. This
+  does not test the paper's frictionless benchmark.
 - **The gain is not only adaptation to execution limits.** Under ideal
   execution the difference at 5 bp and 50 bp is larger, not smaller.
 - **The learned hedge pays for its tail with the body.** Its CVaR50 is
@@ -195,6 +200,14 @@ first run, before anything was changed, and does not enter the decision.
 - The learned hedge is trained on a proxy without lots, size caps or
   rejections, while the band's width is tuned with the real execution: an
   asymmetry in the band's favour that the learned hedge still overcomes.
+- The band control is the crate's `plan_band_hedge`: a constant width w,
+  re-hedging to the centre (the delta). It is not the state-dependent band
+  of the transaction-cost literature (Whalley and Wilmott; Davis, Panas and
+  Zariphopoulou), whose width depends on gamma and time and which re-hedges
+  to the nearest edge; that band was not tested, and nothing here shows the
+  learned hedge beats it, nor that it would be optimal in this simulator
+  (lots, rejections, a CVaR objective). A comparison with an edge-hedging
+  band of width w(Γ, τ) is a condition for any adoption beyond research.
 - The band grid is coarse and its optimum at ε = 0 is the grid's lower end.
 - The Heston test uses one parameter set. Out-of-model intervals below zero
   show no deterioration for this set only.
