@@ -76,6 +76,16 @@ pub enum ArbitrageError {
         as_of: Timestamp,
     },
 
+    /// A decision uses information that was not known yet at its time, such
+    /// as a funding rate published after the evaluation time.
+    #[error("look-ahead: known at {known_at}, decision at {as_of}")]
+    LookAhead {
+        /// When the information became known.
+        known_at: Timestamp,
+        /// The decision time.
+        as_of: Timestamp,
+    },
+
     /// An input is inconsistent as a whole (for example both legs of an
     /// opportunity on the same instrument).
     #[error("invalid input: {reason}")]
