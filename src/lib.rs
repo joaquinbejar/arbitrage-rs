@@ -47,7 +47,8 @@
 //! - A figure built from more than two terms (a sum of products, or a
 //!   product of more than two factors) is formed exactly in wide integers
 //!   and converted or rounded **once**, so an intermediate never fails when
-//!   the result is representable ([`parity`] follows this rule).
+//!   the result is representable. The rule and its audit are in
+//!   `docs/exact-arithmetic.md`.
 //! - Rounding happens only where a caller asks for it, with an explicit
 //!   [`Rounding`] mode (for example a fee rounded up to a venue's quantum).
 //! - Values are stored normalized, so equal amounts compare, hash and print

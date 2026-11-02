@@ -17,6 +17,8 @@ use crate::error::{ArbitrageError, Result};
 use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
 use crate::money::{Currency, Money};
 use crate::units::Quantity;
+use crate::wide;
+use rust_decimal::Decimal;
 
 /// What a carry item pays for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -236,30 +238,38 @@ pub fn evaluate(input: &OpportunityInput) -> Result<Evaluation> {
         }));
     }
 
-    let buy_notional = ask.price.notional(quantity, ccy)?;
-    let sell_notional = bid.price.notional(quantity, ccy)?;
-    let gross = sell_notional.checked_sub(buy_notional)?;
+    // q * bid - q * ask as one exact sum: the notionals may pass the range
+    // of a Decimal when the gross does not.
+    let (q, ask_px, bid_px) = (quantity.value(), ask.price.value(), bid.price.value());
+    let gross = Money::new(
+        wide::sum_products_exact(
+            &[&[bid_px, q], &[Decimal::NEGATIVE_ONE, ask_px, q]],
+            "gross",
+        )?,
+        ccy,
+    );
     if !gross.is_positive() {
         return Ok(Evaluation::Rejected(RejectReason::NoGrossEdge { gross }));
     }
 
-    let buy_fee = input.buy.fee.fee_on(buy_notional)?;
-    let sell_fee = input.sell.fee.fee_on(sell_notional)?;
-    let mut total = buy_fee.checked_add(sell_fee)?;
+    let buy_fee = input.buy.fee.fee_on_factors(&[ask_px, q], ccy)?;
+    let sell_fee = input.sell.fee.fee_on_factors(&[bid_px, q], ccy)?;
+    let mut items = vec![buy_fee, sell_fee];
     let mut carry = Vec::with_capacity(input.carry.len());
     for item in &input.carry {
-        let notional = match item.leg {
-            Side::Buy => buy_notional,
-            Side::Sell => sell_notional,
+        let price = match item.leg {
+            Side::Buy => ask_px,
+            Side::Sell => bid_px,
         };
-        let cost = item.rate.fee_on(notional)?;
-        total = total.checked_add(cost)?;
+        let cost = item.rate.fee_on_factors(&[price, q], ccy)?;
+        items.push(cost);
         carry.push(CarryCost {
             kind: item.kind,
             leg: item.leg,
             cost,
         });
     }
+    let total = Cost::total(&items, ccy)?;
     let costs = CostBreakdown {
         buy_fee,
         sell_fee,

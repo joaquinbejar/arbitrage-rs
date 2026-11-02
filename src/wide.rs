@@ -248,6 +248,16 @@ pub(crate) fn sum_products_exact(terms: &[&[Decimal]], op: &'static str) -> Resu
     to_decimal(m, scale, negative, op)
 }
 
+/// The exact sum of `values`, converted once.
+///
+/// # Errors
+///
+/// As [`sum_products_exact`].
+pub(crate) fn sum(values: &[Decimal], op: &'static str) -> Result<Decimal> {
+    let terms = values.iter().map(core::slice::from_ref).collect::<Vec<_>>();
+    sum_products_exact(&terms, op)
+}
+
 /// The sum of products (see [`sum_products`]) rounded once to `dp` decimal
 /// places with `mode`.
 ///

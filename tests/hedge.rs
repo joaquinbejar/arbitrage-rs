@@ -230,3 +230,28 @@ fn band_hedge_against_no_hedge_baseline() {
     );
     assert_eq!(total_cost.money(), m(dec!(13.2)));
 }
+
+#[test]
+fn spread_cost_and_fee_are_exact_near_max() {
+    // bid + ask passes Decimal::MAX and so does the notional of 10 at the
+    // bid; the half spread (1 * 10) and the 1 bps fee fit.
+    let big = dec!(47536897508558602556126370201);
+    let mut v = view(dec!(20));
+    v.book = TopOfBook {
+        bid: lvl(big, dec!(100)),
+        ask: lvl(big + dec!(2), dec!(100)),
+    };
+    v.fee = FeeRate::from_bps(dec!(1)).unwrap();
+    v.max_quantity = Some(q(dec!(10)));
+    let h = plan(&v);
+    assert_eq!(h.leg.side, Side::Sell);
+    assert_eq!(h.expected_spread_cost, Some(Cost::new(m(dec!(10)))));
+    assert_eq!(
+        h.expected_fee.money().amount(),
+        dec!(47536897508558602556126370.201)
+    );
+    assert_eq!(
+        h.expected_cost.money().amount(),
+        dec!(47536897508558602556126380.201)
+    );
+}

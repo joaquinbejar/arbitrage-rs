@@ -330,9 +330,10 @@ pub fn hedge_plan_from_action(
     }
 
     let ccy = market.quote_currency;
-    let notional = level.price.notional(quantity, ccy)?;
-    let expected_fee = market.fee.fee_on(notional)?;
-    let expected_spread_cost = spread_cost(&market.book, action.side, quantity, ccy)?;
+    let expected_fee = market
+        .fee
+        .fee_on_factors(&[level.price.value(), quantity.value()], ccy)?;
+    let expected_spread_cost = spread_cost(&market.book, quantity, ccy)?;
     let expected_cost = match expected_spread_cost {
         Some(s) => expected_fee.checked_add(s)?,
         None => expected_fee,

@@ -513,3 +513,20 @@ fn a_sell_is_reserved_at_the_higher_of_its_limit_and_the_bid() {
         dec!(2)
     );
 }
+
+#[test]
+fn margin_requirement_is_exact_when_the_notional_passes_max() {
+    // A sell of 2 at 0.6 * Decimal::MAX: the notional passes Decimal::MAX,
+    // the 50 % margin (0.6 * MAX) fits.
+    let big = dec!(47536897508558602556126370201);
+    let spec = leg_on("B", "BTC-B", Side::Sell, big);
+    let v = view("B", "BTC-B", 990);
+    let request = LegRequest {
+        spec: &spec,
+        view: &v,
+        fee: FeeRate::zero(),
+        sell_funding: SellFunding::Margin { rate: dec!(0.5) },
+    };
+    let need = arbitrage_rs::venues::requirement(&request, usd()).unwrap();
+    assert_eq!(need.cash.amount(), big);
+}
