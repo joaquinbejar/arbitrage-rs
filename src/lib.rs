@@ -71,7 +71,7 @@
 //! ## Dependency direction
 //!
 //! arbitrage-rs depends only on `rust_decimal` and `thiserror`. It does not
-//! depend on market-maker-rs, margin-rs, tessera-rl or any simulator or
+//! depend on market-maker-rs, margin-rs or any simulator, learning environment or
 //! backtest engine. Integration goes the other way: those crates, or adapters
 //! next to them, depend on arbitrage-rs and translate their prices,
 //! inventory and ledgers into its types.
