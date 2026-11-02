@@ -1898,9 +1898,9 @@ impl TwoLegPlan {
             self.push_unwind(leg, side, quantity, None, None, actions)?;
             return Ok(());
         };
-        let reversal = !coverage.is_zero()
-            && coverage.is_sign_negative() != open.is_sign_negative()
-            && self.unwinds.iter().any(UnwindState::is_live);
+        // Any live unwind on the other side holds, whatever the sign of the
+        // total coverage: ended unwinds can outweigh a live one.
+        let reversal = self.unwinds.iter().any(|u| u.is_live() && u.side != side);
         if reversal {
             self.unwind_hold = Some(AdmissionReject::UnwindReversal { open });
             return Ok(());

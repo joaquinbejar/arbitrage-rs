@@ -645,3 +645,127 @@ fn an_ungated_plan_requests_again_what_an_ended_unwind_left_open() {
     let r = plan.apply(&done(A, 0, dec!(1.25), 1_007)).unwrap();
     assert_eq!(r.actions, vec![unpriced(1, dec!(0.75))]);
 }
+
+/// A Sell 2 that filled 3, then a corrective Buy 1 still live, then a late
+/// buy fill: the total coverage (+3 - 1 = +2) has the sign of the open
+/// residual (3 - 2 = +1), yet a new Sell would face the live Buy.
+#[test]
+fn a_live_unwind_on_the_other_side_holds_even_when_ended_unwinds_outweigh_it() {
+    let mut b = budgets(dec!(1000), dec!(1000));
+    let mut plan = gated(&mut b, MARGIN_20);
+    assert_eq!(
+        unwinds(&long_residual(&mut plan, &mut b)),
+        vec![sell_unwind(0, dec!(2))]
+    );
+    plan.apply_with_budgets(&update(B, view("B", "BTC-B", 1_006, dec!(101))), &mut b)
+        .unwrap();
+    // The sell unwind overfilled: 1 BTC-B short is open, a buy of 1 on B.
+    let r = plan
+        .apply_with_budgets(&done(A, 0, dec!(3), 1_007), &mut b)
+        .unwrap();
+    assert_eq!(unwinds(&r.actions), vec![buy_unwind(1, dec!(1))]);
+    // A late buy fill: the residual is 3, the coverage +3 - 1 = +2.
+    plan.apply_with_budgets(&fill(A, "a2", dec!(1), dec!(3), dec!(100), 1_008), &mut b)
+        .unwrap();
+    for at in [1_009, 1_010] {
+        let r = plan.apply_with_budgets(&tick(at), &mut b).unwrap();
+        assert_eq!(unwinds(&r.actions), no_actions());
+        assert_eq!(
+            plan.unwind_hold(),
+            Some(&AdmissionReject::UnwindReversal { open: dec!(1) })
+        );
+    }
+    assert_eq!(plan.unwind_coverage().unwrap(), dec!(2));
+    // The buy ends unfilled: open is 3 - 3 = 0, nothing more is sent.
+    let r = plan
+        .apply_with_budgets(&done(B, 1, dec!(0), 1_011), &mut b)
+        .unwrap();
+    assert_eq!(unwinds(&r.actions), no_actions());
+    assert_eq!(plan.unwind_hold(), None);
+}
+
+/// The mirror: a Buy 2 of the short sell leg that filled 3, a corrective
+/// Sell 1 still live, then a late sell fill.
+#[test]
+fn the_mirror_holds_a_buy_against_a_live_sell() {
+    let mut b = budgets(dec!(1000), dec!(1000));
+    let mut plan = gated(&mut b, MARGIN_20);
+    plan.apply_with_budgets(&update(A, view("A", "BTC-A", 1_004, dec!(99))), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&update(B, view("B", "BTC-B", 1_004, dec!(101))), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&fill(B, "b1", dec!(2), dec!(2), dec!(101), 1_005), &mut b)
+        .unwrap();
+    let r = plan
+        .apply_with_budgets(&rejected(A, 1_006), &mut b)
+        .unwrap();
+    assert_eq!(unwinds(&r.actions), vec![buy_unwind(0, dec!(2))]);
+    let r = plan
+        .apply_with_budgets(&done(B, 0, dec!(3), 1_007), &mut b)
+        .unwrap();
+    // The open residual is +1, offset on the sell leg's own instrument.
+    let sell_b = PlanAction::Unwind {
+        unwind: 1,
+        venue: venue("B"),
+        instrument: inst("BTC-B"),
+        side: Action::Sell,
+        quantity: q(dec!(1)),
+        price: Some(p(dec!(101))),
+    };
+    assert_eq!(unwinds(&r.actions), vec![sell_b]);
+    plan.apply_with_budgets(&fill(B, "b2", dec!(1), dec!(3), dec!(101), 1_008), &mut b)
+        .unwrap();
+    let r = plan.apply_with_budgets(&tick(1_009), &mut b).unwrap();
+    assert_eq!(unwinds(&r.actions), no_actions());
+    assert_eq!(
+        plan.unwind_hold(),
+        Some(&AdmissionReject::UnwindReversal { open: dec!(-1) })
+    );
+}
+
+/// Zero total coverage with an unwind live: a Sell 1 that filled 1 and a
+/// live Buy 1 sum to 0, and a late buy fill still may not face the Buy.
+#[test]
+fn zero_coverage_with_a_live_unwind_still_holds_the_opposite_side() {
+    let mut b = budgets(dec!(1000), dec!(1000));
+    let mut plan = gated(&mut b, MARGIN_20);
+    plan.apply_with_budgets(&update(A, view("A", "BTC-A", 1_004, dec!(99))), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&update(B, view("B", "BTC-B", 1_004, dec!(101))), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&fill(A, "a1", dec!(2), dec!(2), dec!(100), 1_005), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&fill(B, "b1", dec!(1), dec!(1), dec!(101), 1_005), &mut b)
+        .unwrap();
+    let r = plan
+        .apply_with_budgets(
+            &LegExecution::CancelAck {
+                leg: B,
+                attempt: 0,
+                cum_qty: dec!(1),
+                at: t(1_006),
+            },
+            &mut b,
+        )
+        .unwrap();
+    assert_eq!(unwinds(&r.actions), vec![sell_unwind(0, dec!(1))]);
+    let r = plan
+        .apply_with_budgets(&done(A, 0, dec!(1), 1_007), &mut b)
+        .unwrap();
+    assert_eq!(unwinds(&r.actions), no_actions());
+    // A late sell fill: residual 0, open -1, a buy of 1 is live.
+    plan.apply_with_budgets(&fill(B, "b2", dec!(1), dec!(2), dec!(101), 1_008), &mut b)
+        .unwrap();
+    let r = plan.apply_with_budgets(&tick(1_009), &mut b).unwrap();
+    assert_eq!(unwinds(&r.actions), vec![buy_unwind(1, dec!(1))]);
+    assert_eq!(plan.unwind_coverage().unwrap(), dec!(0));
+    // A late buy overfill: residual +1, coverage 0, open +1 would be a sell.
+    plan.apply_with_budgets(&fill(A, "a2", dec!(1), dec!(3), dec!(100), 1_010), &mut b)
+        .unwrap();
+    let r = plan.apply_with_budgets(&tick(1_011), &mut b).unwrap();
+    assert_eq!(unwinds(&r.actions), no_actions());
+    assert_eq!(
+        plan.unwind_hold(),
+        Some(&AdmissionReject::UnwindReversal { open: dec!(1) })
+    );
+}

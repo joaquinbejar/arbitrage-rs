@@ -383,9 +383,11 @@ pub enum AdmissionReject {
     /// ([`TwoLegPlan::release_reservations`](crate::legs::TwoLegPlan::release_reservations)):
     /// it reserves nothing more, so no resubmission or unwind is sent.
     Released,
-    /// The open residual has the opposite sign of the exposure the live
-    /// unwinds neutralise (the residual fell, reached zero or changed sign,
-    /// for example after a late leg fill). The plan never sends the opposite
+    /// The open residual needs the side opposite to a live unwind's (the
+    /// residual fell, reached zero or changed sign, for example after a late
+    /// leg fill or an unwind that filled beyond it). Each live unwind's side
+    /// is checked, not the sign of the total coverage, which ended unwinds
+    /// can outweigh. The plan never sends the opposite
     /// side while an unwind is live: the caller adjusts the live unwinds,
     /// and reports each one's end with
     /// [`LegExecution::UnwindDone`](crate::legs::LegExecution::UnwindDone).
