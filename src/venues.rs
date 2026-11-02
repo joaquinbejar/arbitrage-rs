@@ -7,10 +7,20 @@
 //!   than `max_staleness_ms` before the decision, and not after it) and must
 //!   quote the side the leg trades, at a price within the leg's limit and
 //!   with enough size;
+//! - the leg's instrument must be live and its effective deadline (own
+//!   deadline or instrument expiry) after the decision;
 //! - the capital the leg needs is **reserved** in that venue's
-//!   [`VenueBudget`]: cash for a buy (notional at the limit price plus the
-//!   fee), inventory for a sell from inventory, or margin cash for a short
-//!   sale (`notional * rate` plus the fee).
+//!   [`VenueBudget`]: cash for a buy (notional at the limit price, an upper
+//!   bound, plus the fee), inventory plus the fee for a sell from
+//!   inventory, or margin cash for a short sale (`notional * rate` plus the
+//!   fee). A sell limit is a lower bound on its price, so a sell's notional
+//!   uses the higher of its limit and the observed executable bid.
+//!
+//! The leg's venue is [`LegSpec::venue`]; a view or budget of another venue
+//! never applies to it. Inventory is keyed by instrument: the same asset
+//! must be recorded under one instrument per venue. Reservations are static
+//! amounts: the caller releases them ([`VenueBudget::release`]) when the leg
+//! ends or is resized.
 //!
 //! Capital is never borrowed across venues: a leg only reserves from the
 //! budget of its own venue, a venue without a budget admits nothing, and
@@ -288,6 +298,9 @@ pub enum AdmissionReject {
         /// The allowed staleness.
         max_staleness_ms: i64,
     },
+    /// The leg's effective deadline (own deadline or instrument expiry) is
+    /// at or before the decision.
+    PastDeadline,
     /// The side the leg trades is not quoted.
     NoQuote,
     /// The executable price is beyond the leg's limit.
@@ -338,7 +351,9 @@ pub enum Admission {
 ///
 /// # Errors
 ///
-/// - [`ArbitrageError::InvalidInput`] if the view is for another instrument.
+/// - [`ArbitrageError::InvalidInput`] if the view is for another instrument
+///   or another venue than the leg's, or the leg has no venue.
+/// - [`ArbitrageError::Expired`] if the leg's instrument has expired.
 /// - [`ArbitrageError::LookAhead`] if the view is observed after `as_of`.
 pub fn check_view(
     spec: &LegSpec,
@@ -350,6 +365,23 @@ pub fn check_view(
         return Err(ArbitrageError::InvalidInput {
             reason: "venue view is for another instrument",
         });
+    }
+    match &spec.venue {
+        None => {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "leg has no venue",
+            });
+        }
+        Some(venue) if *venue != view.venue => {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "venue view is from another venue than the leg's",
+            });
+        }
+        Some(_) => {}
+    }
+    spec.leg.instrument.ensure_live(as_of)?;
+    if spec.effective_deadline().is_some_and(|d| d <= as_of) {
+        return Ok(Some(AdmissionReject::PastDeadline));
     }
     let age_ms = view.age_ms(as_of)?;
     if age_ms > max_staleness_ms {
@@ -381,8 +413,7 @@ pub fn check_view(
 ///
 /// # Errors
 ///
-/// - [`ArbitrageError::InvalidInput`] if a view is for another instrument.
-/// - [`ArbitrageError::LookAhead`] if a view is observed after `as_of`.
+/// - The errors of [`check_view`].
 /// - [`ArbitrageError::CurrencyMismatch`] if a requirement and the budget
 ///   are in different currencies.
 /// - The errors of [`requirement`].
@@ -399,6 +430,7 @@ pub fn admit_two_legs(
         if let Some(reason) = check_view(request.spec, request.view, as_of, max_staleness_ms)? {
             return Ok(Admission::Rejected { leg, reason });
         }
+        // check_view guarantees the view is from the leg's venue.
         let Some(budget) = next.get_mut(&request.view.venue) else {
             return Ok(Admission::Rejected {
                 leg,
@@ -422,12 +454,14 @@ pub fn admit_two_legs(
     }
 }
 
-/// The capital a leg needs on its venue, in `currency`, at the leg's limit
-/// price.
+/// The capital a leg needs on its venue, in `currency`.
 ///
-/// A buy needs `notional + fee` in cash; a sell from inventory needs the
-/// quantity and the fee; a short sale on margin needs `notional * rate + fee`
-/// in cash. A rebate (negative fee) never lowers the requirement.
+/// A buy needs `notional + fee` in cash at its limit price (an upper bound);
+/// a sell from inventory needs the quantity and the fee; a short sale on
+/// margin needs `notional * rate + fee` in cash. A sell's notional uses the
+/// higher of its limit and the view's executable bid, since a sell limit is
+/// only a lower bound. A rebate (negative fee) never lowers the
+/// requirement.
 ///
 /// # Errors
 ///
@@ -435,7 +469,13 @@ pub fn admit_two_legs(
 /// arithmetic errors.
 pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservation> {
     let leg = &request.spec.leg;
-    let notional = leg.price.notional(leg.quantity, ccy)?;
+    // A buy limit bounds its price from above; a sell limit only from below,
+    // so a sell is valued at the higher of its limit and the observed bid.
+    let price = match (leg.side, request.view.book.executable(Side::Sell)) {
+        (Side::Sell, Some(bid)) => leg.price.max(bid.price),
+        _ => leg.price,
+    };
+    let notional = price.notional(leg.quantity, ccy)?;
     let fee = request.fee.fee_on(notional)?.money();
     let fee = if fee.is_negative() {
         Money::zero(ccy)

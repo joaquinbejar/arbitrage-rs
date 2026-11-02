@@ -38,7 +38,14 @@ fn id(s: &str) -> InstrumentId {
 /// Buy 2 BTC on venue A at a limit of 100; sell 2 BTC on venue B at a limit
 /// of 101. Views at 990 quote 100 / 101 with size 5.
 fn specs() -> (LegSpec, LegSpec) {
-    let leg = |sym: &str, side, price| LegSpec {
+    (
+        leg_on("A", "BTC-A", Side::Buy, dec!(100)),
+        leg_on("B", "BTC-B", Side::Sell, dec!(101)),
+    )
+}
+
+fn leg_on(v: &str, sym: &str, side: Side, price: Decimal) -> LegSpec {
+    LegSpec {
         leg: Leg {
             instrument: Instrument::undated(id(sym)),
             side,
@@ -46,11 +53,8 @@ fn specs() -> (LegSpec, LegSpec) {
             price: p(price),
         },
         deadline: None,
-    };
-    (
-        leg("BTC-A", Side::Buy, dec!(100)),
-        leg("BTC-B", Side::Sell, dec!(101)),
-    )
+        venue: Some(venue(v)),
+    }
 }
 
 fn view(v: &str, sym: &str, at: i64) -> VenueView {
@@ -196,7 +200,8 @@ fn a_second_leg_rejection_releases_nothing_because_nothing_was_kept() {
 #[test]
 fn two_legs_on_one_venue_share_its_budget() {
     // Both legs on A: 200.2 + 40.602 = 240.802 needed. 240 is not enough.
-    let (buy, sell) = specs();
+    let buy = leg_on("A", "BTC-A", Side::Buy, dec!(100));
+    let sell = leg_on("A", "BTC-B", Side::Sell, dec!(101));
     let va = view("A", "BTC-A", 990);
     let vb_on_a = view("A", "BTC-B", 990);
     let mut b = budgets(dec!(240), dec!(0));
@@ -377,4 +382,134 @@ fn margin_rate_and_budget_are_validated() {
     assert!(VenueBudget::new(venue("A"), m(dec!(-1))).is_err());
     assert!(VenueId::new("").is_err());
     assert!(VenueId::new("BIN ANCE").is_err());
+}
+
+#[test]
+fn a_view_from_another_venue_never_funds_the_leg() {
+    // MM-REVIEWER M311B-1: the sell leg is on B; a view from A (where cash
+    // is plentiful) must not admit it or reserve A's capital.
+    let (buy, sell) = specs();
+    let va = view("A", "BTC-A", 990);
+    let vb_from_a = view("A", "BTC-B", 990);
+    let mut b = budgets(dec!(10_000), dec!(0));
+    let before = b.clone();
+    assert!(matches!(
+        admit_two_legs(
+            req(&buy, &va, MARGIN_20),
+            req(&sell, &vb_from_a, MARGIN_20),
+            &mut b,
+            t(1_000),
+            50
+        ),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+    assert_eq!(b, before);
+    // A leg without a venue cannot be admitted.
+    let mut nowhere = sell.clone();
+    nowhere.venue = None;
+    let vb = view("B", "BTC-B", 990);
+    assert!(matches!(
+        admit_two_legs(
+            req(&buy, &va, MARGIN_20),
+            req(&nowhere, &vb, MARGIN_20),
+            &mut b,
+            t(1_000),
+            50
+        ),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn expired_or_past_deadline_legs_reserve_nothing() {
+    // Codex M311B-C1: the buy is a future expiring at 900; at 1000 it is
+    // expired and nothing is reserved. A deadline at 1000 is past too.
+    let (mut buy, sell) = specs();
+    let (va, vb) = (view("A", "BTC-A", 990), view("B", "BTC-B", 990));
+    buy.leg.instrument = Instrument::dated(id("BTC-A"), t(900));
+    let mut dated_view = va.clone();
+    dated_view.instrument = buy.leg.instrument.clone();
+    let mut b = budgets(dec!(500), dec!(100));
+    let before = b.clone();
+    assert!(matches!(
+        admit_two_legs(
+            req(&buy, &dated_view, MARGIN_20),
+            req(&sell, &vb, MARGIN_20),
+            &mut b,
+            t(1_000),
+            50
+        ),
+        Err(ArbitrageError::Expired { .. })
+    ));
+    assert_eq!(b, before);
+    let (mut buy, sell) = specs();
+    buy.deadline = Some(t(1_000));
+    assert_eq!(
+        admit_two_legs(
+            req(&buy, &va, MARGIN_20),
+            req(&sell, &vb, MARGIN_20),
+            &mut b,
+            t(1_000),
+            50
+        )
+        .unwrap(),
+        Admission::Rejected {
+            leg: LegIndex::First,
+            reason: AdmissionReject::PastDeadline
+        }
+    );
+    assert_eq!(b, before);
+}
+
+#[test]
+fn a_sell_is_reserved_at_the_higher_of_its_limit_and_the_bid() {
+    // Codex M311B-C2: sell 2 with a limit of 101 while the bid is 1000.
+    // Margin 20%: 2000 * 0.2 = 400 + fee 2 = 402, not 40.4 + 0.202.
+    let (buy, sell) = specs();
+    let va = view("A", "BTC-A", 990);
+    let mut vb = view("B", "BTC-B", 990);
+    vb.book.bid = Some(Level::new(p(dec!(1000)), q(dec!(5))));
+    let mut b = budgets(dec!(500), dec!(41));
+    assert_eq!(
+        admit_two_legs(
+            req(&buy, &va, MARGIN_20),
+            req(&sell, &vb, MARGIN_20),
+            &mut b,
+            t(1_000),
+            50
+        )
+        .unwrap(),
+        Admission::Rejected {
+            leg: LegIndex::Second,
+            reason: AdmissionReject::InsufficientCash {
+                required: m(dec!(402)),
+                available: m(dec!(41))
+            },
+        }
+    );
+    // From inventory the fee is also on the 2000 notional: 2.
+    let inv = b[&venue("B")]
+        .clone()
+        .with_inventory(id("BTC-B"), q(dec!(2)))
+        .unwrap();
+    b.insert(venue("B"), inv);
+    let r = admit_two_legs(
+        req(&buy, &va, MARGIN_20),
+        req(&sell, &vb, SellFunding::Inventory),
+        &mut b,
+        t(1_000),
+        50,
+    )
+    .unwrap();
+    let Admission::Admitted { second, .. } = r else {
+        panic!("{r:?}")
+    };
+    assert_eq!(second.cash, m(dec!(2)));
+    // Rollback and release still hold.
+    b.get_mut(&venue("B")).unwrap().release(&second).unwrap();
+    assert!(b[&venue("B")].reserved_cash().is_zero());
+    assert_eq!(
+        b[&venue("B")].available_inventory(&id("BTC-B")).unwrap(),
+        dec!(2)
+    );
 }

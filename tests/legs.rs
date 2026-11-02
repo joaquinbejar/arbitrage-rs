@@ -47,6 +47,7 @@ fn spec(
             price: p(price),
         },
         deadline,
+        venue: Some(VenueId::new("VB").unwrap()),
     }
 }
 
@@ -1334,4 +1335,21 @@ fn net_cash_of_a_completed_plan() {
     // 1005 - 1000 - 1 = 4.
     assert_eq!(plan.net_cash().unwrap(), Money::new(dec!(4), usd()));
     assert_eq!(plan.state(), PlanState::Completed);
+}
+
+#[test]
+fn a_venue_update_from_another_venue_is_rejected() {
+    // The legs are on venue VB; a view from VA is not theirs.
+    let mut plan = plan(complete(Fallback::Abort), None);
+    let mut foreign = view_of("Y", 10, Some((dec!(101), dec!(10))));
+    foreign.venue = VenueId::new("VA").unwrap();
+    let before = plan.clone();
+    assert!(matches!(
+        plan.apply(&LegExecution::VenueUpdate {
+            leg: B,
+            view: foreign
+        }),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+    assert_eq!(plan, before);
 }

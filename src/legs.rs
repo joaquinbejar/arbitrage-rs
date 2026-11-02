@@ -87,7 +87,7 @@ use crate::instrument::{Instrument, Leg, Side, Timestamp};
 use crate::money::{Currency, Money};
 use crate::opportunity::Opportunity;
 use crate::units::{Price, Quantity};
-use crate::venues::{VenueView, check_view};
+use crate::venues::{VenueId, VenueView, check_view};
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
@@ -126,6 +126,10 @@ pub struct LegSpec {
     /// When to stop working the leg; reaching it requests a cancel. The
     /// instrument's expiry, if earlier, applies instead.
     pub deadline: Option<Timestamp>,
+    /// The venue the leg trades on. Required for venue views and admission
+    /// ([`crate::venues`]); only a view and a budget of this venue apply to
+    /// the leg.
+    pub venue: Option<VenueId>,
 }
 
 impl LegSpec {
@@ -629,10 +633,12 @@ impl TwoLegPlan {
             LegSpec {
                 leg: opportunity.buy.clone(),
                 deadline,
+                venue: None,
             },
             LegSpec {
                 leg: opportunity.sell.clone(),
                 deadline,
+                venue: None,
             },
             policy,
             currency,
@@ -715,8 +721,9 @@ impl TwoLegPlan {
     ///   rejection of an attempt with fills, a fill on a rejected attempt, an
     ///   attempt closed twice differently, a non-fill event older than the
     ///   last non-fill event of its leg, a tick older than the plan clock, or
-    ///   a venue view of another instrument. Executions beyond a quantity are
-    ///   not errors.
+    ///   a venue view of another instrument or of a venue that is not the
+    ///   leg's (or for a leg without a venue). Executions beyond a quantity
+    ///   are not errors.
     /// - [`ArbitrageError::CurrencyMismatch`] for a fee in another currency.
     /// - Arithmetic errors.
     pub fn apply(&mut self, event: &LegExecution) -> Result<PlanActions> {
@@ -790,9 +797,15 @@ impl TwoLegPlan {
             LegExecution::Disconnected { leg, .. } => next.legs[leg.slot()].connected = false,
             LegExecution::Reconnected { leg, .. } => next.legs[leg.slot()].connected = true,
             LegExecution::VenueUpdate { leg, view } => {
-                if view.instrument.id != next.legs[leg.slot()].spec.leg.instrument.id {
+                let spec = &next.legs[leg.slot()].spec;
+                if view.instrument.id != spec.leg.instrument.id {
                     return Err(ArbitrageError::InvalidInput {
                         reason: "venue view is for another instrument than the leg",
+                    });
+                }
+                if spec.venue.as_ref() != Some(&view.venue) {
+                    return Err(ArbitrageError::InvalidInput {
+                        reason: "venue view is from another venue than the leg's",
                     });
                 }
                 next.legs[leg.slot()].view = Some(view.clone());
