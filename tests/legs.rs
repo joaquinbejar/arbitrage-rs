@@ -871,7 +871,7 @@ fn a_retry_that_fills_before_its_cancel_is_an_overfill_offset_by_unwind() {
             4,
         ))
         .unwrap();
-    assert_eq!(r.state, PlanState::Unwinding);
+    assert_eq!(r.state, PlanState::Working);
     assert_eq!(r.residual, dec!(-2));
     let r = plan.apply(&ack(B, 1, dec!(2), 5)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
@@ -999,4 +999,339 @@ fn no_resubmit_of_an_expired_instrument_without_a_tick() {
         assert_eq!(r.state, PlanState::Unwinding, "{ev:?}");
         assert_eq!(plan.leg(B).resubmits(), 0, "{ev:?}");
     }
+}
+
+#[test]
+fn an_overfill_waits_for_the_other_leg_and_unwinds_only_the_excess() {
+    // A is overfilled by 2 (12 of 10) while B is still working: B is not
+    // cancelled and keeps filling to its 10; then only the excess of 2 is
+    // unwound.
+    let mut plan = plan(FailurePolicy::Unwind, None);
+    let r = plan
+        .apply(&fill(
+            A,
+            0,
+            "a1",
+            dec!(12),
+            dec!(12),
+            dec!(100),
+            dec!(0.6),
+            1,
+        ))
+        .unwrap();
+    assert!(r.actions.is_empty());
+    assert_eq!(r.state, PlanState::Working);
+    assert_eq!(
+        plan.leg(B).status().unwrap(),
+        LegStatus::Working { attempt: 0 }
+    );
+    let r = plan
+        .apply(&fill(
+            B,
+            0,
+            "b1",
+            dec!(4),
+            dec!(4),
+            dec!(100.5),
+            dec!(0.2),
+            2,
+        ))
+        .unwrap();
+    assert!(r.actions.is_empty());
+    assert_eq!(r.residual, dec!(8));
+    let r = plan
+        .apply(&fill(
+            B,
+            0,
+            "b2",
+            dec!(6),
+            dec!(10),
+            dec!(100.5),
+            dec!(0.3),
+            3,
+        ))
+        .unwrap();
+    assert_eq!(r.state, PlanState::UnwindRequested);
+    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(2))]);
+    assert_eq!(r.residual, dec!(2));
+
+    // Under abort the same excess is kept and visible.
+    let mut plan = super_abort();
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(12),
+        dec!(12),
+        dec!(100),
+        dec!(0.6),
+        1,
+    ))
+    .unwrap();
+    let r = plan
+        .apply(&fill(
+            B,
+            0,
+            "b1",
+            dec!(10),
+            dec!(10),
+            dec!(100.5),
+            dec!(0.5),
+            2,
+        ))
+        .unwrap();
+    assert_eq!(r.state, PlanState::Aborted);
+    assert!(r.actions.is_empty());
+    assert_eq!(r.residual, dec!(2));
+}
+
+fn super_abort() -> TwoLegPlan {
+    plan(FailurePolicy::Abort, None)
+}
+
+// ---- M3-11B: per-venue clocks, connectivity, gated recovery, net cash ----
+
+use arbitrage_rs::venues::{VenueId, VenueView};
+
+fn view_of(sym: &str, at: i64, bid: Option<(Decimal, Decimal)>) -> VenueView {
+    VenueView {
+        venue: VenueId::new("VB").unwrap(),
+        instrument: inst(sym),
+        observed_at: t(at),
+        book: TopOfBook {
+            bid: bid.map(|(px, s)| Level::new(p(px), q(s))),
+            ask: None,
+        },
+    }
+}
+
+fn complete(then: Fallback) -> FailurePolicy {
+    FailurePolicy::Complete {
+        max_resubmits: 3,
+        then,
+    }
+}
+
+#[test]
+fn each_venue_keeps_its_own_event_order() {
+    // Venue B is delayed: its rejection stamped 50 arrives after A's cancel
+    // acknowledgement stamped 100, and is still applied.
+    let mut plan = plan(FailurePolicy::Abort, None);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(2),
+        dec!(2),
+        dec!(100),
+        dec!(0.1),
+        90,
+    ))
+    .unwrap();
+    plan.apply(&ack(A, 0, dec!(2), 100)).unwrap();
+    let r = plan.apply(&rejected(B, 0, 50)).unwrap();
+    assert_eq!(r.state, PlanState::Aborted);
+    assert_eq!(r.residual, dec!(2));
+    // Within one leg, an older non-fill event is still rejected.
+    let mut other = super_abort();
+    other
+        .apply(&LegExecution::Disconnected { leg: B, at: t(60) })
+        .unwrap();
+    assert!(matches!(
+        other.apply(&rejected(B, 0, 59)),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+    // A tick older than the plan clock is rejected.
+    assert!(matches!(
+        other.apply(&LegExecution::Tick { at: t(59) }),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn a_disconnected_venue_holds_the_resubmission_until_it_reconnects() {
+    let mut plan = plan(complete(Fallback::Abort), None);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    plan.apply(&fill(
+        B,
+        0,
+        "b1",
+        dec!(3),
+        dec!(3),
+        dec!(100.5),
+        dec!(0.15),
+        2,
+    ))
+    .unwrap();
+    plan.apply(&LegExecution::Disconnected { leg: B, at: t(3) })
+        .unwrap();
+    let r = plan.apply(&ack(B, 0, dec!(3), 4)).unwrap();
+    assert!(r.actions.is_empty());
+    assert_eq!(r.state, PlanState::Working);
+    assert!(plan.leg(B).pending_resubmit);
+    // The residual and the cash flow of the asymmetric fills stay visible:
+    // 3 * 100.5 - 10 * 100 - (0.5 + 0.15) = 301.5 - 1000 - 0.65.
+    assert_eq!(r.residual, dec!(7));
+    assert_eq!(plan.net_cash().unwrap(), Money::new(dec!(-699.15), usd()));
+    let r = plan
+        .apply(&LegExecution::Reconnected { leg: B, at: t(5) })
+        .unwrap();
+    assert_eq!(
+        r.actions,
+        vec![PlanAction::Resubmit {
+            leg: B,
+            attempt: 1,
+            quantity: q(dec!(7)),
+            price: p(dec!(100.5)),
+        }]
+    );
+    assert!(!plan.leg(B).pending_resubmit);
+}
+
+#[test]
+fn gated_resubmission_waits_for_fresh_liquidity() {
+    // With gating, the resubmission of B (sell 10 at a limit of 100.5)
+    // needs a view of Y at most 50 ms old with a bid >= 100.5 and size 10.
+    let mut plan = plan(complete(Fallback::Unwind), Some(t(1_000))).with_venue_gating(50);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    // No view yet: held.
+    let r = plan.apply(&rejected(B, 0, 10)).unwrap();
+    assert!(r.actions.is_empty());
+    assert!(plan.leg(B).pending_resubmit);
+    // Bid below the limit: held.
+    let r = plan
+        .apply(&LegExecution::VenueUpdate {
+            leg: B,
+            view: view_of("Y", 20, Some((dec!(100.4), dec!(50)))),
+        })
+        .unwrap();
+    assert!(r.actions.is_empty());
+    // Bid at the limit but only 5: held.
+    let r = plan
+        .apply(&LegExecution::VenueUpdate {
+            leg: B,
+            view: view_of("Y", 30, Some((dec!(100.5), dec!(5)))),
+        })
+        .unwrap();
+    assert!(r.actions.is_empty());
+    // Enough size, but the plan clock (a tick at 100) makes it stale.
+    plan.apply(&LegExecution::VenueUpdate {
+        leg: B,
+        view: view_of("Y", 40, None),
+    })
+    .unwrap();
+    let r = plan.apply(&LegExecution::Tick { at: t(100) }).unwrap();
+    assert!(r.actions.is_empty());
+    // A fresh, deep view admits it: liquidity recovered.
+    let r = plan
+        .apply(&LegExecution::VenueUpdate {
+            leg: B,
+            view: view_of("Y", 120, Some((dec!(100.6), dec!(10)))),
+        })
+        .unwrap();
+    assert_eq!(
+        r.actions,
+        vec![PlanAction::Resubmit {
+            leg: B,
+            attempt: 1,
+            quantity: q(dec!(10)),
+            price: p(dec!(100.5)),
+        }]
+    );
+    // A view of another instrument is an error.
+    assert!(matches!(
+        plan.apply(&LegExecution::VenueUpdate {
+            leg: B,
+            view: view_of("X", 130, None),
+        }),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn a_held_resubmission_past_the_deadline_falls_back() {
+    let mut plan = plan(complete(Fallback::Unwind), Some(t(1_000))).with_venue_gating(50);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    plan.apply(&fill(
+        B,
+        0,
+        "b1",
+        dec!(4),
+        dec!(4),
+        dec!(100.5),
+        dec!(0.2),
+        2,
+    ))
+    .unwrap();
+    let r = plan.apply(&ack(B, 0, dec!(4), 10)).unwrap();
+    assert!(r.actions.is_empty());
+    assert!(plan.leg(B).pending_resubmit);
+    // Liquidity never comes back before the deadline: unwind the residual.
+    let r = plan.apply(&LegExecution::Tick { at: t(1_000) }).unwrap();
+    assert_eq!(r.state, PlanState::UnwindRequested);
+    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(6))]);
+    assert!(!plan.leg(B).pending_resubmit);
+    // Net cash: 4 * 100.5 - 10 * 100 - 0.7 = -598.7, with residual 6.
+    assert_eq!(plan.net_cash().unwrap(), Money::new(dec!(-598.7), usd()));
+    assert_eq!(plan.residual().unwrap(), dec!(6));
+}
+
+#[test]
+fn net_cash_of_a_completed_plan() {
+    let mut plan = plan(FailurePolicy::Abort, None);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    plan.apply(&fill(
+        B,
+        0,
+        "b1",
+        dec!(10),
+        dec!(10),
+        dec!(100.5),
+        dec!(0.5),
+        2,
+    ))
+    .unwrap();
+    // 1005 - 1000 - 1 = 4.
+    assert_eq!(plan.net_cash().unwrap(), Money::new(dec!(4), usd()));
+    assert_eq!(plan.state(), PlanState::Completed);
 }

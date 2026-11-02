@@ -18,7 +18,9 @@
 //!   basis trade after fees, carry and funding;
 //! - [`legs::TwoLegPlan`] (M3-11A): a two-leg execution state machine that
 //!   applies observed fills, rejections and cancels without assuming atomic
-//!   execution, and emits recovery intents under an explicit policy.
+//!   execution, and emits recovery intents under an explicit policy;
+//! - [`venues`] (M3-11B): per-venue views and budgets, and all-or-nothing
+//!   admission of both legs without borrowing capital across venues.
 //!
 //! Opportunities and hedge plans are intents with expected numbers. They are
 //! never reported as executed or guaranteed profit, and execution is not
@@ -107,6 +109,7 @@ mod cost;
 mod instrument;
 mod money;
 mod units;
+pub mod venues;
 mod wide;
 
 pub use cost::{BPS_PER_UNIT, Cost, FeeRate};

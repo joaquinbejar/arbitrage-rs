@@ -37,10 +37,11 @@
 //!   count as soon as the acknowledgement reports them; the residual
 //!   exposure and every resubmission use it;
 //! - a real execution is never rejected for exceeding a quantity. A fill or
-//!   acknowledgement beyond the attempt or the leg is recorded as exposure:
-//!   a live attempt made surplus by it is cancelled, and a leg executed
-//!   beyond its quantity (an overfill) is a failure handled by the policy's
-//!   fallback (abort keeps the residual visible, unwind offsets it);
+//!   acknowledgement beyond the attempt or the leg is recorded as exposure,
+//!   and a live attempt made surplus by it is cancelled. The other leg keeps
+//!   working to its own quantity; once both legs are done, the policy's
+//!   fallback applies to the excess (the overfill) alone: abort keeps it
+//!   visible, unwind offsets it;
 //! - the plan completes only when both legs are executed in full and no
 //!   attempt is still live;
 //! - fees and notional come from fills only, so they grow as late fills
@@ -49,8 +50,29 @@
 //! Adapter contract: the fills of one attempt must be applied in the
 //! venue's execution order (each `cum_qty` builds on the previous one);
 //! fills of different attempts or legs may interleave in any order.
-//! Rejections, acknowledgements and ticks must arrive with non-decreasing
-//! timestamps; an older one is rejected.
+//!
+//! ## Venues, clocks and recovery
+//!
+//! Each leg trades on its own venue, with its own clock and delay:
+//!
+//! - non-fill events of a leg (rejections, acknowledgements, connection
+//!   changes and venue views) must not be older than that leg's previous
+//!   non-fill event, but may be older than the other leg's events, so one
+//!   venue's delay never blocks or rejects the other's; ticks follow the
+//!   plan clock, the latest time seen;
+//! - [`LegExecution::Disconnected`] and [`LegExecution::Reconnected`] track
+//!   whether the leg's venue is reachable, and [`LegExecution::VenueUpdate`]
+//!   its latest view;
+//! - a resubmission is never sent to a disconnected venue and, with
+//!   [`TwoLegPlan::with_venue_gating`], only when the venue's latest view is
+//!   fresh, quoted within the limit and deep enough. Otherwise it is held
+//!   ([`LegState::pending_resubmit`]) and sent when an update admits it; if
+//!   the leg's deadline passes first, the policy's fallback applies;
+//! - [`TwoLegPlan::residual`] and [`TwoLegPlan::net_cash`] keep what an
+//!   asymmetric or interrupted execution leaves behind.
+//!
+//! Admission of both legs against per-venue budgets, before the plan
+//! starts, is in [`crate::venues`].
 //!
 //! ## Units
 //!
@@ -65,6 +87,7 @@ use crate::instrument::{Instrument, Leg, Side, Timestamp};
 use crate::money::{Currency, Money};
 use crate::opportunity::Opportunity;
 use crate::units::{Price, Quantity};
+use crate::venues::{VenueView, check_view};
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
@@ -198,6 +221,55 @@ pub enum LegExecution {
         /// The current time.
         at: Timestamp,
     },
+    /// The leg's venue is unreachable: no order can be sent to it.
+    Disconnected {
+        /// The leg.
+        leg: LegIndex,
+        /// When it was observed.
+        at: Timestamp,
+    },
+    /// The leg's venue is reachable again.
+    Reconnected {
+        /// The leg.
+        leg: LegIndex,
+        /// When it was observed.
+        at: Timestamp,
+    },
+    /// A new view of the leg's instrument on its venue, stamped with its
+    /// `observed_at`.
+    VenueUpdate {
+        /// The leg.
+        leg: LegIndex,
+        /// The view.
+        view: VenueView,
+    },
+}
+
+impl LegExecution {
+    /// The leg the event belongs to, if any.
+    fn leg(&self) -> Option<LegIndex> {
+        match self {
+            Self::Fill { leg, .. }
+            | Self::Rejected { leg, .. }
+            | Self::CancelAck { leg, .. }
+            | Self::Disconnected { leg, .. }
+            | Self::Reconnected { leg, .. }
+            | Self::VenueUpdate { leg, .. } => Some(*leg),
+            Self::Tick { .. } => None,
+        }
+    }
+
+    fn at(&self) -> Timestamp {
+        match self {
+            Self::Fill { at, .. }
+            | Self::Rejected { at, .. }
+            | Self::CancelAck { at, .. }
+            | Self::Tick { at }
+            | Self::Disconnected { at, .. }
+            | Self::Reconnected { at, .. } => *at,
+            Self::VenueUpdate { view, .. } => view.observed_at,
+        }
+    }
 }
 
 /// An intent the plan asks the caller to carry out.
@@ -341,7 +413,15 @@ pub struct LegState {
     pub filled_notional: Money,
     /// Sum of fees over applied fills.
     pub fees: Cost,
+    /// False while the leg's venue is disconnected.
+    pub connected: bool,
+    /// The latest view of the leg's instrument on its venue.
+    pub view: Option<VenueView>,
+    /// True while a resubmission is due but held back by the venue (see
+    /// [`TwoLegPlan::with_venue_gating`]).
+    pub pending_resubmit: bool,
     deadline_cancelled: bool,
+    last_at: Timestamp,
 }
 
 impl LegState {
@@ -463,7 +543,8 @@ pub struct TwoLegPlan {
     policy: FailurePolicy,
     legs: [LegState; 2],
     state: PlanState,
-    last_at: Timestamp,
+    clock: Timestamp,
+    max_staleness_ms: Option<i64>,
     fills: BTreeMap<ExecId, FillRecord>,
     unwind_requested: Decimal,
 }
@@ -514,14 +595,19 @@ impl TwoLegPlan {
             spec,
             filled_notional: Money::zero(currency),
             fees: Cost::new(Money::zero(currency)),
+            connected: true,
+            view: None,
+            pending_resubmit: false,
             deadline_cancelled: false,
+            last_at: created_at,
         };
         Ok(Self {
             currency,
             policy,
             legs: [leg_state(first), leg_state(second)],
             state: PlanState::Working,
-            last_at: created_at,
+            clock: created_at,
+            max_staleness_ms: None,
             fills: BTreeMap::new(),
             unwind_requested: Decimal::ZERO,
         })
@@ -584,6 +670,38 @@ impl TwoLegPlan {
         self.legs[0].fees.checked_add(self.legs[1].fees)
     }
 
+    /// Holds resubmissions back until the leg's venue admits them: the venue
+    /// is connected and its latest view is at most `max_staleness_ms` old,
+    /// quotes the side the leg trades within its limit, and has size for the
+    /// remaining quantity. A held resubmission is sent when a later
+    /// [`LegExecution::VenueUpdate`] or [`LegExecution::Reconnected`] admits
+    /// it, and is dropped for the policy's fallback once the leg's deadline
+    /// passes. Without gating, only a disconnected venue holds it back.
+    #[must_use]
+    pub fn with_venue_gating(mut self, max_staleness_ms: i64) -> Self {
+        self.max_staleness_ms = Some(max_staleness_ms);
+        self
+    }
+
+    /// Cash flow of the fills so far: sell notional minus buy notional minus
+    /// fees. With the residual it is what an asymmetric or interrupted
+    /// execution leaves behind.
+    ///
+    /// # Errors
+    ///
+    /// Arithmetic errors.
+    pub fn net_cash(&self) -> Result<Money> {
+        let mut net = Money::zero(self.currency);
+        for leg in &self.legs {
+            net = match leg.spec.leg.side {
+                Side::Sell => net.checked_add(leg.filled_notional)?,
+                Side::Buy => net.checked_sub(leg.filled_notional)?,
+            };
+            net = net.checked_sub(leg.fees.money())?;
+        }
+        Ok(net)
+    }
+
     /// Applies one observed event and returns the resulting intents.
     ///
     /// The plan is unchanged when an error is returned.
@@ -595,32 +713,47 @@ impl TwoLegPlan {
     ///   cumulative plus the fill, or an acknowledgement's below the fills
     ///   already applied), a reused execution id with different content, a
     ///   rejection of an attempt with fills, a fill on a rejected attempt, an
-    ///   attempt closed twice differently, or a non-fill event older than
-    ///   the last applied one. Executions beyond a quantity are not errors.
+    ///   attempt closed twice differently, a non-fill event older than the
+    ///   last non-fill event of its leg, a tick older than the plan clock, or
+    ///   a venue view of another instrument. Executions beyond a quantity are
+    ///   not errors.
     /// - [`ArbitrageError::CurrencyMismatch`] for a fee in another currency.
     /// - Arithmetic errors.
     pub fn apply(&mut self, event: &LegExecution) -> Result<PlanActions> {
         if self.is_duplicate(event)? {
             return self.report(Vec::new(), true);
         }
-        let at = match event {
-            LegExecution::Fill { at, .. } => (*at).max(self.last_at),
-            LegExecution::Rejected { at, .. }
-            | LegExecution::CancelAck { at, .. }
-            | LegExecution::Tick { at } => {
-                if *at < self.last_at {
+        // Each venue keeps its own order: a non-fill event may not be older
+        // than the last one of its leg, but may be older than the other
+        // leg's events. Fills are ordered by cum_qty instead. Ticks follow
+        // the plan clock, the latest time seen.
+        let at = event.at();
+        match (event, event.leg()) {
+            (LegExecution::Fill { .. }, _) => {}
+            (_, Some(leg)) => {
+                if at < self.legs[leg.slot()].last_at {
                     return Err(ArbitrageError::InvalidInput {
-                        reason: "event is older than the last applied event",
+                        reason: "event is older than the last event of its leg",
                     });
                 }
-                *at
             }
-        };
+            (_, None) => {
+                if at < self.clock {
+                    return Err(ArbitrageError::InvalidInput {
+                        reason: "tick is older than the plan clock",
+                    });
+                }
+            }
+        }
+        let now = at.max(self.clock);
         // Work on a copy and commit only if the whole step and its report
         // succeed, so that an error leaves the plan unchanged.
         let mut next = self.clone();
         let mut actions = Vec::new();
-        next.last_at = at;
+        next.clock = now;
+        if let (false, Some(leg)) = (matches!(event, LegExecution::Fill { .. }), event.leg()) {
+            next.legs[leg.slot()].last_at = at;
+        }
         match event {
             LegExecution::Fill {
                 leg,
@@ -654,8 +787,18 @@ impl TwoLegPlan {
                 next.close_attempt(*leg, *attempt, AttemptOutcome::Cancelled, *cum_qty)?;
             }
             LegExecution::Tick { .. } => {}
+            LegExecution::Disconnected { leg, .. } => next.legs[leg.slot()].connected = false,
+            LegExecution::Reconnected { leg, .. } => next.legs[leg.slot()].connected = true,
+            LegExecution::VenueUpdate { leg, view } => {
+                if view.instrument.id != next.legs[leg.slot()].spec.leg.instrument.id {
+                    return Err(ArbitrageError::InvalidInput {
+                        reason: "venue view is for another instrument than the leg",
+                    });
+                }
+                next.legs[leg.slot()].view = Some(view.clone());
+            }
         }
-        next.step(at, &mut actions)?;
+        next.step(now, &mut actions)?;
         let report = next.report(actions, false)?;
         *self = next;
         Ok(report)
@@ -719,7 +862,10 @@ impl TwoLegPlan {
             } => Ok(self.closed_as(*leg, *attempt).is_some_and(|(o, f)| {
                 o == AttemptOutcome::Cancelled && f == Some(cum_qty.normalize())
             })),
-            LegExecution::Tick { .. } => Ok(false),
+            LegExecution::Tick { .. }
+            | LegExecution::Disconnected { .. }
+            | LegExecution::Reconnected { .. }
+            | LegExecution::VenueUpdate { .. } => Ok(false),
         }
     }
 
@@ -810,25 +956,26 @@ impl TwoLegPlan {
             }
         }
 
-        // An overfill is a failure handled by the policy's fallback, even
-        // after completion.
-        if matches!(self.state, PlanState::Working | PlanState::Completed) {
-            let overfilled = [LegIndex::First, LegIndex::Second]
-                .into_iter()
-                .map(|i| self.legs[i.slot()].overfill().map(|o| (i, o)))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .find(|(_, o)| *o > Decimal::ZERO);
-            if let Some((leg, _)) = overfilled {
-                self.enter_fallback(self.fallback(), leg, actions)?;
-            }
-        }
-
+        // An overfill is recorded as exposure. Only the surplus attempt is
+        // cancelled (above); the other leg keeps working to its quantity, and
+        // once both legs are done the policy's fallback applies to the
+        // excess alone: abort keeps it visible, unwind offsets it.
         let statuses = [self.legs[0].status()?, self.legs[1].status()?];
-        // Completion only from Working: once a recovery started, executions
-        // that complete both legs only change the residual.
-        if self.state == PlanState::Working && statuses.iter().all(|s| *s == LegStatus::Filled) {
-            self.state = PlanState::Completed;
+        let both_filled = statuses.iter().all(|s| *s == LegStatus::Filled);
+        let overfilled =
+            self.legs[0].overfill()? > Decimal::ZERO || self.legs[1].overfill()? > Decimal::ZERO;
+        if both_filled && matches!(self.state, PlanState::Working | PlanState::Completed) {
+            if !overfilled {
+                self.state = PlanState::Completed;
+                return Ok(());
+            }
+            match self.fallback() {
+                Fallback::Abort => self.state = PlanState::Aborted,
+                Fallback::Unwind => {
+                    self.state = PlanState::UnwindRequested;
+                    self.request_unwind(actions)?;
+                }
+            }
             return Ok(());
         }
 
@@ -840,7 +987,11 @@ impl TwoLegPlan {
                 )
             });
             if let Some(leg) = failed {
-                self.on_failure(leg, at, actions)?;
+                if self.legs[leg.slot()].pending_resubmit {
+                    self.try_resubmit(leg, at, actions)?;
+                } else {
+                    self.on_failure(leg, at, actions)?;
+                }
             }
         }
 
@@ -905,21 +1056,62 @@ impl TwoLegPlan {
             let past_deadline = state.deadline_cancelled
                 || state.spec.effective_deadline().is_some_and(|d| d <= at);
             if total < max_resubmits && !past_deadline {
-                // The executed quantity includes fills that the
-                // acknowledgement reported but that are still in flight, so
-                // the resubmission never overlaps them.
-                let quantity = Quantity::new(state.remaining()?)?;
-                state.attempts.push(AttemptState::new(quantity));
-                actions.push(PlanAction::Resubmit {
-                    leg,
-                    attempt: state.resubmits(),
-                    quantity,
-                    price: state.spec.leg.price,
-                });
-                return Ok(());
+                state.pending_resubmit = true;
+                return self.try_resubmit(leg, at, actions);
             }
         }
         self.enter_fallback(self.fallback(), leg, actions)
+    }
+
+    /// Sends a held resubmission if the venue admits it, drops it for the
+    /// fallback once the deadline has passed, and otherwise keeps holding.
+    fn try_resubmit(
+        &mut self,
+        leg: LegIndex,
+        at: Timestamp,
+        actions: &mut Vec<PlanAction>,
+    ) -> Result<()> {
+        let state = &self.legs[leg.slot()];
+        let past_deadline =
+            state.deadline_cancelled || state.spec.effective_deadline().is_some_and(|d| d <= at);
+        if past_deadline {
+            self.legs[leg.slot()].pending_resubmit = false;
+            return self.enter_fallback(self.fallback(), leg, actions);
+        }
+        if !self.venue_admits(leg, at)? {
+            return Ok(());
+        }
+        let state = &mut self.legs[leg.slot()];
+        state.pending_resubmit = false;
+        // The executed quantity includes fills that the acknowledgement
+        // reported but that are still in flight, so the resubmission never
+        // overlaps them.
+        let quantity = Quantity::new(state.remaining()?)?;
+        state.attempts.push(AttemptState::new(quantity));
+        actions.push(PlanAction::Resubmit {
+            leg,
+            attempt: state.resubmits(),
+            quantity,
+            price: state.spec.leg.price,
+        });
+        Ok(())
+    }
+
+    /// True if the leg's venue can take a resubmission at `at`.
+    fn venue_admits(&self, leg: LegIndex, at: Timestamp) -> Result<bool> {
+        let state = &self.legs[leg.slot()];
+        if !state.connected {
+            return Ok(false);
+        }
+        let Some(max_staleness_ms) = self.max_staleness_ms else {
+            return Ok(true);
+        };
+        let Some(view) = &state.view else {
+            return Ok(false);
+        };
+        let mut spec = state.spec.clone();
+        spec.leg.quantity = Quantity::new(state.remaining()?)?;
+        Ok(check_view(&spec, view, at, max_staleness_ms)?.is_none())
     }
 
     fn request_unwind(&mut self, actions: &mut Vec<PlanAction>) -> Result<()> {
