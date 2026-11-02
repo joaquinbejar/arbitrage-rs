@@ -56,7 +56,7 @@ fn spec(
             price: p(price),
         },
         deadline,
-        venue: Some(VenueId::new("VB").unwrap()),
+        venue: VenueId::new("VB").unwrap(),
     }
 }
 
@@ -776,8 +776,17 @@ fn plan_from_an_accepted_opportunity() {
     let Evaluation::Accepted(o) = evaluate(&input).unwrap() else {
         panic!("expected an accepted opportunity");
     };
-    let plan =
-        TwoLegPlan::from_opportunity(&o, Some(t(200)), FailurePolicy::Unwind, usd()).unwrap();
+    let plan = TwoLegPlan::from_opportunity(
+        &o,
+        VenueId::new("VA").unwrap(),
+        VenueId::new("VB").unwrap(),
+        Some(t(200)),
+        FailurePolicy::Unwind,
+        usd(),
+    )
+    .unwrap();
+    assert_eq!(plan.leg(A).spec.venue.as_str(), "VA");
+    assert_eq!(plan.leg(B).spec.venue.as_str(), "VB");
     assert_eq!(plan.leg(A).spec.leg.side, Action::Buy);
     assert_eq!(plan.leg(B).spec.leg.side, Action::Sell);
     assert_eq!(plan.leg(A).spec.leg.quantity, q(dec!(3)));

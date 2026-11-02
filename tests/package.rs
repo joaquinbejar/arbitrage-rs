@@ -20,6 +20,7 @@ use arbitrage_rs::package::{
     PackageReport,
 };
 use arbitrage_rs::parity::{OptionFee, ParityFuture, ParityInput, ParityOption, evaluate_parity};
+use arbitrage_rs::venues::VenueId;
 use arbitrage_rs::{
     Action, ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Leg, Level,
     Money, Price, Quantity, Rounding, Timestamp, TopOfBook,
@@ -98,7 +99,14 @@ fn reversal(policy: FailurePolicy) -> PackagePlan {
     let input = parity_input();
     let ev = evaluate_parity(&input).unwrap();
     let edge = ev.reversal.edge().unwrap();
-    PackagePlan::from_parity(&input, edge, Some(ts(DEADLINE)), policy).unwrap()
+    PackagePlan::from_parity(
+        &input,
+        edge,
+        &VenueId::new("V").unwrap(),
+        Some(ts(DEADLINE)),
+        policy,
+    )
+    .unwrap()
 }
 
 fn fill(leg: usize, attempt: u32, id: &str, qty: Decimal, cum: Decimal, at: i64) -> PackageEvent {
@@ -418,7 +426,7 @@ fn manual_leg(id: &str, side: Action, qty: Decimal, book_size: Decimal) -> Packa
                 price: px(dec!(1)),
             },
             deadline: None,
-            venue: None,
+            venue: VenueId::new("V").unwrap(),
         },
         contract_size: q(book_size),
         lot: q(dec!(1)),

@@ -62,7 +62,7 @@ fn leg_on(v: &str, sym: &str, side: Action, price: Decimal) -> LegSpec {
             price: p(price),
         },
         deadline: None,
-        venue: Some(venue(v)),
+        venue: venue(v),
     }
 }
 
@@ -413,20 +413,8 @@ fn a_view_from_another_venue_never_funds_the_leg() {
         Err(ArbitrageError::InvalidInput { .. })
     ));
     assert_eq!(b, before);
-    // A leg without a venue cannot be admitted.
-    let mut nowhere = sell.clone();
-    nowhere.venue = None;
-    let vb = view("B", "BTC-B", 990);
-    assert!(matches!(
-        admit_two_legs(
-            req(&buy, &va, MARGIN_20),
-            req(&nowhere, &vb, MARGIN_20),
-            &mut b,
-            t(1_000),
-            50
-        ),
-        Err(ArbitrageError::InvalidInput { .. })
-    ));
+    // A leg without a venue cannot be expressed: `LegSpec::venue` is
+    // required.
 }
 
 #[test]

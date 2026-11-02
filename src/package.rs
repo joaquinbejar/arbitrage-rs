@@ -60,6 +60,7 @@ use crate::legs::{
 use crate::money::{Currency, Money};
 use crate::parity::{ParityEdge, ParityInput};
 use crate::units::{Price, Quantity};
+use crate::venues::VenueId;
 use crate::wide;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -426,7 +427,9 @@ impl PackagePlan {
     /// [`evaluate_parity`](crate::parity::evaluate_parity):
     /// legs in the order [`CALL_LEG`], [`PUT_LEG`], [`FUTURE_LEG`], sized and
     /// priced as the edge, with the contract sizes and lots of `input`, all
-    /// with `deadline`, created at the edge's `as_of`.
+    /// on `venue` and with `deadline`, created at the edge's `as_of`. A
+    /// parity package trades on one venue: neither `input` nor `edge` names
+    /// a venue, so the caller gives the one all three legs use.
     ///
     /// # Errors
     ///
@@ -434,6 +437,7 @@ impl PackagePlan {
     pub fn from_parity(
         input: &ParityInput,
         edge: &ParityEdge,
+        venue: &VenueId,
         deadline: Option<Timestamp>,
         policy: FailurePolicy,
     ) -> Result<Self> {
@@ -441,7 +445,7 @@ impl PackagePlan {
             spec: LegSpec {
                 leg: leg.clone(),
                 deadline,
-                venue: None,
+                venue: venue.clone(),
             },
             contract_size,
             lot,
