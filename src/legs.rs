@@ -335,7 +335,7 @@ pub struct AttemptState {
 }
 
 impl AttemptState {
-    fn new(quantity: Quantity) -> Self {
+    pub(crate) fn new(quantity: Quantity) -> Self {
         Self {
             quantity,
             observed: Decimal::ZERO,
@@ -383,7 +383,7 @@ pub enum LegStatus {
 }
 
 impl LegStatus {
-    fn is_terminal(self) -> bool {
+    pub(crate) fn is_terminal(self) -> bool {
         matches!(self, Self::Filled | Self::Rejected | Self::Cancelled)
     }
 }
