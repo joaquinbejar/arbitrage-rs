@@ -128,11 +128,13 @@ fn admit(
             funding: funds.0,
             view: views.0.clone(),
             reservation: first,
+            unwind_funding: SellFunding::Inventory,
         },
         AdmittedLeg {
             funding: funds.1,
             view: views.1.clone(),
             reservation: second,
+            unwind_funding: SellFunding::Inventory,
         },
     ]
 }

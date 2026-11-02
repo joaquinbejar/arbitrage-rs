@@ -76,8 +76,50 @@
 //! the plan takes over the admission's reservations and readmits every
 //! resubmission against its venue's current budget before sending it, at a
 //! price bound that never goes down, so no resubmission goes out with a
-//! reservation computed at an earlier, lower price. [`PlanAction::Unwind`]
-//! intents are not admitted: funding an unwind is the caller's job.
+//! reservation computed at an earlier, lower price.
+//!
+//! ## Unwinds
+//!
+//! An unwind offsets the open residual: `residual - coverage`, where the
+//! coverage of the unwinds already requested is signed as the residual
+//! they neutralise (a sell covers a long residual, a buy a short one) and
+//! counts a live unwind's whole quantity and an ended one's executed
+//! quantity. The plan never sees an unwind execute: it never assumes an
+//! unwind executed when it emits it, and a zero open residual with live
+//! unwinds means requested, not flat. The caller reports each unwind's end
+//! (rejected, cancelled or filled, with its final executed quantity) with
+//! [`LegExecution::UnwindDone`]; whatever it did not execute is open again
+//! and requested anew.
+//!
+//! With budget gating every unwind is admitted like a resubmission before it
+//! is sent: on its venue's latest view (connected, fresh, quoted on its side
+//! with size), at a limit equal to that view's executable price on its side,
+//! with its capital (valued at the same view, fee included) reserved on that
+//! venue's budget, all or nothing. A sell that unwinds a buy leg is funded
+//! as [`AdmittedLeg::unwind_funding`] says; a buy that unwinds a sell leg
+//! needs cash. When it does not fit, the unwind is held
+//! ([`TwoLegPlan::unwind_hold`]) and retried on each later non-fill event,
+//! never on a fill. In particular:
+//!
+//! - the plan never changes budgets for fills. When a fill changes what the
+//!   caller holds on a venue (for example the inventory a buy leg acquired,
+//!   which a sell unwind of that leg needs), the caller credits its
+//!   [`VenueBudget`] once and sends a [`LegExecution::Tick`]; until then the
+//!   unwind stays held with the shortfall as its reason;
+//! - the plan never requests the opposite side while an unwind is live: a
+//!   residual that fell, reached zero or changed sign is held with
+//!   [`AdmissionReject::UnwindReversal`] until the live unwinds' ends are
+//!   reported;
+//! - an unwind keeps its limit: the plan does not chase the price. A new
+//!   unwind is admitted on the view current when it is requested;
+//! - an unwind's reservation is held until
+//!   [`TwoLegPlan::release_reservations`], also once it ended, and never
+//!   covers another order; release is refused while an unwind is live;
+//! - with [`TwoLegPlan::with_unwind_deadline`] no unwind is admitted at or
+//!   after the deadline; after a release none is admitted at all.
+//!
+//! Without budget gating an unwind is emitted at once, with no price, and
+//! the caller funds it.
 //!
 //! ## Units
 //!
@@ -93,8 +135,8 @@ use crate::money::{Currency, Money};
 use crate::opportunity::Opportunity;
 use crate::units::{Price, Quantity};
 use crate::venues::{
-    AdmissionReject, AdmittedLeg, LegFunding, LegRequest, Reservation, VenueBudget, VenueId,
-    VenueView, check_view, price_bound, requirement, requirement_at,
+    AdmissionReject, AdmittedLeg, LegFunding, LegRequest, Reservation, SellFunding, VenueBudget,
+    VenueId, VenueView, check_view, price_bound, requirement, requirement_at,
 };
 use crate::wide;
 use rust_decimal::Decimal;
@@ -266,6 +308,23 @@ pub enum LegExecution {
         /// The view.
         view: VenueView,
     },
+    /// An unwind the plan requested ended on the leg's venue: rejected
+    /// (`filled` zero), or cancelled or filled with `filled` its final
+    /// cumulative executed quantity. Until then the unwind is live and its
+    /// whole quantity counts as covering the residual; from then on only
+    /// `filled` does, and the plan requests what is still open.
+    UnwindDone {
+        /// The leg whose residual the unwind offsets (its venue is the
+        /// unwind's).
+        leg: LegIndex,
+        /// The unwind's number ([`PlanAction::Unwind::unwind`]).
+        unwind: u32,
+        /// Its final cumulative executed quantity (zero or more; above the
+        /// unwind's quantity it is recorded, not rejected).
+        filled: Decimal,
+        /// When it was observed.
+        at: Timestamp,
+    },
 }
 
 impl LegExecution {
@@ -277,7 +336,8 @@ impl LegExecution {
             | Self::CancelAck { leg, .. }
             | Self::Disconnected { leg, .. }
             | Self::Reconnected { leg, .. }
-            | Self::VenueUpdate { leg, .. } => Some(*leg),
+            | Self::VenueUpdate { leg, .. }
+            | Self::UnwindDone { leg, .. } => Some(*leg),
             Self::Tick { .. } => None,
         }
     }
@@ -289,7 +349,8 @@ impl LegExecution {
             | Self::CancelAck { at, .. }
             | Self::Tick { at }
             | Self::Disconnected { at, .. }
-            | Self::Reconnected { at, .. } => *at,
+            | Self::Reconnected { at, .. }
+            | Self::UnwindDone { at, .. } => *at,
             Self::VenueUpdate { view, .. } => view.observed_at,
         }
     }
@@ -317,15 +378,66 @@ pub enum PlanAction {
         price: Price,
     },
     /// Send an order that offsets residual exposure. It is an intent: the
-    /// residual stays visible until fills are observed elsewhere.
+    /// plan's residual is that of its legs and stays visible; report the
+    /// unwind's end with [`LegExecution::UnwindDone`].
     Unwind {
+        /// The unwind's number in the plan, from 0.
+        unwind: u32,
+        /// Venue to send it to: the venue of the leg whose position it
+        /// offsets.
+        venue: VenueId,
         /// Instrument to trade.
         instrument: Instrument,
         /// The action that reduces the residual.
         side: Action,
         /// Quantity to offset.
         quantity: Quantity,
+        /// Limit price. With budget gating it is the executable price of the
+        /// venue's latest admitted view on the unwind's side (the ask for a
+        /// buy, the bid for a sell), and the capital is reserved at it; the
+        /// plan never chases the price. Without budget gating it is `None`:
+        /// the caller prices the unwind.
+        price: Option<Price>,
     },
+}
+
+/// One unwind the plan requested.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UnwindState {
+    /// The leg whose position it offsets; it trades on that leg's venue.
+    pub leg: LegIndex,
+    /// Its side.
+    pub side: Action,
+    /// Its quantity.
+    pub quantity: Quantity,
+    /// Its limit price ([`PlanAction::Unwind::price`]).
+    pub price: Option<Price>,
+    /// Its final cumulative executed quantity once
+    /// [`LegExecution::UnwindDone`] reported it; `None` while it is live.
+    pub filled: Option<Decimal>,
+    /// The capital reserved for it on its venue with budget gating, held
+    /// until [`TwoLegPlan::release_reservations`], also once it ended.
+    pub reservation: Option<Reservation>,
+}
+
+impl UnwindState {
+    /// True until its end is reported.
+    #[must_use]
+    pub fn is_live(&self) -> bool {
+        self.filled.is_none()
+    }
+
+    /// The residual exposure it covers, signed as the residual it
+    /// neutralises: a sell covers a long residual (positive), a buy a short
+    /// one (negative). A live unwind covers its whole quantity, an ended one
+    /// what it executed.
+    fn coverage(&self) -> Result<Decimal> {
+        let amount = self.filled.unwrap_or_else(|| self.quantity.value());
+        Ok(match Dir::try_from(self.side)? {
+            Dir::Sell => amount,
+            Dir::Buy => exact::neg(amount),
+        })
+    }
 }
 
 /// How an attempt ended.
@@ -645,7 +757,16 @@ pub struct TwoLegPlan {
     /// True once any event has been applied.
     started: bool,
     fills: BTreeMap<ExecId, FillRecord>,
-    unwind_requested: Decimal,
+    /// How a sell unwinding each leg is funded, with budget gating.
+    unwind_funding: Option<[SellFunding; 2]>,
+    /// Every unwind requested, in order; its index is its number.
+    unwinds: Vec<UnwindState>,
+    /// Why the open residual's unwind is held, with budget gating.
+    unwind_hold: Option<AdmissionReject>,
+    /// No unwind is admitted at or after this instant.
+    unwind_deadline: Option<Timestamp>,
+    /// True once the reservations were released.
+    released: bool,
 }
 
 /// Whether a leg's venue can take a resubmission now.
@@ -728,7 +849,11 @@ impl TwoLegPlan {
             funding: None,
             started: false,
             fills: BTreeMap::new(),
-            unwind_requested: Decimal::ZERO,
+            unwind_funding: None,
+            unwinds: Vec::new(),
+            unwind_hold: None,
+            unwind_deadline: None,
+            released: false,
         })
     }
 
@@ -849,8 +974,9 @@ impl TwoLegPlan {
     /// it ends (completed, aborted, unwound, or abandoned after an error),
     /// the caller releases the current reservations with
     /// [`TwoLegPlan::release_reservations`], never the ones the admission
-    /// returned. [`PlanAction::Unwind`] intents are not admitted or reserved:
-    /// funding an unwind is the caller's responsibility.
+    /// returned. Unwinds are admitted and reserved as well (see the module
+    /// docs), with [`AdmittedLeg::unwind_funding`] for a sell that unwinds a
+    /// buy leg.
     ///
     /// # Errors
     ///
@@ -878,6 +1004,7 @@ impl TwoLegPlan {
         }
         let [first, second] = legs;
         let funding = [first.funding, second.funding];
+        let unwind_funding = [first.unwind_funding, second.unwind_funding];
         for (state, admitted) in self.legs.iter_mut().zip([first, second]) {
             let spec = &state.spec;
             if admitted.view.venue != spec.venue || admitted.reservation.venue != spec.venue {
@@ -913,21 +1040,85 @@ impl TwoLegPlan {
         }
         self.max_staleness_ms = Some(max_staleness_ms);
         self.funding = Some(funding);
+        self.unwind_funding = Some(unwind_funding);
         Ok(self)
     }
 
-    /// Releases the legs' current reservations from `budgets`, all or
-    /// nothing, for a plan with budget gating. Call it once the plan has
-    /// ended, or is abandoned. It is idempotent: a released reservation is
-    /// not released again, and the plan sends no resubmission afterwards
-    /// (it is held with [`AdmissionReject::Released`]).
+    /// Stops admitting unwinds at `deadline`, for a plan with budget gating:
+    /// an unwind is admitted only at an event time strictly before it (the
+    /// same boundary as a leg's deadline). Past it, the open residual's
+    /// unwind is held with [`AdmissionReject::PastDeadline`] and never
+    /// retried; unwinds already requested are not cancelled, their ends are
+    /// still applied, and the residual stays visible. Without a deadline a
+    /// held unwind is retried until it is admitted or the reservations are
+    /// released.
     ///
     /// # Errors
     ///
     /// [`ArbitrageError::InvalidInput`] for a plan without budget gating or
-    /// when a reservation's venue has no budget; the errors of
-    /// [`VenueBudget::release`]. Neither the plan nor `budgets` change on
-    /// error.
+    /// one that has already applied an event.
+    pub fn with_unwind_deadline(mut self, deadline: Timestamp) -> Result<Self> {
+        if self.funding.is_none() {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "an unwind deadline needs a plan with budget gating",
+            });
+        }
+        if self.started {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "the unwind deadline must be set before the plan sees an event",
+            });
+        }
+        self.unwind_deadline = Some(deadline);
+        Ok(self)
+    }
+
+    /// Every unwind the plan requested, in order; an unwind's number is its
+    /// index.
+    #[must_use]
+    pub fn unwinds(&self) -> &[UnwindState] {
+        &self.unwinds
+    }
+
+    /// Why the unwind of the open residual is held, with budget gating.
+    #[must_use]
+    pub fn unwind_hold(&self) -> Option<&AdmissionReject> {
+        self.unwind_hold.as_ref()
+    }
+
+    /// The residual exposure the requested unwinds cover, signed as the
+    /// residual they neutralise: a live unwind its whole quantity, an ended
+    /// one what it executed. `residual() - unwind_coverage()` is what is
+    /// still open. A zero open residual with live unwinds means requested,
+    /// not flat: the plan does not see the unwinds execute.
+    ///
+    /// # Errors
+    ///
+    /// Arithmetic errors.
+    pub fn unwind_coverage(&self) -> Result<Decimal> {
+        let values = self
+            .unwinds
+            .iter()
+            .map(UnwindState::coverage)
+            .collect::<Result<Vec<_>>>()?;
+        wide::sum(&values, "unwind coverage")
+    }
+
+    /// Releases the legs' current reservations and the unwinds'
+    /// reservations from `budgets`, all or nothing, for a plan with budget
+    /// gating. Call it once the plan has ended, or is abandoned, after every
+    /// unwind's end is reported ([`LegExecution::UnwindDone`]): it neither
+    /// cancels nor confirms orders, so it is refused while an unwind is
+    /// live. It is idempotent: a released reservation is not released again,
+    /// and the plan sends no resubmission or unwind afterwards (both are
+    /// held with [`AdmissionReject::Released`]); later fills are still
+    /// recorded.
+    ///
+    /// # Errors
+    ///
+    /// [`ArbitrageError::InvalidInput`] for a plan without budget gating,
+    /// while an unwind is live, or when a reservation's venue has no budget;
+    /// the errors of [`VenueBudget::release`]. Neither the plan nor
+    /// `budgets` change on error.
     pub fn release_reservations(
         &mut self,
         budgets: &mut BTreeMap<VenueId, VenueBudget>,
@@ -937,19 +1128,33 @@ impl TwoLegPlan {
                 reason: "plan has no budget gating, so no reservation to release",
             });
         }
+        // Releasing the capital of an order that may still be in the market
+        // would let it be spent twice.
+        if self.unwinds.iter().any(UnwindState::is_live) {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "an unwind is still live: apply its UnwindDone first",
+            });
+        }
         let mut next = budgets.clone();
-        for state in &self.legs {
-            if let Some(reservation) = &state.reservation {
-                next.get_mut(&reservation.venue)
-                    .ok_or(ArbitrageError::InvalidInput {
-                        reason: "no budget for the venue of a reservation",
-                    })?
-                    .release(reservation)?;
-            }
+        let held = self
+            .legs
+            .iter()
+            .filter_map(|state| state.reservation.as_ref())
+            .chain(self.unwinds.iter().filter_map(|u| u.reservation.as_ref()));
+        for reservation in held {
+            next.get_mut(&reservation.venue)
+                .ok_or(ArbitrageError::InvalidInput {
+                    reason: "no budget for the venue of a reservation",
+                })?
+                .release(reservation)?;
         }
         for state in &mut self.legs {
             state.reservation = None;
         }
+        for unwind in &mut self.unwinds {
+            unwind.reservation = None;
+        }
+        self.released = true;
         *budgets = next;
         Ok(())
     }
@@ -1119,6 +1324,12 @@ impl TwoLegPlan {
                 }
                 leg.of_mut(&mut next.legs).view = Some(view.clone());
             }
+            LegExecution::UnwindDone {
+                leg,
+                unwind,
+                filled,
+                ..
+            } => next.close_unwind(*leg, *unwind, *filled)?,
         }
         let is_fill = matches!(event, LegExecution::Fill { .. });
         next.step(now, &mut actions, budgets, is_fill)?;
@@ -1185,6 +1396,15 @@ impl TwoLegPlan {
             } => Ok(self.closed_as(*leg, *attempt).is_some_and(|(o, f)| {
                 o == AttemptOutcome::Cancelled && f == Some(cum_qty.normalize())
             })),
+            LegExecution::UnwindDone {
+                leg,
+                unwind,
+                filled,
+                ..
+            } => Ok(self
+                .unwinds
+                .get(*unwind as usize)
+                .is_some_and(|u| u.leg == *leg && u.filled == Some(filled.normalize()))),
             LegExecution::Tick { .. }
             | LegExecution::Disconnected { .. }
             | LegExecution::Reconnected { .. }
@@ -1267,6 +1487,26 @@ impl TwoLegPlan {
         Ok(())
     }
 
+    /// Records an unwind's end. A quantity above the unwind's is a real
+    /// execution and is recorded.
+    fn close_unwind(&mut self, leg: LegIndex, unwind: u32, filled: Decimal) -> Result<()> {
+        let invalid = |reason| Err(ArbitrageError::InvalidInput { reason });
+        let Some(state) = self.unwinds.get_mut(unwind as usize) else {
+            return invalid("end of an unwind that was never requested");
+        };
+        if state.leg != leg {
+            return invalid("unwind end reported for another leg than the unwind's");
+        }
+        if filled < Decimal::ZERO {
+            return invalid("unwind filled quantity is negative");
+        }
+        if state.filled.is_some() {
+            return invalid("unwind closed twice differently");
+        }
+        state.filled = Some(filled.normalize());
+        Ok(())
+    }
+
     /// Re-evaluates deadlines, surplus attempts, overfills, completion and
     /// the failure policy at `at`.
     fn step(
@@ -1315,7 +1555,7 @@ impl TwoLegPlan {
                 Fallback::Abort => self.state = PlanState::Aborted,
                 Fallback::Unwind => {
                     self.state = PlanState::UnwindRequested;
-                    self.request_unwind(actions)?;
+                    self.request_unwind(at, actions, budgets, is_fill)?;
                 }
             }
             return Ok(());
@@ -1329,7 +1569,7 @@ impl TwoLegPlan {
                 if leg.of(&self.legs).pending_resubmit {
                     self.try_resubmit(leg, at, actions, budgets.as_deref_mut(), is_fill)?;
                 } else {
-                    self.on_failure(leg, at, actions, budgets, is_fill)?;
+                    self.on_failure(leg, at, actions, budgets.as_deref_mut(), is_fill)?;
                 }
             }
         }
@@ -1339,11 +1579,11 @@ impl TwoLegPlan {
             PlanState::Aborting if all_done => self.state = PlanState::Aborted,
             PlanState::Unwinding if all_done => {
                 self.state = PlanState::UnwindRequested;
-                self.request_unwind(actions)?;
+                self.request_unwind(at, actions, budgets, is_fill)?;
             }
-            // Executions after the unwind was requested change the residual;
-            // request the difference.
-            PlanState::UnwindRequested => self.request_unwind(actions)?,
+            // Executions after the unwind was requested, and unwinds that
+            // ended short, change what is open; request it.
+            PlanState::UnwindRequested => self.request_unwind(at, actions, budgets, is_fill)?,
             _ => {}
         }
         Ok(())
@@ -1618,30 +1858,172 @@ impl TwoLegPlan {
         Ok(Money::new(excess, self.currency))
     }
 
-    fn request_unwind(&mut self, actions: &mut Vec<PlanAction>) -> Result<()> {
+    /// Requests an unwind of the open residual, `residual - coverage`.
+    ///
+    /// Without budget gating the unwind is emitted at once with no price.
+    /// With it, the unwind is held unless it can be admitted now: never the
+    /// opposite side of a live unwind ([`AdmissionReject::UnwindReversal`]),
+    /// never after the reservations were released or the unwind deadline,
+    /// and never on a fill event; then on its venue's latest view (connected,
+    /// fresh, quoted on its side with size) and with its capital reserved on
+    /// that venue's budget, all or nothing.
+    fn request_unwind(
+        &mut self,
+        at: Timestamp,
+        actions: &mut Vec<PlanAction>,
+        budgets: Option<&mut BTreeMap<VenueId, VenueBudget>>,
+        is_fill: bool,
+    ) -> Result<()> {
         let residual = self.residual()?;
-        let open = exact::sub(residual, self.unwind_requested)?;
+        let coverage = self.unwind_coverage()?;
+        let open = exact::sub(residual, coverage)?;
         if open.is_zero() {
+            self.unwind_hold = None;
             return Ok(());
         }
         // Offset on the leg whose position has the sign of the open residual.
         let first = self.legs[0].position()?;
-        let source = if !first.is_zero() && first.is_sign_negative() == open.is_sign_negative() {
-            &self.legs[0]
+        let leg = if !first.is_zero() && first.is_sign_negative() == open.is_sign_negative() {
+            LegIndex::First
         } else {
-            &self.legs[1]
+            LegIndex::Second
         };
         let side = if open.is_sign_positive() {
             Action::Sell
         } else {
             Action::Buy
         };
+        let quantity = Quantity::new(open.abs())?;
+        let (Some(funding), Some(unwind_funding)) = (self.funding, self.unwind_funding) else {
+            self.push_unwind(leg, side, quantity, None, None, actions)?;
+            return Ok(());
+        };
+        let reversal = !coverage.is_zero()
+            && coverage.is_sign_negative() != open.is_sign_negative()
+            && self.unwinds.iter().any(UnwindState::is_live);
+        if reversal {
+            self.unwind_hold = Some(AdmissionReject::UnwindReversal { open });
+            return Ok(());
+        }
+        if self.released {
+            self.unwind_hold = Some(AdmissionReject::Released);
+            return Ok(());
+        }
+        if self.unwind_deadline.is_some_and(|d| d <= at) {
+            self.unwind_hold = Some(AdmissionReject::PastDeadline);
+            return Ok(());
+        }
+        // A fill never admits: the retry waits for the next non-fill event.
+        if is_fill {
+            return Ok(());
+        }
+        let budgets = budgets.ok_or(ArbitrageError::InvalidInput {
+            reason: "a plan with budget gating is driven with apply_with_budgets",
+        })?;
+        let state = leg.of(&self.legs);
+        let funding = LegFunding {
+            fee: leg.of(&funding).fee,
+            sell_funding: *leg.of(&unwind_funding),
+        };
+        match self.admit_unwind(state, side, quantity, funding, at, budgets)? {
+            Ok((price, reservation)) => {
+                self.unwind_hold = None;
+                self.push_unwind(leg, side, quantity, Some(price), Some(reservation), actions)
+            }
+            Err(reason) => {
+                self.unwind_hold = Some(reason);
+                Ok(())
+            }
+        }
+    }
+
+    /// Admits an unwind of `quantity` on `state`'s venue: its price, bound,
+    /// fee and requirement all come from the venue's latest view, checked at
+    /// `at`, and the requirement is reserved on a copy of the venue's budget,
+    /// committed to `budgets` only if it fits. Returns the limit price and
+    /// the reservation, or why it is held.
+    fn admit_unwind(
+        &self,
+        state: &LegState,
+        side: Action,
+        quantity: Quantity,
+        funding: LegFunding,
+        at: Timestamp,
+        budgets: &mut BTreeMap<VenueId, VenueBudget>,
+    ) -> Result<core::result::Result<(Price, Reservation), AdmissionReject>> {
+        if !state.connected {
+            return Ok(Err(AdmissionReject::Disconnected));
+        }
+        let Some(view) = &state.view else {
+            return Ok(Err(AdmissionReject::NoQuote));
+        };
+        let Some(level) = view.book.executable(side)? else {
+            return Ok(Err(AdmissionReject::NoQuote));
+        };
+        let spec = LegSpec {
+            leg: Leg {
+                instrument: state.spec.leg.instrument.clone(),
+                side,
+                quantity,
+                price: level.price,
+            },
+            deadline: None,
+            venue: state.spec.venue.clone(),
+        };
+        let max_staleness_ms = self.max_staleness_ms.unwrap_or(0);
+        if let Some(reason) = check_view(&spec, view, at, max_staleness_ms)? {
+            return Ok(Err(reason));
+        }
+        let computed = price_bound(&spec, view)
+            .and_then(|bound| requirement_at(&spec, bound, funding, self.currency));
+        let need = match computed {
+            Ok(need) => need,
+            Err(ArbitrageError::Overflow { .. } | ArbitrageError::Inexact { .. }) => {
+                return Ok(Err(AdmissionReject::CoverageUnknown));
+            }
+            Err(error) => return Err(error),
+        };
+        let Some(budget) = budgets.get(&spec.venue) else {
+            return Ok(Err(AdmissionReject::NoBudget));
+        };
+        let mut trial = budget.clone();
+        if let Some(reason) = trial.reserve(&need)? {
+            return Ok(Err(reason));
+        }
+        budgets.insert(spec.venue.clone(), trial);
+        Ok(Ok((level.price, need)))
+    }
+
+    /// Records an unwind and emits its intent.
+    fn push_unwind(
+        &mut self,
+        leg: LegIndex,
+        side: Action,
+        quantity: Quantity,
+        price: Option<Price>,
+        reservation: Option<Reservation>,
+        actions: &mut Vec<PlanAction>,
+    ) -> Result<()> {
+        let unwind = u32::try_from(self.unwinds.len()).map_err(|_| ArbitrageError::Overflow {
+            op: "unwind number",
+        })?;
+        let spec = &leg.of(&self.legs).spec;
         actions.push(PlanAction::Unwind {
-            instrument: source.spec.leg.instrument.clone(),
+            unwind,
+            venue: spec.venue.clone(),
+            instrument: spec.leg.instrument.clone(),
             side,
-            quantity: Quantity::new(open.abs())?,
+            quantity,
+            price,
         });
-        self.unwind_requested = residual;
+        self.unwinds.push(UnwindState {
+            leg,
+            side,
+            quantity,
+            price,
+            filled: None,
+            reservation,
+        });
         Ok(())
     }
 }

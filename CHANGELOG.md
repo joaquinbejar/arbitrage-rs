@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the package (#16).
 - `AdmissionReject` has new variants, `Released` and `CoverageUnknown`
   (the enum is `#[non_exhaustive]`).
+- `PlanAction::Unwind` carries the unwind's index (`unwind`), its `venue`
+  and, on a plan with budget gating, its admitted limit (`price`; `None`
+  without gating). `AdmittedLeg` has a new field, `unwind_funding`, the
+  funding of a sell that unwinds that leg. `LegExecution` has a new
+  variant, `UnwindDone` (#30).
 
 ### Added
 
@@ -54,7 +59,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once, idempotently. Gating is configured once, before any event.
   `TwoLegPlan::apply` refuses a gated plan, and
   `apply_with_budgets` and `release_reservations` refuse a plan without
-  gating. Unwind intents are not admitted.
+  gating. `AdmissionReject::CoverageUnknown` is permanent for the rest of
+  the plan.
+
+- Unwind admission (#30): on a gated plan every unwind is admitted against
+  its venue's budget before it is sent, at the executable price of a fresh
+  view (the bid for a sell, the ask for a buy), with the fee and funding of
+  that view, reserved all or nothing and held until
+  `release_reservations`. An unwind that cannot be admitted is held
+  (`TwoLegPlan::unwind_hold`) with the new rejects `Disconnected` and
+  `UnwindReversal`, or the existing ones, and retried on later non-fill
+  events; a fill never admits one. The caller reports each unwind's end
+  with `LegExecution::UnwindDone` (exact duplicates are no-ops, conflicts
+  are `InvalidInput`), credits the venue budget with what the plan's legs
+  filled, and sends a `Tick`; the plan then requests what is still open.
+  The open residual is the residual less the coverage of the unwinds
+  (`TwoLegPlan::unwind_coverage`, live unwinds at their quantity, ended
+  ones at their fill), and the plan never sends the opposite side while an
+  unwind is live. `TwoLegPlan::with_unwind_deadline` stops new unwind
+  admissions at a time (`PastDeadline`), `TwoLegPlan::unwinds` lists them
+  (`UnwindState`), and `release_reservations` is refused while an unwind
+  is live.
 
 ### Changed
 
