@@ -25,7 +25,10 @@
 //!   conversion of an external policy's hedge action into a hedge plan;
 //! - [`parity::evaluate_parity`] (#18): the executable edge of
 //!   put-call parity against a same-expiry future, in both directions, after
-//!   the fees of all three legs.
+//!   the fees of all three legs;
+//! - [`package::PackagePlan`] (#19): a multi-leg package execution
+//!   state machine with legs of different contract sizes, a matched package
+//!   on a common lot grid, a residual per leg and recovery.
 //!
 //! Opportunities and hedge plans are intents with expected numbers. They are
 //! never reported as executed or guaranteed profit, and execution is not
@@ -114,6 +117,7 @@ pub mod hedge;
 pub mod hedge_action;
 pub mod legs;
 pub mod opportunity;
+pub mod package;
 pub mod parity;
 
 mod cost;
