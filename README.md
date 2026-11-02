@@ -324,8 +324,10 @@ and translates its prices, inventory and ledgers into these types.
 
 ### Status
 
-`0.2.0` is the current release; it adopts the shared `Action` type
-(breaking, see the changelog). The crate follows semantic versioning: below
+`0.3.0` is the current release; it adds budget gating for two-leg plans,
+unwind admission and inverse perpetual funding, with breaking changes to
+`LegSpec`, `PlanAction::Unwind`, `AdmittedLeg` and `LegExecution` (see the
+changelog). The crate follows semantic versioning: below
 `1.0.0`, a minor version bump (`0.x.0`) may carry breaking changes, and a
 patch release does not. Changes are listed in
 [`CHANGELOG.md`](CHANGELOG.md). `Decimal` is re-exported and part of the
