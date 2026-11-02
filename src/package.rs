@@ -199,6 +199,16 @@ pub struct PackageLegState {
     last_at: Timestamp,
 }
 
+/// A leg without attempts: never built by this crate.
+const NO_ATTEMPT: ArbitrageError = ArbitrageError::InvalidInput {
+    reason: "a leg has no attempt",
+};
+
+/// A leg index outside the plan (events are checked on entry).
+const UNKNOWN_LEG: ArbitrageError = ArbitrageError::InvalidInput {
+    reason: "event for a leg that is not in the plan",
+};
+
 impl PackageLegState {
     /// Executed contracts over all attempts (see [`AttemptState::executed`]).
     ///
@@ -251,7 +261,7 @@ impl PackageLegState {
     /// Arithmetic errors.
     pub fn status(&self) -> Result<LegStatus> {
         let attempt = self.resubmits();
-        let current = self.current();
+        let current = self.current()?;
         if current.is_live() {
             return Ok(if current.cancel_requested {
                 LegStatus::CancelRequested { attempt }
@@ -272,14 +282,14 @@ impl PackageLegState {
         self.deadline_cancelled || self.spec.spec.effective_deadline().is_some_and(|d| d <= at)
     }
 
-    fn current(&self) -> &AttemptState {
-        // `attempts` is never empty: attempt 0 is created with the leg.
-        &self.attempts[self.attempts.len() - 1]
+    /// The latest attempt. `attempts` is never empty (attempt 0 is created
+    /// with the leg), so the error is unreachable.
+    fn current(&self) -> Result<&AttemptState> {
+        self.attempts.last().ok_or(NO_ATTEMPT)
     }
 
-    fn current_mut(&mut self) -> &mut AttemptState {
-        let last = self.attempts.len() - 1;
-        &mut self.attempts[last]
+    fn current_mut(&mut self) -> Result<&mut AttemptState> {
+        self.attempts.last_mut().ok_or(NO_ATTEMPT)
     }
 }
 
@@ -350,8 +360,9 @@ impl PackagePlan {
             return invalid("a package needs at least two legs");
         }
         for (i, a) in legs.iter().enumerate() {
-            if legs[..i]
+            if legs
                 .iter()
+                .take(i)
                 .any(|b| b.spec.leg.instrument.id == a.spec.leg.instrument.id)
             {
                 return invalid("two package legs are the same instrument");
@@ -521,7 +532,7 @@ impl PackagePlan {
     ///
     /// Arithmetic errors.
     pub fn net_cash(&self) -> Result<Money> {
-        let mut terms = Vec::with_capacity(self.legs.len() * 2);
+        let mut terms = Vec::with_capacity(self.legs.len().saturating_mul(2));
         for leg in &self.legs {
             let sign = match leg.spec.spec.leg.side {
                 Side::Sell => Decimal::ONE,
@@ -563,7 +574,7 @@ impl PackagePlan {
         match (event, event.leg()) {
             (PackageEvent::Fill { .. }, _) => {}
             (_, Some(leg)) => {
-                if at < self.legs[leg].last_at {
+                if at < self.legs.get(leg).ok_or(UNKNOWN_LEG)?.last_at {
                     return Err(ArbitrageError::InvalidInput {
                         reason: "event is older than the last event of its leg",
                     });
@@ -605,7 +616,7 @@ impl PackagePlan {
                 },
             )?,
             PackageEvent::Rejected { leg, attempt, .. } => {
-                next.legs[*leg].last_at = at;
+                next.legs.get_mut(*leg).ok_or(UNKNOWN_LEG)?.last_at = at;
                 next.close_attempt(*leg, *attempt, AttemptOutcome::Rejected, Decimal::ZERO)?;
             }
             PackageEvent::CancelAck {
@@ -614,7 +625,7 @@ impl PackagePlan {
                 cum_qty,
                 ..
             } => {
-                next.legs[*leg].last_at = at;
+                next.legs.get_mut(*leg).ok_or(UNKNOWN_LEG)?.last_at = at;
                 next.close_attempt(*leg, *attempt, AttemptOutcome::Cancelled, *cum_qty)?;
             }
             PackageEvent::Tick { .. } => {}
@@ -657,7 +668,8 @@ impl PackagePlan {
     }
 
     fn closed_as(&self, leg: usize, attempt: u32) -> Option<(AttemptOutcome, Option<Decimal>)> {
-        self.legs[leg]
+        self.legs
+            .get(leg)?
             .attempts
             .get(attempt as usize)
             .and_then(|a| a.outcome.map(|o| (o, a.final_cum)))
@@ -710,7 +722,9 @@ impl PackagePlan {
     }
 
     fn attempt_mut(&mut self, leg: usize, attempt: u32) -> Result<&mut AttemptState> {
-        self.legs[leg]
+        self.legs
+            .get_mut(leg)
+            .ok_or(UNKNOWN_LEG)?
             .attempts
             .get_mut(attempt as usize)
             .ok_or(ArbitrageError::InvalidInput {
@@ -726,7 +740,7 @@ impl PackagePlan {
             });
         }
         let invalid = |reason| Err(ArbitrageError::InvalidInput { reason });
-        let lot = self.legs[fill.leg].spec.lot;
+        let lot = self.legs.get(fill.leg).ok_or(UNKNOWN_LEG)?.spec.lot;
         if !is_multiple(fill.quantity, lot)? || !is_multiple(fill.cum_qty, lot)? {
             return invalid("a fill is not a whole number of the leg's lots");
         }
@@ -741,7 +755,7 @@ impl PackagePlan {
         // Beyond the attempt quantity or the acknowledged final quantity it
         // is still a real execution: it is recorded, never rejected.
         state.observed = cum;
-        let leg_state = &mut self.legs[fill.leg];
+        let leg_state = self.legs.get_mut(fill.leg).ok_or(UNKNOWN_LEG)?;
         // Prices are per unit of underlying and quantities in contracts: the
         // notional is price * contracts * contract_size, added in one exact
         // sum.
@@ -774,7 +788,10 @@ impl PackagePlan {
             return invalid("acknowledged cum_qty is negative");
         }
         if final_cum > Decimal::ZERO
-            && !is_multiple(Quantity::new(final_cum)?, self.legs[leg].spec.lot)?
+            && !is_multiple(
+                Quantity::new(final_cum)?,
+                self.legs.get(leg).ok_or(UNKNOWN_LEG)?.spec.lot,
+            )?
         {
             return invalid("acknowledged cum_qty is not a whole number of the leg's lots");
         }
@@ -797,10 +814,10 @@ impl PackagePlan {
     /// the failure policy at `at`.
     fn step(&mut self, at: Timestamp, actions: &mut Vec<PackageAction>) -> Result<()> {
         for i in 0..self.legs.len() {
-            let remaining = self.legs[i].remaining()?;
-            let state = &mut self.legs[i];
+            let state = self.legs.get_mut(i).ok_or(UNKNOWN_LEG)?;
+            let remaining = state.remaining()?;
             let attempt = state.resubmits();
-            if !state.current().is_live() || state.current().cancel_requested {
+            if !state.current()?.is_live() || state.current()?.cancel_requested {
                 continue;
             }
             // A live attempt made surplus by executions elsewhere (a late
@@ -816,7 +833,7 @@ impl PackagePlan {
                 state.deadline_cancelled = true;
             }
             if surplus || expired {
-                state.current_mut().cancel_requested = true;
+                state.current_mut()?.cancel_requested = true;
                 actions.push(PackageAction::Cancel { leg: i, attempt });
             }
         }
@@ -885,9 +902,9 @@ impl PackagePlan {
             Fallback::Abort => PlanState::Aborting,
             Fallback::Unwind => PlanState::Unwinding,
         };
-        for i in 0..self.legs.len() {
-            if let LegStatus::Working { attempt } = self.legs[i].status()? {
-                self.legs[i].current_mut().cancel_requested = true;
+        for (i, state) in self.legs.iter_mut().enumerate() {
+            if let LegStatus::Working { attempt } = state.status()? {
+                state.current_mut()?.cancel_requested = true;
                 actions.push(PackageAction::Cancel { leg: i, attempt });
             }
         }
@@ -905,8 +922,8 @@ impl PackagePlan {
             // Checked against the event time itself: a rejection or an
             // acknowledgement at or after the effective deadline never
             // resubmits, with or without an earlier tick.
-            if total < max_resubmits && !self.legs[leg].past_deadline(at) {
-                let state = &mut self.legs[leg];
+            let state = self.legs.get_mut(leg).ok_or(UNKNOWN_LEG)?;
+            if total < max_resubmits && !state.past_deadline(at) {
                 let quantity = Quantity::new(state.remaining()?)?;
                 state.attempts.push(AttemptState::new(quantity));
                 actions.push(PackageAction::Resubmit {
@@ -923,12 +940,13 @@ impl PackagePlan {
 
     fn request_unwind(&mut self, actions: &mut Vec<PackageAction>) -> Result<()> {
         let excess = self.excess()?;
-        for (i, leg) in self.legs.iter().enumerate() {
+        let pending = excess.iter().zip(self.unwind_requested.iter_mut());
+        for ((i, leg), (excess, requested)) in self.legs.iter().enumerate().zip(pending) {
             let signed = match leg.spec.spec.leg.side {
-                Side::Buy => excess[i],
-                Side::Sell => exact::neg(excess[i]),
+                Side::Buy => *excess,
+                Side::Sell => exact::neg(*excess),
             };
-            let open = exact::sub(signed, self.unwind_requested[i])?;
+            let open = exact::sub(signed, *requested)?;
             if open.is_zero() {
                 continue;
             }
@@ -942,7 +960,7 @@ impl PackagePlan {
                 },
                 quantity: Quantity::new(open.abs())?,
             });
-            self.unwind_requested[i] = signed;
+            *requested = signed;
         }
         Ok(())
     }
@@ -1004,11 +1022,16 @@ fn decimal_lcm(values: &[Decimal]) -> Result<Decimal> {
     for v in values {
         let v = v.normalize();
         let m = v.mantissa().unsigned_abs();
-        let n = 10u128
-            .checked_pow(scale - v.scale())
+        let n = scale
+            .checked_sub(v.scale())
+            .and_then(|k| 10u128.checked_pow(k))
             .and_then(|p| m.checked_mul(p))
             .ok_or(overflow.clone())?;
-        lcm = (lcm / gcd(lcm, n)).checked_mul(n).ok_or(overflow.clone())?;
+        // A zero value has no positive multiple: the division fails.
+        lcm = lcm
+            .checked_div(gcd(lcm, n))
+            .and_then(|l| l.checked_mul(n))
+            .ok_or(overflow.clone())?;
     }
     let lcm = i128::try_from(lcm).map_err(|_| overflow.clone())?;
     Decimal::try_from_i128_with_scale(lcm, scale)
@@ -1018,12 +1041,21 @@ fn decimal_lcm(values: &[Decimal]) -> Result<Decimal> {
 
 fn gcd(mut a: u128, mut b: u128) -> u128 {
     while b != 0 {
-        (a, b) = (b, a % b);
+        // b != 0 in the loop.
+        (a, b) = (b, a.checked_rem(b).unwrap_or(0));
     }
     a
 }
 
 #[cfg(test)]
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;

@@ -1,5 +1,14 @@
 //! Hand-checked fixtures for `hedge_action::hedge_plan_from_action`.
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::hedge_action::{
     ActionMarket, ActionOutcome, ActionQuantity, Adjustment, ExcessPolicy, HedgeAction,
     HedgeLimits, NoPlanReason, hedge_plan_from_action,
@@ -16,8 +25,8 @@ fn usd() -> Currency {
 fn q(x: Decimal) -> Quantity {
     Quantity::new(x).unwrap()
 }
-fn lvl(px: Decimal, s: Decimal) -> Option<Level> {
-    Some(Level::new(Price::new(px).unwrap(), q(s)))
+fn lvl(px: Decimal, s: Decimal) -> Level {
+    Level::new(Price::new(px).unwrap(), q(s))
 }
 
 /// A dated future quoted 99.5 / 100.5 with 100 a side, 5 bps fee, current
@@ -26,8 +35,8 @@ fn market() -> ActionMarket {
     ActionMarket {
         quote_currency: usd(),
         book: TopOfBook {
-            bid: lvl(dec!(99.5), dec!(100)),
-            ask: lvl(dec!(100.5), dec!(100)),
+            bid: Some(lvl(dec!(99.5), dec!(100))),
+            ask: Some(lvl(dec!(100.5), dec!(100))),
         },
         fee: FeeRate::from_bps(dec!(5)).unwrap(),
         exposure: dec!(12.5),
@@ -77,7 +86,7 @@ fn an_exact_action_becomes_the_same_plan_as_the_band_hedger() {
     let p = plan(&a, &limits(ExcessPolicy::Clip), &market());
     assert_eq!(p.requested, dec!(12.5));
     assert_eq!(p.feasible, q(dec!(12.5)));
-    assert!(p.adjustments.is_empty());
+    assert_eq!(p.adjustments.len(), 0);
     assert_eq!(p.plan.leg.side, Side::Sell);
     assert_eq!(p.plan.leg.price.value(), dec!(99.5));
     assert_eq!(
@@ -169,14 +178,14 @@ fn float_actions_are_rounded_once_and_recorded() {
         &limits(ExcessPolicy::Clip),
         &market(),
     );
-    assert!(p.adjustments.is_empty());
+    assert_eq!(p.adjustments.len(), 0);
     assert_eq!(p.feasible, q(dec!(12.5)));
 }
 
 #[test]
 fn quoted_size_and_lot_bound_the_plan() {
     let mut m = market();
-    m.book.bid = lvl(dec!(99.5), dec!(4.05));
+    m.book.bid = Some(lvl(dec!(99.5), dec!(4.05)));
     let p = plan(
         &action(Side::Sell, ActionQuantity::Exact(dec!(12.5))),
         &limits(ExcessPolicy::Clip),
@@ -276,7 +285,7 @@ fn requested_of(x: f64, dp: u32) -> Result<Decimal, ArbitrageError> {
         exposure_cap: None,
     };
     let mut m = market();
-    m.book.ask = lvl(dec!(1), Decimal::MAX);
+    m.book.ask = Some(lvl(dec!(1), Decimal::MAX));
     m.book.bid = None;
     m.fee = FeeRate::zero();
     // Zero exposure so that tiny quantities stay representable after it.
@@ -306,7 +315,7 @@ fn floats_are_rounded_once_from_their_exact_binary_value() {
     // binary, below the tie, so 27 places give 1e-27 (not 2e-27 as a double
     // rounding through 28 digits would).
     assert_eq!(
-        requested_of(1.4999999999999999e-27, 27).unwrap(),
+        requested_of(1.499_999_999_999_999_9e-27, 27).unwrap(),
         dec!(0.000000000000000000000000001)
     );
     // Exact ties go to even; their neighbours go to the nearer side.
@@ -501,7 +510,7 @@ fn above_the_cap_only_reductions_are_accepted() {
     // Thin liquidity above the cap: from +100 a sell of 1 limited to 0.5 by
     // the book is still an accepted partial reduction.
     let mut thin = at(dec!(100));
-    thin.book.bid = lvl(dec!(99.5), dec!(0.5));
+    thin.book.bid = Some(lvl(dec!(99.5), dec!(0.5)));
     let p = plan(
         &action(Side::Sell, ActionQuantity::Exact(dec!(1))),
         &l,
@@ -519,8 +528,8 @@ fn fee_is_exact_when_the_notional_passes_max() {
     let big = dec!(47536897508558602556126370201);
     let mut mk = market();
     mk.book = TopOfBook {
-        bid: lvl(big, dec!(100)),
-        ask: lvl(big + dec!(2), dec!(100)),
+        bid: Some(lvl(big, dec!(100))),
+        ask: Some(lvl(big + dec!(2), dec!(100))),
     };
     mk.fee = FeeRate::from_bps(dec!(1)).unwrap();
     let a = action(Side::Sell, ActionQuantity::Exact(dec!(10)));

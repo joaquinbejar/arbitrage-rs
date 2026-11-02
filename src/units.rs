@@ -107,11 +107,12 @@ impl Quantity {
         // L = lot * 10^s, compared exactly in 768 bits.
         let s = q.scale().max(l.scale());
         let overflow = || ArbitrageError::Overflow { op: "floor_to_lot" };
+        // s is the larger scale, so neither difference saturates.
         let big_q = U768::from_mantissa(q)
-            .checked_mul_pow10(s - q.scale())
+            .checked_mul_pow10(s.saturating_sub(q.scale()))
             .ok_or_else(overflow)?;
         let big_l = U768::from_mantissa(l)
-            .checked_mul_pow10(s - l.scale())
+            .checked_mul_pow10(s.saturating_sub(l.scale()))
             .ok_or_else(overflow)?;
         let lots_le_q = |n: u128| -> Result<bool> {
             let product = U768::from_u128(n)
@@ -129,11 +130,15 @@ impl Quantity {
             .normalize();
         let mut n = estimate.mantissa().unsigned_abs();
         while n > 0 && !lots_le_q(n)? {
-            n -= 1;
+            n = n.saturating_sub(1);
         }
         // n < 2^96, so n + 1 cannot overflow u128.
-        while lots_le_q(n + 1)? {
-            n += 1;
+        loop {
+            let next = n.checked_add(1).ok_or_else(overflow)?;
+            if !lots_le_q(next)? {
+                break;
+            }
+            n = next;
         }
         if n == 0 {
             return Ok(None);
@@ -165,6 +170,14 @@ fn positive(field: &'static str, value: Decimal) -> Result<Decimal> {
 }
 
 #[cfg(test)]
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;

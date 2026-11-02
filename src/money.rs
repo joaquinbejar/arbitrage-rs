@@ -44,19 +44,24 @@ impl Currency {
             });
         }
         let mut bytes = [0u8; MAX_CURRENCY_LEN];
-        bytes[..code.len()].copy_from_slice(code.as_bytes());
-        Ok(Self {
-            bytes,
-            // Bounded by MAX_CURRENCY_LEN above.
-            len: code.len() as u8,
-        })
+        for (slot, b) in bytes.iter_mut().zip(code.bytes()) {
+            *slot = b;
+        }
+        // Bounded by MAX_CURRENCY_LEN above.
+        let len = u8::try_from(code.len()).map_err(|_| ArbitrageError::InvalidCurrency {
+            code: code.to_owned(),
+        })?;
+        Ok(Self { bytes, len })
     }
 
     /// The code as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
         // Only ASCII bytes are stored, so the slice is valid UTF-8.
-        core::str::from_utf8(&self.bytes[..usize::from(self.len)]).unwrap_or_default()
+        self.bytes
+            .get(..usize::from(self.len))
+            .and_then(|b| core::str::from_utf8(b).ok())
+            .unwrap_or_default()
     }
 }
 
@@ -261,6 +266,14 @@ impl fmt::Display for Money {
 }
 
 #[cfg(test)]
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;

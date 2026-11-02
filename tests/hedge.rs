@@ -1,5 +1,14 @@
 //! Hand-checked fixtures for `hedge::plan_band_hedge`.
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::hedge::{Band, HedgeDecision, NoHedgeReason, PositionView, plan_band_hedge};
 use arbitrage_rs::{
     ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Money,
@@ -16,8 +25,8 @@ fn m(x: Decimal) -> Money {
 fn q(x: Decimal) -> Quantity {
     Quantity::new(x).unwrap()
 }
-fn lvl(p: Decimal, s: Decimal) -> Option<Level> {
-    Some(Level::new(Price::new(p).unwrap(), q(s)))
+fn lvl(p: Decimal, s: Decimal) -> Level {
+    Level::new(Price::new(p).unwrap(), q(s))
 }
 
 /// Band [-10, 10] to 0; hedge on a dated future quoted 99.5 / 100.5 with 100
@@ -33,8 +42,8 @@ fn view(exposure: Decimal) -> PositionView {
             Timestamp::from_millis(10_000),
         ),
         book: TopOfBook {
-            bid: lvl(dec!(99.5), dec!(100)),
-            ask: lvl(dec!(100.5), dec!(100)),
+            bid: Some(lvl(dec!(99.5), dec!(100))),
+            ask: Some(lvl(dec!(100.5), dec!(100))),
         },
         fee: FeeRate::from_bps(dec!(5)).unwrap(),
         lot_size: None,
@@ -109,7 +118,7 @@ fn asymmetric_band_hedges_to_its_target() {
 #[test]
 fn quoted_size_and_max_quantity_cap_the_hedge() {
     let mut v = view(dec!(12.5));
-    v.book.bid = lvl(dec!(99.5), dec!(4));
+    v.book.bid = Some(lvl(dec!(99.5), dec!(4)));
     let p = plan(&v);
     assert_eq!(p.leg.quantity, q(dec!(4)));
     assert_eq!(p.required_quantity, q(dec!(12.5)));
@@ -137,7 +146,7 @@ fn no_liquidity_keeps_the_exposure() {
 #[test]
 fn below_one_lot_keeps_the_exposure() {
     let mut v = view(dec!(12.5));
-    v.book.bid = lvl(dec!(99.5), dec!(0.5));
+    v.book.bid = Some(lvl(dec!(99.5), dec!(0.5)));
     v.lot_size = Some(q(dec!(1)));
     assert_eq!(
         plan_band_hedge(&v).unwrap(),
@@ -205,7 +214,7 @@ fn band_hedge_against_no_hedge_baseline() {
     let mut baseline_max = Decimal::ZERO;
     let mut hedged = Decimal::ZERO;
     let mut hedged_max = Decimal::ZERO;
-    let mut hedges = Vec::new();
+    let mut hedge_plans = Vec::new();
     let mut total_cost = Cost::new(m(dec!(0)));
 
     for dx in increments {
@@ -216,7 +225,7 @@ fn band_hedge_against_no_hedge_baseline() {
         if let HedgeDecision::Hedge(p) = plan_band_hedge(&view(hedged)).unwrap() {
             total_cost = total_cost.checked_add(p.expected_cost).unwrap();
             hedged = p.expected_exposure_after;
-            hedges.push((p.leg.side, p.leg.quantity));
+            hedge_plans.push((p.leg.side, p.leg.quantity));
         }
         hedged_max = hedged_max.max(hedged.abs());
     }
@@ -225,7 +234,7 @@ fn band_hedge_against_no_hedge_baseline() {
     assert_eq!(baseline_max, dec!(20));
     assert_eq!(hedged_max, dec!(8));
     assert_eq!(
-        hedges,
+        hedge_plans,
         vec![(Side::Sell, q(dec!(12))), (Side::Buy, q(dec!(12)))]
     );
     assert_eq!(total_cost.money(), m(dec!(13.2)));
@@ -238,8 +247,8 @@ fn spread_cost_and_fee_are_exact_near_max() {
     let big = dec!(47536897508558602556126370201);
     let mut v = view(dec!(20));
     v.book = TopOfBook {
-        bid: lvl(big, dec!(100)),
-        ask: lvl(big + dec!(2), dec!(100)),
+        bid: Some(lvl(big, dec!(100))),
+        ask: Some(lvl(big + dec!(2), dec!(100))),
     };
     v.fee = FeeRate::from_bps(dec!(1)).unwrap();
     v.max_quantity = Some(q(dec!(10)));

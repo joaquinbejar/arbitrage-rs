@@ -164,8 +164,8 @@ impl FeeRate {
     /// `[price, quantity]`: one product with the rate, converted once, so the
     /// notional itself may exceed a `Decimal` when the fee does not.
     pub(crate) fn fee_on_factors(&self, factors: &[Decimal], ccy: Currency) -> Result<Cost> {
-        let mut all = Vec::with_capacity(factors.len() + 2);
-        all.extend(factors.iter().map(|f| f.abs()));
+        let mut all = Vec::with_capacity(factors.len().saturating_add(2));
+        all.extend(factors.iter().map(Decimal::abs));
         all.push(self.bps);
         all.push(BPS_FRACTION);
         let fee = wide::sum_products_exact(&[&all], "fee")?;
@@ -174,6 +174,14 @@ impl FeeRate {
 }
 
 #[cfg(test)]
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use crate::money::Currency;

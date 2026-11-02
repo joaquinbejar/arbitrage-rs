@@ -1,5 +1,14 @@
 //! Hand-checked fixtures for `basis::evaluate_spot_perp`.
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::basis::{
     BasisDirection, BasisEvaluation, BasisInput, BasisRejectReason, evaluate_spot_perp,
 };
@@ -27,8 +36,8 @@ fn q(x: Decimal) -> Quantity {
 fn p(x: Decimal) -> Price {
     Price::new(x).unwrap()
 }
-fn lvl(px: Decimal, s: Decimal) -> Option<Level> {
-    Some(Level::new(p(px), q(s)))
+fn lvl(px: Decimal, s: Decimal) -> Level {
+    Level::new(p(px), q(s))
 }
 fn bps(x: Decimal) -> FeeRate {
     FeeRate::from_bps(x).unwrap()
@@ -59,16 +68,16 @@ fn base() -> BasisInput {
         spot: LegQuote {
             instrument: Instrument::undated(InstrumentId::new("BTC-USD").unwrap()),
             book: TopOfBook {
-                bid: lvl(dec!(29990), dec!(2)),
-                ask: lvl(dec!(30000), dec!(2)),
+                bid: Some(lvl(dec!(29990), dec!(2))),
+                ask: Some(lvl(dec!(30000), dec!(2))),
             },
             fee: bps(dec!(10)),
         },
         perp: LegQuote {
             instrument: Instrument::undated(InstrumentId::new("BTC-USD-PERP").unwrap()),
             book: TopOfBook {
-                bid: lvl(dec!(30060), dec!(2)),
-                ask: lvl(dec!(30070), dec!(2)),
+                bid: Some(lvl(dec!(30060), dec!(2))),
+                ask: Some(lvl(dec!(30070), dec!(2))),
             },
             fee: bps(dec!(5)),
         },
@@ -203,7 +212,7 @@ fn net_of(input: &BasisInput) -> (Money, Money, bool) {
         BasisEvaluation::Rejected(BasisRejectReason::NetEdgeBelowThreshold {
             gross, net, ..
         }) => (gross, net, false),
-        other => panic!("unexpected {other:?}"),
+        other @ BasisEvaluation::Rejected(_) => panic!("unexpected {other:?}"),
     }
 }
 
@@ -288,7 +297,7 @@ fn missing_quote_and_insufficient_size() {
         })
     ));
     let mut input = base();
-    input.spot.book.ask = lvl(dec!(30000), dec!(0.05));
+    input.spot.book.ask = Some(lvl(dec!(30000), dec!(0.05)));
     assert_eq!(
         evaluate_spot_perp(&input).unwrap(),
         BasisEvaluation::Rejected(BasisRejectReason::InsufficientLiquidity {
@@ -395,7 +404,7 @@ fn no_funding_instant_in_a_short_window() {
     input.funding = vec![];
     let eval = evaluate_spot_perp(&input).unwrap();
     let o = eval.accepted().expect("accepted");
-    assert!(o.expected_costs.funding.is_empty());
+    assert_eq!(o.expected_costs.funding.len(), 0);
     assert!(o.expected_costs.funding_total.money().is_zero());
     assert_eq!(o.expected_net, m(dec!(60)));
 }
@@ -429,7 +438,7 @@ fn funding_settled_per_event_as_the_venue_rounds() {
     assert_eq!(o.expected_net, m(dec!(69.03)));
 }
 
-/// 0.6 * Decimal::MAX: twice it passes the range of a Decimal.
+/// 0.6 * `Decimal::MAX`: twice it passes the range of a Decimal.
 const BIG: Decimal = dec!(47536897508558602556126370201);
 
 #[test]
@@ -437,8 +446,8 @@ fn gross_is_exact_when_notionals_pass_max() {
     // Long spot at BIG, short perp at BIG + 1, q = 2: the notionals pass
     // Decimal::MAX, the gross 2 * (1 - 0) fits. Zero fees and funding.
     let mut i = base();
-    i.spot.book.ask = lvl(BIG, dec!(2));
-    i.perp.book.bid = lvl(BIG + dec!(1), dec!(2));
+    i.spot.book.ask = Some(lvl(BIG, dec!(2)));
+    i.perp.book.bid = Some(lvl(BIG + dec!(1), dec!(2)));
     i.spot.fee = FeeRate::zero();
     i.perp.fee = FeeRate::zero();
     i.target_quantity = q(dec!(2));
@@ -449,7 +458,7 @@ fn gross_is_exact_when_notionals_pass_max() {
             assert_eq!(o.expected_costs.total.money().amount(), dec!(0));
             assert_eq!(o.expected_net.amount(), dec!(2));
         }
-        other => panic!("unexpected {other:?}"),
+        other @ BasisEvaluation::Rejected(_) => panic!("unexpected {other:?}"),
     }
 }
 
@@ -458,8 +467,8 @@ fn cost_total_is_one_exact_sum() {
     // Entry fees of BIG and BIG + 1 (100 % of notional) pass Decimal::MAX
     // as a running sum; carry benefits bring the total back.
     let mut i = base();
-    i.spot.book.ask = lvl(BIG, dec!(2));
-    i.perp.book.bid = lvl(BIG + dec!(1), dec!(2));
+    i.spot.book.ask = Some(lvl(BIG, dec!(2)));
+    i.perp.book.bid = Some(lvl(BIG + dec!(1), dec!(2)));
     i.spot.fee = bps(dec!(10000));
     i.perp.fee = FeeRate::zero();
     i.target_quantity = q(dec!(1));

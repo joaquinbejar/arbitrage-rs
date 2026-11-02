@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The library is checked with `clippy::pedantic`, `unwrap_used`,
+  `expect_used`, `panic`, `indexing_slicing` and `arithmetic_side_effects`
+  denied. No public behavior changes: index accesses use checked lookups
+  with typed errors for states the crate never builds, and integer
+  arithmetic is checked or explicitly wrapping where it cannot overflow.
+  `unreachable`, `todo` and `unimplemented` are denied too. Test modules
+  and `tests/` opt out of these lints explicitly (#27).
+
 ## [0.1.0] - 2026-11-02
 
 First release.
