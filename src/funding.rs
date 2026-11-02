@@ -26,8 +26,9 @@
 //!   quotient of `contracts * contract_value * rate` by `mark` in the same
 //!   integers, so it usually has no exact `Decimal` and must be settled. A venue's settlement quantum is
 //!   applied with [`funding_cashflow_rounded`]: **one** rounding of that
-//!   exact product, to [`SettlementRounding::dp`] decimal places in the quote
-//!   currency, with an explicit [`Rounding`] mode (for example half-even, as
+//!   exact amount, to [`SettlementRounding::dp`] decimal places in the
+//!   settlement currency (the quote currency for a linear perpetual, the
+//!   base currency for an inverse one), with an explicit [`Rounding`] mode (for example half-even, as
 //!   a venue may specify). Rounding the two-step product, or rounding an
 //!   already-rounded amount again, is never done.
 //!
@@ -264,8 +265,9 @@ pub fn funding_cashflow(
     Ok(Cost::new(Money::new(amount, settlement)))
 }
 
-/// How a venue settles funding amounts: decimal places of the quote
-/// currency and the rounding mode.
+/// How a venue settles funding amounts: decimal places of the settlement
+/// currency (quote for a linear perpetual, base for an inverse one) and the
+/// rounding mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SettlementRounding {
     dp: u32,
