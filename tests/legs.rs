@@ -277,7 +277,7 @@ fn complete_policy_resubmits_then_falls_back() {
 
 #[test]
 fn ack_reports_fills_in_flight_so_no_resubmit_overlaps_them() {
-    // Codex probe: A fills 10; B0 fills 3; B0 is cancelled after 10 executed
+    // A fills 10; B0 fills 3; B0 is cancelled after 10 executed
     // at the venue, of which only 3 were observed. The ack's cum_qty of 10
     // completes B: no resubmit, and the late fill of 7 is consistent.
     let policy = FailurePolicy::Complete {
@@ -673,7 +673,7 @@ fn invalid_events_leave_the_plan_unchanged() {
 
 #[test]
 fn an_error_after_the_state_change_leaves_the_plan_unchanged() {
-    // Codex M311A-3: the plan must not commit before the whole step and its
+    // The plan must not commit before the whole step and its
     // report succeed. Legs of MAX: A executes MAX, then B executes 0.1, so
     // B's remaining and the residual MAX - 0.1 need 29 digits and are not
     // representable. The fill is valid on its own; the step fails after it.
@@ -715,7 +715,7 @@ fn construction_is_validated() {
         )
         .is_err()
     );
-    // Codex probe: buy 10 / sell 5 cannot offset one to one.
+    // Buy 10 / sell 5 cannot offset one to one.
     assert!(matches!(
         new(
             leg("X", Action::Buy, dec!(10)),
@@ -990,7 +990,7 @@ fn no_resubmit_at_or_after_the_deadline_without_a_tick() {
         max_resubmits: 2,
         then: Fallback::Abort,
     };
-    // Codex repro: a CancelAck exactly at the deadline, no tick before it.
+    // A CancelAck exactly at the deadline, no tick before it.
     let mut plan_a = plan(policy, Some(t(10)));
     let r = plan_a.apply(&ack(B, 0, dec!(0), 10)).unwrap();
     assert_eq!(r.actions, vec![PlanAction::Cancel { leg: A, attempt: 0 }]);
