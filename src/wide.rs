@@ -192,6 +192,54 @@ impl U768 {
         None
     }
 
+    /// Whether bit `i` (0 is the least significant) is set.
+    fn bit(&self, i: usize) -> bool {
+        self.0
+            .get(i / 64)
+            .is_some_and(|limb| (limb >> (i % 64)) & 1 == 1)
+    }
+
+    /// Sets bit `i`; a bit past the width is ignored.
+    fn set_bit(&mut self, i: usize) {
+        if let Some(limb) = self.0.get_mut(i / 64) {
+            *limb |= 1 << (i % 64);
+        }
+    }
+
+    /// `(self << 1) | low` modulo `2^768`, and the bit shifted out.
+    fn shl1_or(&self, low: bool) -> (Self, bool) {
+        let mut out = [0u64; LIMBS];
+        let mut carry = low;
+        for (slot, limb) in out.iter_mut().zip(self.0.iter()) {
+            *slot = (limb << 1) | u64::from(carry);
+            carry = limb >> 63 == 1;
+        }
+        (Self(out), carry)
+    }
+
+    /// `(self / divisor, self % divisor)`, or `None` if `divisor` is zero.
+    ///
+    /// Binary long division over all 768 bits. The running remainder stays
+    /// below `divisor`; when shifting it left pushes a bit out of the width,
+    /// the true value is `2^768 + rem >= divisor`, so it is reduced, and the
+    /// subtraction modulo `2^768` gives the exact difference.
+    pub(crate) fn div_rem(&self, divisor: &Self) -> Option<(Self, Self)> {
+        if divisor.is_zero() {
+            return None;
+        }
+        let mut quotient = Self::ZERO;
+        let mut rem = Self::ZERO;
+        for i in (0..LIMBS * 64).rev() {
+            let (shifted, overflow) = rem.shl1_or(self.bit(i));
+            rem = shifted;
+            if overflow || rem >= *divisor {
+                rem = rem.wrapping_sub(divisor);
+                quotient.set_bit(i);
+            }
+        }
+        Some((quotient, rem))
+    }
+
     /// `(self / 10, self % 10)`.
     fn div_rem_10(&self) -> (Self, u64) {
         let mut q = [0u64; LIMBS];
@@ -375,6 +423,112 @@ impl Ord for U768 {
         }
         Ordering::Equal
     }
+}
+
+/// The exact quotient `prod(factors) / divisor` at `dp` decimal places:
+/// `|value| * 10^dp = whole + remainder / denominator`, with the sign
+/// apart. Nothing is rounded.
+struct Quotient {
+    whole: U768,
+    remainder: U768,
+    denominator: U768,
+    negative: bool,
+}
+
+/// `prod(factors) / divisor`, scaled by `10^dp`, as an integer quotient and
+/// remainder.
+///
+/// With `prod = n / 10^s_n` and `divisor = d / 10^s_d`, the scaled value is
+/// `n * 10^(s_d + dp) / (d * 10^s_n)`. For three factors `n < 2^288` and
+/// `s_d + dp <= 56`, so the numerator is below `2^475`, and the denominator
+/// below `2^96 * 10^84 < 2^376`: both fit in 768 bits.
+fn quotient(factors: &[Decimal], divisor: Decimal, dp: u32, op: &'static str) -> Result<Quotient> {
+    if dp > MAX_SCALE {
+        return Err(ArbitrageError::Inexact { op });
+    }
+    if divisor.is_zero() {
+        return Err(ArbitrageError::InvalidInput {
+            reason: "division by zero",
+        });
+    }
+    let overflow = || ArbitrageError::Overflow { op };
+    let (n, s_n, negative_n) = product(factors, op)?;
+    let numerator = n
+        .checked_mul_pow10(divisor.scale().checked_add(dp).ok_or_else(overflow)?)
+        .ok_or_else(overflow)?;
+    let denominator = U768::from_mantissa(divisor)
+        .checked_mul_pow10(s_n)
+        .ok_or_else(overflow)?;
+    let (whole, remainder) = numerator.div_rem(&denominator).ok_or_else(overflow)?;
+    Ok(Quotient {
+        whole,
+        remainder,
+        denominator,
+        negative: !n.is_zero() && (negative_n != divisor.is_sign_negative()),
+    })
+}
+
+/// The exact quotient `prod(factors) / divisor`, converted once.
+///
+/// # Errors
+///
+/// - [`ArbitrageError::InvalidInput`] if `divisor` is zero.
+/// - [`ArbitrageError::Inexact`] if the quotient does not terminate within
+///   28 decimal places or no `Decimal` holds it.
+/// - [`ArbitrageError::Overflow`] if it is out of `Decimal`'s range.
+pub(crate) fn quotient_exact(
+    factors: &[Decimal],
+    divisor: Decimal,
+    op: &'static str,
+) -> Result<Decimal> {
+    let q = quotient(factors, divisor, MAX_SCALE, op)?;
+    if !q.remainder.is_zero() {
+        return Err(ArbitrageError::Inexact { op });
+    }
+    to_decimal(q.whole, MAX_SCALE, q.negative, op)
+}
+
+/// The exact quotient `prod(factors) / divisor` rounded **once** to `dp`
+/// decimal places with `mode`.
+///
+/// # Errors
+///
+/// - [`ArbitrageError::InvalidInput`] if `divisor` is zero.
+/// - [`ArbitrageError::Inexact`] if `dp` is above 28 or the rounded value
+///   needs more than 96 bits of mantissa.
+/// - [`ArbitrageError::Overflow`] if it is out of `Decimal`'s range.
+pub(crate) fn quotient_round(
+    factors: &[Decimal],
+    divisor: Decimal,
+    dp: u32,
+    mode: Rounding,
+    op: &'static str,
+) -> Result<Decimal> {
+    let q = quotient(factors, divisor, dp, op)?;
+    let inexact = !q.remainder.is_zero();
+    let away = match mode {
+        Rounding::Up => inexact && !q.negative,
+        Rounding::Down => inexact && q.negative,
+        Rounding::TowardZero => false,
+        Rounding::HalfEven => {
+            // Compare 2 * remainder with the denominator; a bit shifted out
+            // means 2 * remainder >= 2^768 > denominator.
+            let (twice, overflow) = q.remainder.shl1_or(false);
+            match (overflow, twice.cmp(&q.denominator)) {
+                (true, _) | (false, Ordering::Greater) => true,
+                (false, Ordering::Equal) => q.whole.is_odd(),
+                (false, Ordering::Less) => false,
+            }
+        }
+    };
+    let rounded = if away {
+        q.whole
+            .checked_add_one()
+            .ok_or(ArbitrageError::Overflow { op: "round" })?
+    } else {
+        q.whole
+    };
+    to_decimal(rounded, dp, q.negative, op)
 }
 
 /// The `Decimal` equal to `±m / 10^scale`, normalized.
@@ -769,5 +923,114 @@ mod tests {
             let refs: Vec<&[Decimal]> = terms.iter().map(<[Decimal; 2]>::as_slice).collect();
             assert_eq!(sum_products_exact(&refs, "t").unwrap(), expected);
         }
+    }
+
+    /// Long division against `u128` on values that fit, over a fixed
+    /// xorshift sequence.
+    #[test]
+    fn div_rem_matches_u128() {
+        let seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut state = seed;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for i in 0..20_000 {
+            let a = (u128::from(next()) << 64) | u128::from(next());
+            let b = ((u128::from(next()) << 64) | u128::from(next())) >> (next() % 128);
+            let (ua, ub) = (U768::from_u128(a), U768::from_u128(b));
+            if b == 0 {
+                assert!(ua.div_rem(&ub).is_none(), "seed {seed:#x}, case {i}");
+                continue;
+            }
+            let (q, r) = ua.div_rem(&ub).unwrap();
+            assert_eq!(
+                (q.to_u128(), r.to_u128()),
+                (Some(a / b), Some(a % b)),
+                "seed {seed:#x}, case {i}: {a} / {b}"
+            );
+        }
+    }
+
+    /// `q * d + r == n` and `r < d` on values far beyond `u128`, including a
+    /// divisor whose top bit is set, where shifting the running remainder
+    /// carries out of the width.
+    #[test]
+    fn div_rem_is_exact_beyond_u128() {
+        let all_ones = U768([u64::MAX; LIMBS]);
+        let mut top = U768::ZERO;
+        top.set_bit(LIMBS * 64 - 1);
+        let top_plus_one = top.checked_add_one().unwrap();
+        let ten_200 = U768::from_u128(1).checked_mul_pow10(200).unwrap();
+        let big = U768::from_u128(u128::MAX)
+            .checked_mul(&U768::from_u128(u128::MAX))
+            .unwrap()
+            .checked_mul(&U768::from_u128(12_345))
+            .unwrap();
+        let cases = [
+            (all_ones, top_plus_one),
+            (all_ones, top),
+            (all_ones, all_ones),
+            (all_ones, U768::from_u128(1)),
+            (all_ones, U768::from_u128(3)),
+            (ten_200, big),
+            (big, ten_200),
+            (big, big),
+            (U768::from_u128(5), big),
+        ];
+        for (n, d) in cases {
+            let (q, r) = n.div_rem(&d).unwrap();
+            assert!(r < d);
+            let back = q.checked_mul(&d).unwrap().checked_add(&r).unwrap();
+            assert_eq!(back, n);
+        }
+        assert_eq!(
+            all_ones.div_rem(&all_ones).unwrap(),
+            (U768::from_u128(1), U768::ZERO)
+        );
+        assert_eq!(
+            U768::from_u128(5).div_rem(&big).unwrap(),
+            (U768::ZERO, U768::from_u128(5))
+        );
+        assert_eq!(
+            all_ones.div_rem(&top_plus_one).unwrap().0,
+            U768::from_u128(1)
+        );
+        assert!(all_ones.div_rem(&U768::ZERO).is_none());
+    }
+
+    #[test]
+    fn quotients_round_once_and_reject_a_zero_divisor() {
+        // 1 / 3 at 4 places: 0.3333; 2 / 3: 0.6667 half even, 0.6666 toward zero.
+        let q = |n: Decimal, d: Decimal, dp, mode| quotient_round(&[n], d, dp, mode, "t").unwrap();
+        assert_eq!(q(dec!(1), dec!(3), 4, Rounding::HalfEven), dec!(0.3333));
+        assert_eq!(q(dec!(2), dec!(3), 4, Rounding::HalfEven), dec!(0.6667));
+        assert_eq!(q(dec!(2), dec!(3), 4, Rounding::TowardZero), dec!(0.6666));
+        assert_eq!(q(dec!(-2), dec!(3), 4, Rounding::Up), dec!(-0.6666));
+        assert_eq!(q(dec!(-2), dec!(3), 4, Rounding::Down), dec!(-0.6667));
+        // Exact ties: 0.25 and 0.35 at one place.
+        assert_eq!(q(dec!(1), dec!(4), 1, Rounding::HalfEven), dec!(0.2));
+        assert_eq!(q(dec!(-1), dec!(4), 1, Rounding::HalfEven), dec!(-0.2));
+        assert_eq!(q(dec!(7), dec!(20), 1, Rounding::HalfEven), dec!(0.4));
+        assert_eq!(q(dec!(-7), dec!(20), 1, Rounding::HalfEven), dec!(-0.4));
+        assert_eq!(q(dec!(0), dec!(3), 0, Rounding::Up), dec!(0));
+        assert_eq!(
+            quotient_exact(&[dec!(1)], dec!(8), "t").unwrap(),
+            dec!(0.125)
+        );
+        assert_eq!(
+            quotient_exact(&[dec!(1)], dec!(3), "t").unwrap_err(),
+            ArbitrageError::Inexact { op: "t" }
+        );
+        assert!(matches!(
+            quotient_round(&[dec!(1)], Decimal::ZERO, 2, Rounding::HalfEven, "t"),
+            Err(ArbitrageError::InvalidInput { .. })
+        ));
+        assert_eq!(
+            quotient_round(&[dec!(1)], dec!(3), 29, Rounding::HalfEven, "t").unwrap_err(),
+            ArbitrageError::Inexact { op: "t" }
+        );
     }
 }

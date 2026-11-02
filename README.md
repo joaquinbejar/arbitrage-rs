@@ -60,8 +60,11 @@ Two principles hold everywhere:
 
 #### Funding
 
-- Linear perpetual funding cashflows, funding schedules, and estimated
-  versus published rates, with a single rounding to a settlement quantum.
+- Linear and inverse perpetual funding cashflows, funding schedules, and
+  estimated versus published rates, with a single rounding to a settlement
+  quantum. Inverse funding is paid in the base currency, `contracts *
+  contract_value / mark * rate`, as one exact quotient. The spot-perpetual
+  basis evaluator supports linear perpetuals only.
 
 #### Execution
 

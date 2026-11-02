@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Inverse perpetual funding (M3-06b, #13, #32): `PerpConvention::Inverse`
+  with a `ContractValue` (quote units per contract, "face") and the base
+  currency in which funding is paid. `funding_cashflow` returns the exact
+  amount `contracts * contract_value / mark * rate` (positive is paid; longs
+  pay when the rate is positive), formed as one exact quotient in the wide
+  integers, or `Inexact` when it does not terminate within 28 places, which
+  is the usual case. `funding_cashflow_rounded` settles it with one rounding
+  to the settlement quantum in the explicit mode. A settlement currency other
+  than the convention's base is `CurrencyMismatch`.
+
 - Budget gating for two-leg plans (#16):
   `TwoLegPlan::with_budget_gating` takes over the admission's
   reservations (`AdmittedLeg`, `LegFunding`) after checking that each is
@@ -45,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TwoLegPlan::apply` refuses a gated plan, and
   `apply_with_budgets` and `release_reservations` refuse a plan without
   gating. Unwind intents are not admitted.
+
+### Changed
+
+- `basis::evaluate_spot_perp` refuses an inverse perpetual with
+  `InvalidInput` before computing anything: its kernel takes the position in
+  base units, funding in the quote currency and a PnL linear in price (#32).
 
 ## [0.2.0] - 2026-11-02
 

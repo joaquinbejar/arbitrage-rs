@@ -82,7 +82,8 @@ pub struct BasisInput {
     pub spot: LegQuote,
     /// Perpetual instrument, quote and taker fee.
     pub perp: LegQuote,
-    /// Funding convention of the perpetual.
+    /// Funding convention of the perpetual; only
+    /// [`PerpConvention::Linear`] is supported.
     pub convention: PerpConvention,
     /// Current mark price of the perpetual (recorded; funding uses each
     /// event's own mark).
@@ -342,7 +343,10 @@ fn funding_costs(input: &BasisInput, q: Quantity) -> Result<Vec<FundingCost>> {
 ///
 /// - [`ArbitrageError::UnsupportedAction`] if a carry item's leg is not buy or
 ///   sell (checked first).
-/// - [`ArbitrageError::InvalidInput`] if the legs are the same instrument,
+/// - [`ArbitrageError::InvalidInput`] if the perpetual is not linear (checked
+///   next, before anything is computed: an inverse perpetual's `PnL` is not
+///   linear in price, and its funding is paid in the base currency), if the
+///   legs are the same instrument,
 ///   `min_quantity` is above `target_quantity`, `exit_time` is not after
 ///   `as_of`, the funding events are not exactly the schedule's instants in
 ///   `(as_of, exit_time]` in order, or the implied perpetual exit price
@@ -456,6 +460,15 @@ fn validate(input: &BasisInput) -> Result<()> {
     // rejection for another reason.
     for item in &input.carry {
         Dir::try_from(item.leg)?;
+    }
+    // The basis kernel takes the perpetual position in base units and its
+    // funding in the quote currency, with PnL linear in price. An inverse
+    // perpetual has a position in contracts, funding in base and PnL
+    // convex in price, so it is refused before anything is computed.
+    if input.convention != PerpConvention::Linear {
+        return Err(ArbitrageError::InvalidInput {
+            reason: "evaluate_spot_perp supports linear perpetuals only",
+        });
     }
     if input.spot.instrument.id == input.perp.instrument.id {
         return Err(ArbitrageError::InvalidInput {
