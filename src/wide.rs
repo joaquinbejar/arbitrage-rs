@@ -1,10 +1,11 @@
-//! Unsigned 384-bit integers for exact comparisons and products of
-//! [`Decimal`] mantissas.
+//! Unsigned 768-bit integers for exact comparisons, products and sums of
+//! products of [`Decimal`] mantissas.
 //!
-//! A `Decimal` is `m / 10^s` with `m < 2^96` and `s <= 28`. Aligning two of
-//! them to a common scale multiplies a mantissa by at most `10^28 < 2^94`,
-//! and a product of two aligned values stays below `2^96 * 2^96 * 2^94 =
-//! 2^286`, so 384 bits never overflow for the uses in this crate. The
+//! A `Decimal` is `m / 10^s` with `m < 2^96` and `s <= 28`. A product of
+//! three factors is below `2^288` at a scale of at most 84, and aligning it
+//! to a common scale multiplies it by at most `10^84 < 2^280`, so a sum of
+//! such products stays far below 768 bits. A product of four factors where
+//! one is a power of ten (a basis-point divisor) fits as well. The
 //! operations still check and report overflow instead of wrapping.
 
 use crate::error::{ArbitrageError, Result};
@@ -13,13 +14,13 @@ use crate::money::Rounding;
 use core::cmp::Ordering;
 use rust_decimal::Decimal;
 
-const LIMBS: usize = 6;
+const LIMBS: usize = 12;
 
 /// Little-endian 64-bit limbs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct U384([u64; LIMBS]);
+pub(crate) struct U768([u64; LIMBS]);
 
-impl U384 {
+impl U768 {
     pub(crate) const ZERO: Self = Self([0; LIMBS]);
 
     pub(crate) fn from_u128(x: u128) -> Self {
@@ -131,6 +132,19 @@ impl U384 {
         Self(out)
     }
 
+    /// `self + other`, or `None` on overflow.
+    fn checked_add(&self, other: &Self) -> Option<Self> {
+        let mut out = [0u64; LIMBS];
+        let mut carry = false;
+        for (i, slot) in out.iter_mut().enumerate() {
+            let (a, c1) = self.0[i].overflowing_add(other.0[i]);
+            let (a, c2) = a.overflowing_add(u64::from(carry));
+            *slot = a;
+            carry = c1 || c2;
+        }
+        if carry { None } else { Some(Self(out)) }
+    }
+
     /// `self + 1`, or `None` on overflow.
     fn checked_add_one(&self) -> Option<Self> {
         let mut limbs = self.0;
@@ -161,15 +175,15 @@ impl U384 {
 ///
 /// # Errors
 ///
-/// [`ArbitrageError::Overflow`] if the magnitude exceeds 384 bits (at most
-/// three `Decimal` factors always fit: `3 * 96 = 288` bits).
-pub(crate) fn product(values: &[Decimal], op: &'static str) -> Result<(U384, u32, bool)> {
-    let mut m = U384::from_u128(1);
+/// [`ArbitrageError::Overflow`] if the magnitude exceeds 768 bits (at most
+/// eight `Decimal` factors always fit: `8 * 96 = 768` bits).
+pub(crate) fn product(values: &[Decimal], op: &'static str) -> Result<(U768, u32, bool)> {
+    let mut m = U768::from_u128(1);
     let mut scale = 0u32;
     let mut negative = false;
     for v in values {
         m = m
-            .checked_mul(&U384::from_mantissa(*v))
+            .checked_mul(&U768::from_mantissa(*v))
             .ok_or(ArbitrageError::Overflow { op })?;
         scale += v.scale();
         negative ^= v.is_sign_negative() && !v.is_zero();
@@ -182,13 +196,86 @@ pub(crate) fn product(values: &[Decimal], op: &'static str) -> Result<(U384, u32
 
 /// Rounds `±m / 10^scale` once to `dp` decimal places with `mode`, returning
 /// the rounded magnitude at scale `min(scale, dp)`.
+/// The exact sum of products `sum_i prod_j terms[i][j]` as
+/// `(magnitude, scale, negative)`, at the largest scale of the products.
+/// A term is negated by including `-1` among its factors. Nothing is
+/// rounded; convert once with [`to_decimal`] or round once with
+/// [`round_to_dp`].
+///
+/// # Errors
+///
+/// [`ArbitrageError::Overflow`] if a product, its alignment or the sum
+/// exceeds 768 bits.
+pub(crate) fn sum_products(terms: &[&[Decimal]], op: &'static str) -> Result<(U768, u32, bool)> {
+    let overflow = ArbitrageError::Overflow { op };
+    let products = terms
+        .iter()
+        .map(|t| product(t, op))
+        .collect::<Result<Vec<_>>>()?;
+    let scale = products.iter().map(|p| p.1).max().unwrap_or(0);
+    let mut acc = U768::ZERO;
+    let mut acc_negative = false;
+    for (m, s, negative) in products {
+        let m = m
+            .checked_mul_pow10(scale - s)
+            .ok_or_else(|| overflow.clone())?;
+        if acc_negative == negative || acc.is_zero() {
+            acc = acc.checked_add(&m).ok_or_else(|| overflow.clone())?;
+            if !m.is_zero() {
+                acc_negative = negative;
+            }
+        } else if acc >= m {
+            acc = acc.wrapping_sub(&m);
+        } else {
+            acc = m.wrapping_sub(&acc);
+            acc_negative = negative;
+        }
+    }
+    if acc.is_zero() {
+        acc_negative = false;
+    }
+    Ok((acc, scale, acc_negative))
+}
+
+/// The exact sum of products (see [`sum_products`]) as a `Decimal`.
+///
+/// # Errors
+///
+/// [`ArbitrageError::Overflow`] or [`ArbitrageError::Inexact`] only if the
+/// exact result does not fit in a `Decimal`.
+pub(crate) fn sum_products_exact(terms: &[&[Decimal]], op: &'static str) -> Result<Decimal> {
+    let (m, scale, negative) = sum_products(terms, op)?;
+    to_decimal(m, scale, negative, op)
+}
+
+/// The sum of products (see [`sum_products`]) rounded once to `dp` decimal
+/// places with `mode`.
+///
+/// # Errors
+///
+/// [`ArbitrageError::Inexact`] if `dp` is above 28, and
+/// [`ArbitrageError::Overflow`] if the rounded result does not fit.
+pub(crate) fn sum_products_round(
+    terms: &[&[Decimal]],
+    dp: u32,
+    mode: Rounding,
+    op: &'static str,
+) -> Result<Decimal> {
+    if dp > MAX_SCALE {
+        return Err(ArbitrageError::Inexact { op });
+    }
+    let (m, scale, negative) = sum_products(terms, op)?;
+    let (m, scale) = round_to_dp(m, scale, negative, dp, mode)?;
+    to_decimal(m, scale, negative, op)
+}
+
 pub(crate) fn round_to_dp(
-    m: U384,
+    m: U768,
     scale: u32,
     negative: bool,
     dp: u32,
     mode: Rounding,
-) -> Result<(U384, u32)> {
+) -> Result<(U768, u32)> {
     if scale <= dp {
         return Ok((m, scale));
     }
@@ -222,13 +309,13 @@ pub(crate) fn round_to_dp(
     Ok((q, dp))
 }
 
-impl PartialOrd for U384 {
+impl PartialOrd for U768 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for U384 {
+impl Ord for U768 {
     fn cmp(&self, other: &Self) -> Ordering {
         for i in (0..LIMBS).rev() {
             match self.0[i].cmp(&other.0[i]) {
@@ -250,7 +337,7 @@ impl Ord for U384 {
 /// - [`ArbitrageError::Overflow`] if the value is out of `Decimal`'s range.
 /// - [`ArbitrageError::Inexact`] if it is in range but needs more than 28
 ///   decimal places or 96 bits of mantissa at its shortest scale.
-pub(crate) fn to_decimal(m: U384, scale: u32, negative: bool, op: &'static str) -> Result<Decimal> {
+pub(crate) fn to_decimal(m: U768, scale: u32, negative: bool, op: &'static str) -> Result<Decimal> {
     let mut m = m;
     let mut scale = scale;
     while scale > 0 && !m.is_zero() {
@@ -279,10 +366,10 @@ pub(crate) fn to_decimal(m: U384, scale: u32, negative: bool, op: &'static str) 
         }
         None => {
             // Out of range if the integer part alone needs more than 96 bits.
-            let ten_s = U384::from_u128(1)
+            let ten_s = U768::from_u128(1)
                 .checked_mul_pow10(scale)
                 .ok_or(ArbitrageError::Overflow { op })?;
-            let max_plus_one = U384::from_u128(1u128 << 96);
+            let max_plus_one = U768::from_u128(1u128 << 96);
             let limit = max_plus_one
                 .checked_mul(&ten_s)
                 .ok_or(ArbitrageError::Overflow { op })?;
@@ -301,7 +388,7 @@ pub(crate) fn to_decimal(m: U384, scale: u32, negative: bool, op: &'static str) 
 ///
 /// The float is decomposed into its integer mantissa `m` and binary exponent
 /// `e` (`x = m * 2^e`), so no intermediate decimal approximation is made:
-/// `round(m * 10^dp / 2^-e)` is computed in 384-bit integers.
+/// `round(m * 10^dp / 2^-e)` is computed in 768-bit integers.
 ///
 /// # Errors
 ///
@@ -330,7 +417,7 @@ pub(crate) fn f64_to_decimal_half_even(x: f64, dp: u32) -> Result<(Decimal, bool
         return Ok((Decimal::ZERO, false));
     }
     let out_of_range = || unsupported("action quantity is outside the supported Decimal range");
-    let m = U384::from_u128(u128::from(m));
+    let m = U768::from_u128(u128::from(m));
     if e >= 0 {
         // An integer: exact at scale 0 if it fits.
         let shift = u32::try_from(e).map_err(|_| out_of_range())?;
@@ -348,7 +435,7 @@ pub(crate) fn f64_to_decimal_half_even(x: f64, dp: u32) -> Result<(Decimal, bool
     let q = numerator.shr(k);
     let back = q.checked_shl(k).ok_or_else(out_of_range)?;
     let r = numerator.wrapping_sub(&back);
-    let half = U384::from_u128(1)
+    let half = U768::from_u128(1)
         .checked_shl(k - 1)
         .ok_or_else(out_of_range)?;
     let inexact = !r.is_zero();
@@ -373,14 +460,14 @@ mod tests {
 
     #[test]
     fn mul_and_compare() {
-        let a = U384::from_u128(u128::MAX);
+        let a = U768::from_u128(u128::MAX);
         let sq = a.checked_mul(&a).unwrap();
         assert!(sq > a);
         let b = a.checked_mul_pow10(28).unwrap();
         assert!(b > a);
-        let big = U384::from_u128(1 << 127).checked_mul_pow10(76).unwrap();
+        let big = U768::from_u128(1 << 127).checked_mul_pow10(78).unwrap();
         assert!(big.checked_mul(&big).is_none());
-        assert_eq!(U384::ZERO.checked_mul(&a).unwrap(), U384::ZERO);
+        assert_eq!(U768::ZERO.checked_mul(&a).unwrap(), U768::ZERO);
     }
 
     fn round(x: Decimal, dp: u32, mode: Rounding) -> Decimal {
@@ -431,10 +518,10 @@ mod tests {
             "t",
         )
         .unwrap();
-        assert_eq!((m, s, neg), (U384::from_u128(1), 32, false));
+        assert_eq!((m, s, neg), (U768::from_u128(1), 32, false));
         // Rounded once to 30 places it is still 1e-32 > 0, so Up gives 1e-30.
         let (r, rs) = round_to_dp(m, s, neg, 30, Rounding::Up).unwrap();
-        assert_eq!((r, rs), (U384::from_u128(1), 30));
+        assert_eq!((r, rs), (U768::from_u128(1), 30));
         let (_, _, neg) = product(&[dec!(-2), dec!(3), dec!(-4)], "t").unwrap();
         assert!(!neg);
         let (m, _, neg) = product(&[dec!(-2), dec!(0)], "t").unwrap();
@@ -445,29 +532,29 @@ mod tests {
     fn to_decimal_strips_zeros_and_classifies() {
         // 9.9999999999999999999999999990 at scale 28 does not fit, but
         // 9.999999999999999999999999999 at scale 27 does.
-        let m = U384::from_u128(99_999_999_999_999_999_999_999_999_990);
+        let m = U768::from_u128(99_999_999_999_999_999_999_999_999_990);
         assert_eq!(
             to_decimal(m, 28, false, "t").unwrap(),
             dec!(9.999999999999999999999999999)
         );
         assert_eq!(
-            to_decimal(U384::from_u128(1500), 3, true, "t").unwrap(),
+            to_decimal(U768::from_u128(1500), 3, true, "t").unwrap(),
             dec!(-1.5)
         );
         assert_eq!(
-            to_decimal(U384::ZERO, 40, false, "t").unwrap(),
+            to_decimal(U768::ZERO, 40, false, "t").unwrap(),
             Decimal::ZERO
         );
         // 2^96 at scale 0 is out of range; at scale 1 it is in range but
         // needs 97 bits.
-        let two96 = U384::from_u128(1 << 96);
+        let two96 = U768::from_u128(1 << 96);
         assert_eq!(
             to_decimal(two96, 0, false, "t"),
             Err(ArbitrageError::Overflow { op: "t" })
         );
         assert_eq!(
             to_decimal(
-                two96.checked_mul(&U384::from_u128(3)).unwrap(),
+                two96.checked_mul(&U768::from_u128(3)).unwrap(),
                 1,
                 false,
                 "t"
@@ -476,12 +563,88 @@ mod tests {
         );
         // 1e-29 needs 29 places.
         assert_eq!(
-            to_decimal(U384::from_u128(1), 29, false, "t"),
+            to_decimal(U768::from_u128(1), 29, false, "t"),
             Err(ArbitrageError::Inexact { op: "t" })
         );
         assert_eq!(
-            to_decimal(U384::from_u128((1 << 96) - 1), 0, false, "t").unwrap(),
+            to_decimal(U768::from_u128((1 << 96) - 1), 0, false, "t").unwrap(),
             Decimal::MAX
         );
+    }
+
+    #[test]
+    fn sums_of_products_are_exact_and_signed() {
+        let t = |terms: &[&[Decimal]]| sum_products_exact(terms, "t").unwrap();
+        assert_eq!(t(&[&[dec!(1.5)], &[dec!(-2.25)], &[dec!(0.75)]]), dec!(0));
+        assert_eq!(
+            t(&[&[dec!(0.1), dec!(0.2)], &[dec!(-1), dec!(0.03)]]),
+            dec!(-0.01)
+        );
+        assert_eq!(t(&[&[dec!(-3)], &[dec!(1)]]), dec!(-2));
+        assert_eq!(t(&[&[dec!(-3)], &[dec!(5)]]), dec!(2));
+        assert_eq!(t(&[]), dec!(0));
+        // Intermediates beyond Decimal::MAX, result representable.
+        let max = Decimal::MAX;
+        assert_eq!(
+            t(&[&[dec!(2), max], &[dec!(-1), max], &[dec!(-1)]]),
+            max - dec!(1)
+        );
+        // An exact result that is not a Decimal is reported, not rounded.
+        assert_eq!(
+            sum_products_exact(&[&[dec!(0.0000000000000000000000000001), dec!(0.1)]], "t"),
+            Err(ArbitrageError::Inexact { op: "t" })
+        );
+    }
+
+    #[test]
+    fn sums_of_products_round_once() {
+        let r = |x: Decimal, mode| sum_products_round(&[&[x]], 0, mode, "t").unwrap();
+        assert_eq!(r(dec!(-1.5), Rounding::HalfEven), dec!(-2));
+        assert_eq!(r(dec!(-0.5), Rounding::HalfEven), dec!(0));
+        assert_eq!(r(dec!(-1.25), Rounding::Down), dec!(-2));
+        assert_eq!(r(dec!(-1.25), Rounding::Up), dec!(-1));
+        assert_eq!(r(dec!(-1.25), Rounding::TowardZero), dec!(-1));
+        assert_eq!(r(dec!(1.25), Rounding::Up), dec!(2));
+        // 1e-32 rounds to zero at 6 places.
+        assert_eq!(
+            sum_products_round(
+                &[&[dec!(0.0000000000000000000000000001), dec!(0.0001)]],
+                6,
+                Rounding::Up,
+                "t"
+            )
+            .unwrap(),
+            dec!(0.000001)
+        );
+        assert_eq!(
+            sum_products_round(&[&[dec!(1)]], 29, Rounding::Up, "t"),
+            Err(ArbitrageError::Inexact { op: "t" })
+        );
+    }
+
+    #[test]
+    fn sums_of_products_match_decimal_on_small_values() {
+        // A fixed linear congruential sequence: no randomness dependency.
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = |modulus: i64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            i64::try_from(state >> 33).unwrap() % modulus - modulus / 2
+        };
+        for _ in 0..5_000 {
+            let mut terms = Vec::new();
+            for _ in 0..4 {
+                let a = Decimal::new(next(2_000_001), u32::try_from(next(9) + 4).unwrap());
+                let b = Decimal::new(next(2_000_001), u32::try_from(next(9) + 4).unwrap());
+                terms.push([a, b]);
+            }
+            let expected = terms
+                .iter()
+                .map(|[a, b]| a * b)
+                .fold(Decimal::ZERO, |acc, x| acc + x);
+            let refs: Vec<&[Decimal]> = terms.iter().map(|t| t.as_slice()).collect();
+            assert_eq!(sum_products_exact(&refs, "t").unwrap(), expected);
+        }
     }
 }

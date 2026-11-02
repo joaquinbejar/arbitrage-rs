@@ -15,7 +15,7 @@
 //!   a snapshot: a position held at a funding instant pays or receives the
 //!   whole interval, with no proration by holding time.
 //! - **Rounding:** [`funding_cashflow`] returns the exact amount. The product
-//!   `position * mark * rate` is formed in 384-bit integers, so nothing is
+//!   `position * mark * rate` is formed in 768-bit integers, so nothing is
 //!   rounded between the two multiplications. A venue's settlement quantum is
 //!   applied with [`funding_cashflow_rounded`]: **one** rounding of that
 //!   exact product, to [`SettlementRounding::dp`] decimal places in the quote
@@ -254,7 +254,7 @@ fn exact_product(
     convention: PerpConvention,
     position: Decimal,
     event: &FundingEvent,
-) -> Result<(wide::U384, u32, bool)> {
+) -> Result<(wide::U768, u32, bool)> {
     match convention {
         PerpConvention::Linear => wide::product(
             &[position, event.mark.value(), event.rate.rate()],

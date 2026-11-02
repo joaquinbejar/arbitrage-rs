@@ -3,7 +3,7 @@
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
 use crate::money::{Currency, Money};
-use crate::wide::{U384, to_decimal};
+use crate::wide::{U768, to_decimal};
 use core::fmt;
 use rust_decimal::Decimal;
 
@@ -104,17 +104,17 @@ impl Quantity {
     pub fn floor_to_lot(&self, lot: Quantity) -> Result<Option<Quantity>> {
         let (q, l) = (self.0.normalize(), lot.0.normalize());
         // Both values as integers at a common scale: Q = q * 10^s and
-        // L = lot * 10^s, compared exactly in 384 bits.
+        // L = lot * 10^s, compared exactly in 768 bits.
         let s = q.scale().max(l.scale());
         let overflow = || ArbitrageError::Overflow { op: "floor_to_lot" };
-        let big_q = U384::from_mantissa(q)
+        let big_q = U768::from_mantissa(q)
             .checked_mul_pow10(s - q.scale())
             .ok_or_else(overflow)?;
-        let big_l = U384::from_mantissa(l)
+        let big_l = U768::from_mantissa(l)
             .checked_mul_pow10(s - l.scale())
             .ok_or_else(overflow)?;
         let lots_le_q = |n: u128| -> Result<bool> {
-            let product = U384::from_u128(n)
+            let product = U768::from_u128(n)
                 .checked_mul(&big_l)
                 .ok_or_else(overflow)?;
             Ok(product <= big_q)
@@ -138,8 +138,8 @@ impl Quantity {
         if n == 0 {
             return Ok(None);
         }
-        let product = U384::from_u128(n)
-            .checked_mul(&U384::from_mantissa(l))
+        let product = U768::from_u128(n)
+            .checked_mul(&U768::from_mantissa(l))
             .ok_or_else(overflow)?;
         let value = to_decimal(product, l.scale(), false, "floor_to_lot")?;
         Ok(Some(Self(value)))

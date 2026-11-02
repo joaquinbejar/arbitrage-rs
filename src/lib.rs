@@ -22,7 +22,10 @@
 //! - [`venues`] (M3-11B): per-venue views and budgets, and all-or-nothing
 //!   admission of both legs without borrowing capital across venues;
 //! - [`hedge_action::hedge_plan_from_action`] (M4-04): a bounded, audited
-//!   conversion of an external policy's hedge action into a hedge plan.
+//!   conversion of an external policy's hedge action into a hedge plan;
+//! - [`parity::evaluate_parity`] (XM2-17a-1): the executable edge of
+//!   put-call parity against a same-expiry future, in both directions, after
+//!   the fees of all three legs.
 //!
 //! Opportunities and hedge plans are intents with expected numbers. They are
 //! never reported as executed or guaranteed profit, and execution is not
@@ -38,6 +41,10 @@
 //!   holds; the [`exact`] module detects that and returns
 //!   [`ArbitrageError::Inexact`]. Out-of-range results return
 //!   [`ArbitrageError::Overflow`].
+//! - A figure built from more than two terms (a sum of products, or a
+//!   product of more than two factors) is formed exactly in wide integers
+//!   and converted or rounded **once**, so an intermediate never fails when
+//!   the result is representable ([`parity`] follows this rule).
 //! - Rounding happens only where a caller asks for it, with an explicit
 //!   [`Rounding`] mode (for example a fee rounded up to a venue's quantum).
 //! - Values are stored normalized, so equal amounts compare, hash and print
@@ -107,6 +114,7 @@ pub mod hedge;
 pub mod hedge_action;
 pub mod legs;
 pub mod opportunity;
+pub mod parity;
 
 mod cost;
 mod instrument;
