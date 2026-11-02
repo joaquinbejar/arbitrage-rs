@@ -1,6 +1,15 @@
 //! Hand-checked fixtures for `venues`: per-venue views, budgets and
 //! all-or-nothing admission.
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::legs::{LegIndex, LegSpec};
 use arbitrage_rs::venues::{
     Admission, AdmissionReject, LegRequest, Reservation, SellFunding, VenueBudget, VenueId,

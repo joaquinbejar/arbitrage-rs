@@ -341,8 +341,8 @@ fn direction(
 
     // Q * (D * F - D * K - C + P) for a reversal, the negative for a
     // conversion: one exact sum of products, rounded once.
-    let (q, d, k) = (input.package.value(), input.discount, input.strike.value());
-    let (f, c, p) = (future.value(), call.value(), put.value());
+    let (qty, disc, strike) = (input.package.value(), input.discount, input.strike.value());
+    let (fut, call_px, put_px) = (future.value(), call.value(), put.value());
     let sign = match dir {
         ParityDirection::Reversal => Decimal::ONE,
         ParityDirection::Conversion => Decimal::NEGATIVE_ONE,
@@ -350,10 +350,10 @@ fn direction(
     let neg = exact::neg(sign);
     let gross = wide::sum_products_round(
         &[
-            &[sign, q, d, f],
-            &[neg, q, d, k],
-            &[neg, q, c],
-            &[sign, q, p],
+            &[sign, qty, disc, fut],
+            &[neg, qty, disc, strike],
+            &[neg, qty, call_px],
+            &[sign, qty, put_px],
         ],
         input.edge_dp,
         input.edge_rounding,
@@ -362,7 +362,7 @@ fn direction(
 
     let call_fee = option_fee(input, &input.call.fee, call)?;
     let put_fee = option_fee(input, &input.put.fee, put)?;
-    let future_fee = rounded_fee(input, &[input.future.fee.bps(), BPS, f, q])?;
+    let future_fee = rounded_fee(input, &[input.future.fee.bps(), BPS, fut, qty])?;
     let total = wide::sum_products_exact(&[&[call_fee], &[put_fee], &[future_fee]], "parity fees")?;
     let net = wide::sum_products_exact(
         &[

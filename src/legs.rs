@@ -111,10 +111,21 @@ impl LegIndex {
         }
     }
 
-    fn slot(self) -> usize {
+    /// This leg's element of a pair.
+    pub(crate) fn of<T>(self, pair: &[T; 2]) -> &T {
+        let [first, second] = pair;
         match self {
-            Self::First => 0,
-            Self::Second => 1,
+            Self::First => first,
+            Self::Second => second,
+        }
+    }
+
+    /// This leg's element of a pair, mutably.
+    pub(crate) fn of_mut<T>(self, pair: &mut [T; 2]) -> &mut T {
+        let [first, second] = pair;
+        match self {
+            Self::First => first,
+            Self::Second => second,
         }
     }
 }
@@ -429,6 +440,11 @@ pub struct LegState {
     last_at: Timestamp,
 }
 
+/// A leg without attempts: never built by this crate.
+const NO_ATTEMPT: ArbitrageError = ArbitrageError::InvalidInput {
+    reason: "a leg has no attempt",
+};
+
 impl LegState {
     /// Executed quantity over all attempts (see [`AttemptState::executed`]).
     ///
@@ -500,7 +516,7 @@ impl LegState {
     /// Arithmetic errors.
     pub fn status(&self) -> Result<LegStatus> {
         let attempt = self.resubmits();
-        let current = self.current();
+        let current = self.current()?;
         if current.is_live() {
             return Ok(if current.cancel_requested {
                 LegStatus::CancelRequested { attempt }
@@ -520,14 +536,14 @@ impl LegState {
         })
     }
 
-    fn current(&self) -> &AttemptState {
-        // `attempts` is never empty: attempt 0 is created with the leg.
-        &self.attempts[self.attempts.len() - 1]
+    /// The latest attempt. `attempts` is never empty (attempt 0 is created
+    /// with the leg), so the error is unreachable.
+    fn current(&self) -> Result<&AttemptState> {
+        self.attempts.last().ok_or(NO_ATTEMPT)
     }
 
-    fn current_mut(&mut self) -> &mut AttemptState {
-        let last = self.attempts.len() - 1;
-        &mut self.attempts[last]
+    fn current_mut(&mut self) -> Result<&mut AttemptState> {
+        self.attempts.last_mut().ok_or(NO_ATTEMPT)
     }
 }
 
@@ -670,7 +686,7 @@ impl TwoLegPlan {
     /// One leg's running totals.
     #[must_use]
     pub fn leg(&self, leg: LegIndex) -> &LegState {
-        &self.legs[leg.slot()]
+        leg.of(&self.legs)
     }
 
     /// Residual exposure: the sum of both legs' signed executed positions.
@@ -758,7 +774,7 @@ impl TwoLegPlan {
         match (event, event.leg()) {
             (LegExecution::Fill { .. }, _) => {}
             (_, Some(leg)) => {
-                if at < self.legs[leg.slot()].last_at {
+                if at < leg.of(&self.legs).last_at {
                     return Err(ArbitrageError::InvalidInput {
                         reason: "event is older than the last event of its leg",
                     });
@@ -779,7 +795,7 @@ impl TwoLegPlan {
         let mut actions = Vec::new();
         next.clock = now;
         if let (false, Some(leg)) = (matches!(event, LegExecution::Fill { .. }), event.leg()) {
-            next.legs[leg.slot()].last_at = at;
+            leg.of_mut(&mut next.legs).last_at = at;
         }
         match event {
             LegExecution::Fill {
@@ -814,10 +830,10 @@ impl TwoLegPlan {
                 next.close_attempt(*leg, *attempt, AttemptOutcome::Cancelled, *cum_qty)?;
             }
             LegExecution::Tick { .. } => {}
-            LegExecution::Disconnected { leg, .. } => next.legs[leg.slot()].connected = false,
-            LegExecution::Reconnected { leg, .. } => next.legs[leg.slot()].connected = true,
+            LegExecution::Disconnected { leg, .. } => leg.of_mut(&mut next.legs).connected = false,
+            LegExecution::Reconnected { leg, .. } => leg.of_mut(&mut next.legs).connected = true,
             LegExecution::VenueUpdate { leg, view } => {
-                let spec = &next.legs[leg.slot()].spec;
+                let spec = &leg.of(&next.legs).spec;
                 if view.instrument.id != spec.leg.instrument.id {
                     return Err(ArbitrageError::InvalidInput {
                         reason: "venue view is for another instrument than the leg",
@@ -828,7 +844,7 @@ impl TwoLegPlan {
                         reason: "venue view is from another venue than the leg's",
                     });
                 }
-                next.legs[leg.slot()].view = Some(view.clone());
+                leg.of_mut(&mut next.legs).view = Some(view.clone());
             }
         }
         next.step(now, &mut actions)?;
@@ -847,7 +863,7 @@ impl TwoLegPlan {
     }
 
     fn closed_as(&self, leg: LegIndex, attempt: u32) -> Option<(AttemptOutcome, Option<Decimal>)> {
-        self.legs[leg.slot()]
+        leg.of(&self.legs)
             .attempts
             .get(attempt as usize)
             .and_then(|a| a.outcome.map(|o| (o, a.final_cum)))
@@ -903,7 +919,7 @@ impl TwoLegPlan {
     }
 
     fn attempt_mut(&mut self, leg: LegIndex, attempt: u32) -> Result<&mut AttemptState> {
-        self.legs[leg.slot()]
+        leg.of_mut(&mut self.legs)
             .attempts
             .get_mut(attempt as usize)
             .ok_or(ArbitrageError::InvalidInput {
@@ -930,7 +946,7 @@ impl TwoLegPlan {
         // Beyond the attempt quantity or the acknowledged final quantity it
         // is still a real execution: it is recorded, never rejected.
         state.observed = cum;
-        let leg_state = &mut self.legs[fill.leg.slot()];
+        let leg_state = fill.leg.of_mut(&mut self.legs);
         // The stored notional plus price * quantity, as one exact sum.
         let notional = wide::sum_products_exact(
             &[
@@ -975,10 +991,10 @@ impl TwoLegPlan {
     /// the failure policy at `at`.
     fn step(&mut self, at: Timestamp, actions: &mut Vec<PlanAction>) -> Result<()> {
         for i in [LegIndex::First, LegIndex::Second] {
-            let remaining = self.legs[i.slot()].remaining()?;
-            let state = &mut self.legs[i.slot()];
+            let remaining = i.of(&self.legs).remaining()?;
+            let state = i.of_mut(&mut self.legs);
             let attempt = state.resubmits();
-            if !state.current().is_live() || state.current().cancel_requested {
+            if !state.current()?.is_live() || state.current()?.cancel_requested {
                 continue;
             }
             // A live attempt made surplus by executions elsewhere (a late
@@ -991,7 +1007,7 @@ impl TwoLegPlan {
                 state.deadline_cancelled = true;
             }
             if surplus || expired {
-                state.current_mut().cancel_requested = true;
+                state.current_mut()?.cancel_requested = true;
                 actions.push(PlanAction::Cancel { leg: i, attempt });
             }
         }
@@ -1020,14 +1036,11 @@ impl TwoLegPlan {
         }
 
         if self.state == PlanState::Working {
-            let failed = [LegIndex::First, LegIndex::Second].into_iter().find(|i| {
-                matches!(
-                    statuses[i.slot()],
-                    LegStatus::Rejected | LegStatus::Cancelled
-                )
-            });
+            let failed = [LegIndex::First, LegIndex::Second]
+                .into_iter()
+                .find(|i| matches!(*i.of(&statuses), LegStatus::Rejected | LegStatus::Cancelled));
             if let Some(leg) = failed {
-                if self.legs[leg.slot()].pending_resubmit {
+                if leg.of(&self.legs).pending_resubmit {
                     self.try_resubmit(leg, at, actions)?;
                 } else {
                     self.on_failure(leg, at, actions)?;
@@ -1073,8 +1086,8 @@ impl TwoLegPlan {
             Fallback::Unwind => PlanState::Unwinding,
         };
         for i in [leg.other(), leg] {
-            if let LegStatus::Working { attempt } = self.legs[i.slot()].status()? {
-                self.legs[i.slot()].current_mut().cancel_requested = true;
+            if let LegStatus::Working { attempt } = i.of(&self.legs).status()? {
+                i.of_mut(&mut self.legs).current_mut()?.cancel_requested = true;
                 actions.push(PlanAction::Cancel { leg: i, attempt });
             }
         }
@@ -1089,7 +1102,7 @@ impl TwoLegPlan {
     ) -> Result<()> {
         if let FailurePolicy::Complete { max_resubmits, .. } = self.policy {
             let total: u32 = self.legs.iter().map(LegState::resubmits).sum();
-            let state = &mut self.legs[leg.slot()];
+            let state = leg.of_mut(&mut self.legs);
             // Checked against the event time itself: a rejection or an
             // acknowledgement at or after the effective deadline (or
             // expiry) never resubmits, with or without an earlier tick.
@@ -1111,17 +1124,17 @@ impl TwoLegPlan {
         at: Timestamp,
         actions: &mut Vec<PlanAction>,
     ) -> Result<()> {
-        let state = &self.legs[leg.slot()];
+        let state = leg.of(&self.legs);
         let past_deadline =
             state.deadline_cancelled || state.spec.effective_deadline().is_some_and(|d| d <= at);
         if past_deadline {
-            self.legs[leg.slot()].pending_resubmit = false;
+            leg.of_mut(&mut self.legs).pending_resubmit = false;
             return self.enter_fallback(self.fallback(), leg, actions);
         }
         if !self.venue_admits(leg, at)? {
             return Ok(());
         }
-        let state = &mut self.legs[leg.slot()];
+        let state = leg.of_mut(&mut self.legs);
         state.pending_resubmit = false;
         // The executed quantity includes fills that the acknowledgement
         // reported but that are still in flight, so the resubmission never
@@ -1139,7 +1152,7 @@ impl TwoLegPlan {
 
     /// True if the leg's venue can take a resubmission at `at`.
     fn venue_admits(&self, leg: LegIndex, at: Timestamp) -> Result<bool> {
-        let state = &self.legs[leg.slot()];
+        let state = leg.of(&self.legs);
         if !state.connected {
             return Ok(false);
         }

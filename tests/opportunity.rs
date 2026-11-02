@@ -1,5 +1,14 @@
 //! Hand-checked fixtures for `opportunity::evaluate`.
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::opportunity::{
     Carry, CarryKind, Evaluation, LegQuote, OpportunityInput, RejectReason, evaluate,
 };
@@ -18,8 +27,8 @@ fn m(x: Decimal) -> Money {
 fn q(x: Decimal) -> Quantity {
     Quantity::new(x).unwrap()
 }
-fn lvl(p: Decimal, s: Decimal) -> Option<Level> {
-    Some(Level::new(Price::new(p).unwrap(), q(s)))
+fn lvl(p: Decimal, s: Decimal) -> Level {
+    Level::new(Price::new(p).unwrap(), q(s))
 }
 fn inst(id: &str) -> Instrument {
     Instrument::undated(InstrumentId::new(id).unwrap())
@@ -37,16 +46,16 @@ fn base() -> OpportunityInput {
         buy: LegQuote {
             instrument: inst("A"),
             book: TopOfBook {
-                bid: lvl(dec!(99.90), dec!(5)),
-                ask: lvl(dec!(100.00), dec!(5)),
+                bid: Some(lvl(dec!(99.90), dec!(5))),
+                ask: Some(lvl(dec!(100.00), dec!(5))),
             },
             fee: bps(dec!(5)),
         },
         sell: LegQuote {
             instrument: inst("B"),
             book: TopOfBook {
-                bid: lvl(dec!(100.30), dec!(3)),
-                ask: lvl(dec!(100.40), dec!(3)),
+                bid: Some(lvl(dec!(100.30), dec!(3))),
+                ask: Some(lvl(dec!(100.40), dec!(3))),
             },
             fee: bps(dec!(5)),
         },
@@ -80,8 +89,8 @@ fn accepted_at_top_of_book_size() {
 fn positive_gross_negative_net_is_rejected() {
     // q = 10, gross (100.05 - 100) * 10 = 0.5; fees 0.5 + 0.50025.
     let mut input = base();
-    input.buy.book.ask = lvl(dec!(100), dec!(10));
-    input.sell.book.bid = lvl(dec!(100.05), dec!(10));
+    input.buy.book.ask = Some(lvl(dec!(100), dec!(10)));
+    input.sell.book.bid = Some(lvl(dec!(100.05), dec!(10)));
     input.target_quantity = q(dec!(10));
     let eval = evaluate(&input).unwrap();
     assert!(eval.accepted().is_none());
@@ -103,7 +112,7 @@ fn zero_net_is_rejected_even_with_zero_threshold() {
     // carry 5 bps on the buy leg = 0.05; net exactly 0.
     let mut input = base();
     input.target_quantity = q(dec!(1));
-    input.sell.book.bid = lvl(dec!(100.1), dec!(3));
+    input.sell.book.bid = Some(lvl(dec!(100.1), dec!(3)));
     input.sell.fee = FeeRate::zero();
     input.carry = vec![Carry {
         kind: CarryKind::Financing,
@@ -158,8 +167,8 @@ fn carry_is_itemized_and_subtracted() {
 fn rebates_raise_the_net_edge() {
     // q = 10, gross 0.5; fees -1 bps: -0.1 and -0.10005; net 0.70005.
     let mut input = base();
-    input.buy.book.ask = lvl(dec!(100), dec!(10));
-    input.sell.book.bid = lvl(dec!(100.05), dec!(10));
+    input.buy.book.ask = Some(lvl(dec!(100), dec!(10)));
+    input.sell.book.bid = Some(lvl(dec!(100.05), dec!(10)));
     input.target_quantity = q(dec!(10));
     input.buy.fee = bps(dec!(-1));
     input.sell.fee = bps(dec!(-1));
@@ -194,7 +203,7 @@ fn missing_quotes_are_explicit() {
 #[test]
 fn insufficient_size_is_explicit() {
     let mut input = base();
-    input.buy.book.ask = lvl(dec!(100), dec!(0.5));
+    input.buy.book.ask = Some(lvl(dec!(100), dec!(0.5)));
     assert_eq!(
         evaluate(&input).unwrap(),
         Evaluation::Rejected(RejectReason::InsufficientLiquidity {
@@ -207,14 +216,14 @@ fn insufficient_size_is_explicit() {
 #[test]
 fn no_gross_edge() {
     let mut input = base();
-    input.sell.book.bid = lvl(dec!(99.9), dec!(3));
+    input.sell.book.bid = Some(lvl(dec!(99.9), dec!(3)));
     assert_eq!(
         evaluate(&input).unwrap(),
         Evaluation::Rejected(RejectReason::NoGrossEdge {
             gross: m(dec!(-0.3))
         })
     );
-    input.sell.book.bid = lvl(dec!(100), dec!(3));
+    input.sell.book.bid = Some(lvl(dec!(100), dec!(3)));
     assert_eq!(
         evaluate(&input).unwrap(),
         Evaluation::Rejected(RejectReason::NoGrossEdge { gross: m(dec!(0)) })
@@ -275,7 +284,7 @@ fn expired_leg_is_an_error() {
     );
 }
 
-/// 0.6 * Decimal::MAX: twice it passes the range of a Decimal.
+/// 0.6 * `Decimal::MAX`: twice it passes the range of a Decimal.
 const BIG: Decimal = dec!(47536897508558602556126370201);
 
 #[test]
@@ -284,8 +293,8 @@ fn gross_and_fees_are_exact_when_notionals_pass_max() {
     // fees (1 bps of each notional) fit.
     let ask = dec!(47536897508558602556126370000);
     let mut i = base();
-    i.buy.book.ask = lvl(ask, dec!(5));
-    i.sell.book.bid = lvl(ask + dec!(10000), dec!(5));
+    i.buy.book.ask = Some(lvl(ask, dec!(5)));
+    i.sell.book.bid = Some(lvl(ask + dec!(10000), dec!(5)));
     i.buy.fee = bps(dec!(1));
     i.sell.fee = bps(dec!(1));
     i.target_quantity = q(dec!(2));
@@ -314,8 +323,8 @@ fn cost_total_is_one_exact_sum() {
     // Fees of BIG and BIG + 1 (100 % of notional) pass Decimal::MAX as a
     // running sum; a carry benefit of BIG brings the total back to BIG + 1.
     let mut i = base();
-    i.buy.book.ask = lvl(BIG, dec!(5));
-    i.sell.book.bid = lvl(BIG + dec!(1), dec!(5));
+    i.buy.book.ask = Some(lvl(BIG, dec!(5)));
+    i.sell.book.bid = Some(lvl(BIG + dec!(1), dec!(5)));
     i.buy.fee = bps(dec!(10000));
     i.sell.fee = bps(dec!(10000));
     i.target_quantity = q(dec!(1));

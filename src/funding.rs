@@ -310,13 +310,22 @@ impl FundingSchedule {
             });
         }
         let overflow = || ArbitrageError::Overflow { op: "time" };
-        let offset = i128::from(after.millis()) - i128::from(self.anchor.millis());
+        let anchor = i128::from(self.anchor.millis());
+        let offset = i128::from(after.millis())
+            .checked_sub(anchor)
+            .ok_or_else(overflow)?;
         let interval = i128::from(self.interval_ms);
-        // First k with anchor + k * interval > after.
-        let mut k = offset.div_euclid(interval) + 1;
+        // First k with anchor + k * interval > after (interval > 0).
+        let mut k = offset
+            .checked_div_euclid(interval)
+            .and_then(|q| q.checked_add(1))
+            .ok_or_else(overflow)?;
         let mut out = Vec::new();
         loop {
-            let t = i128::from(self.anchor.millis()) + k * interval;
+            let t = k
+                .checked_mul(interval)
+                .and_then(|x| x.checked_add(anchor))
+                .ok_or_else(overflow)?;
             if t > i128::from(until.millis()) {
                 break;
             }
@@ -328,13 +337,21 @@ impl FundingSchedule {
             out.push(Timestamp::from_millis(
                 i64::try_from(t).map_err(|_| overflow())?,
             ));
-            k += 1;
+            k = k.checked_add(1).ok_or_else(overflow)?;
         }
         Ok(out)
     }
 }
 
 #[cfg(test)]
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
@@ -490,10 +507,11 @@ mod tests {
             ts(&[H8, 2 * H8, 3 * H8])
         );
         // (1ms, 8h - 1ms]: none.
-        assert!(
+        assert_eq!(
             s.instants(Timestamp::from_millis(1), Timestamp::from_millis(H8 - 1))
                 .unwrap()
-                .is_empty()
+                .len(),
+            0
         );
         // Before the anchor.
         assert_eq!(

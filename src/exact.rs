@@ -66,7 +66,8 @@ pub fn mul(a: Decimal, b: Decimal) -> Result<Decimal> {
     if a.is_zero() || b.is_zero() {
         return Ok(Decimal::ZERO);
     }
-    let exact_scale = a.scale() + b.scale();
+    // Both scales are at most 28.
+    let exact_scale = a.scale().saturating_add(b.scale());
     if exact_scale > MAX_SCALE {
         return Err(ArbitrageError::Inexact { op: "mul" });
     }
@@ -101,7 +102,10 @@ pub fn div_pow10(a: Decimal, k: u32) -> Result<Decimal> {
 /// Exact `-a`. Negation never rounds and never overflows in [`Decimal`].
 #[must_use]
 pub fn neg(a: Decimal) -> Decimal {
-    (-a).normalize()
+    let mut r = a;
+    r.set_sign_negative(!a.is_sign_negative());
+    // normalize also turns -0 into 0.
+    r.normalize()
 }
 
 fn finish(r: Decimal, exact_scale: u32, op: &'static str) -> Result<Decimal> {
@@ -112,9 +116,33 @@ fn finish(r: Decimal, exact_scale: u32, op: &'static str) -> Result<Decimal> {
 }
 
 #[cfg(test)]
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    #[test]
+    fn negation_keeps_the_value_and_never_signs_zero() {
+        for (v, n) in [
+            (dec!(1.50), dec!(-1.5)),
+            (dec!(-2), dec!(2)),
+            (Decimal::MAX, Decimal::MIN),
+            (Decimal::MIN, Decimal::MAX),
+        ] {
+            assert_eq!(neg(v), n);
+        }
+        for zero in [Decimal::ZERO, dec!(0.000), -Decimal::ZERO] {
+            assert!(!neg(zero).is_sign_negative());
+            assert!(neg(zero).is_zero());
+        }
+    }
 
     #[test]
     fn add_and_sub_are_exact_and_normalized() {

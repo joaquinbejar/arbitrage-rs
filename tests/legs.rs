@@ -1,5 +1,14 @@
 //! Hand-checked fixtures for `legs::TwoLegPlan`.
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::legs::{
     ExecId, FailurePolicy, Fallback, LegExecution, LegIndex, LegSpec, LegStatus, PlanAction,
     PlanState, TwoLegPlan,
@@ -155,7 +164,7 @@ fn both_legs_fill_and_the_plan_completes() {
         .unwrap();
     assert_eq!(r.state, PlanState::Completed);
     assert_eq!(r.residual, dec!(0));
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     // 4 * 100.5 + 6 * 100.6 = 402 + 603.6 = 1005.6.
     assert_eq!(plan.leg(B).filled_notional, Money::new(dec!(1005.6), usd()));
     assert_eq!(plan.leg(B).fees, fee(dec!(0.5028)));
@@ -179,7 +188,7 @@ fn filled_and_rejected_under_abort_keeps_the_residual_visible() {
     .unwrap();
     let r = plan.apply(&rejected(B, 0, 2)).unwrap();
     assert_eq!(r.state, PlanState::Aborted);
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.residual, dec!(10));
     assert_eq!(plan.leg(B).status().unwrap(), LegStatus::Rejected);
 }
@@ -299,7 +308,7 @@ fn ack_reports_fills_in_flight_so_no_resubmit_overlaps_them() {
     ))
     .unwrap();
     let r = plan.apply(&ack(B, 0, dec!(10), 3)).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.state, PlanState::Completed);
     assert_eq!(r.residual, dec!(0));
     // Fees so far come from observed fills only.
@@ -317,7 +326,7 @@ fn ack_reports_fills_in_flight_so_no_resubmit_overlaps_them() {
             2,
         ))
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.state, PlanState::Completed);
     assert_eq!(plan.leg(B).fees, fee(dec!(0.5)));
     assert_eq!(plan.leg(B).attempts.len(), 1);
@@ -395,7 +404,7 @@ fn partial_fill_in_flight_shrinks_the_resubmission() {
             2,
         ))
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.residual, dec!(5));
     // Attempt 1 fills its 5 and the plan completes.
     let r = plan
@@ -447,7 +456,7 @@ fn unwind_waits_for_the_other_cancel_and_uses_the_ack_quantity() {
     let r = plan
         .apply(&fill(A, 0, "a2", dec!(2), dec!(8), dec!(100), dec!(0.1), 3))
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.residual, dec!(8));
     // The ack reports 9 executed: unwind 9 at once.
     let r = plan.apply(&ack(A, 0, dec!(9), 4)).unwrap();
@@ -467,7 +476,7 @@ fn unwind_waits_for_the_other_cancel_and_uses_the_ack_quantity() {
             3,
         ))
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.residual, dec!(9));
     assert_eq!(plan.fees().unwrap(), fee(dec!(0.45)));
 }
@@ -491,16 +500,16 @@ fn deadline_requests_a_cancel_and_waits_for_the_ack() {
     ))
     .unwrap();
     let r = plan.apply(&LegExecution::Tick { at: t(999) }).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     let r = plan.apply(&LegExecution::Tick { at: t(1_000) }).unwrap();
     assert_eq!(r.actions, vec![PlanAction::Cancel { leg: B, attempt: 0 }]);
     // Asked once only.
     let r = plan.apply(&LegExecution::Tick { at: t(1_050) }).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.state, PlanState::Working);
     // The ack makes B a failure; past its deadline it is not resubmitted.
     let r = plan.apply(&ack(B, 0, dec!(0), 1_100)).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.state, PlanState::Aborted);
     assert_eq!(r.residual, dec!(10));
 }
@@ -562,7 +571,7 @@ fn repeated_events_do_not_double_apply() {
     plan.apply(&f).unwrap();
     let r = plan.apply(&f).unwrap();
     assert!(r.duplicate);
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(plan.leg(A).executed().unwrap(), dec!(4));
     assert_eq!(plan.leg(A).fees, fee(dec!(0.2)));
 
@@ -573,7 +582,8 @@ fn repeated_events_do_not_double_apply() {
         vec![PlanAction::Cancel { leg: A, attempt: 0 }]
     );
     let again = plan.apply(&rej).unwrap();
-    assert!(again.duplicate && again.actions.is_empty());
+    assert!(again.duplicate);
+    assert_eq!(again.actions.len(), 0);
 
     let a = ack(A, 0, dec!(4), 3);
     assert_eq!(plan.apply(&a).unwrap().state, PlanState::Aborted);
@@ -711,7 +721,7 @@ fn both_legs_failing_flat_needs_no_unwind() {
     assert_eq!(r.actions, vec![PlanAction::Cancel { leg: B, attempt: 0 }]);
     let r = plan.apply(&ack(B, 0, dec!(0), 2)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.residual, dec!(0));
 }
 
@@ -1020,7 +1030,7 @@ fn an_overfill_waits_for_the_other_leg_and_unwinds_only_the_excess() {
             1,
         ))
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.state, PlanState::Working);
     assert_eq!(
         plan.leg(B).status().unwrap(),
@@ -1038,7 +1048,7 @@ fn an_overfill_waits_for_the_other_leg_and_unwinds_only_the_excess() {
             2,
         ))
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.residual, dec!(8));
     let r = plan
         .apply(&fill(
@@ -1082,7 +1092,7 @@ fn an_overfill_waits_for_the_other_leg_and_unwinds_only_the_excess() {
         ))
         .unwrap();
     assert_eq!(r.state, PlanState::Aborted);
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.residual, dec!(2));
 }
 
@@ -1177,7 +1187,7 @@ fn a_disconnected_venue_holds_the_resubmission_until_it_reconnects() {
     plan.apply(&LegExecution::Disconnected { leg: B, at: t(3) })
         .unwrap();
     let r = plan.apply(&ack(B, 0, dec!(3), 4)).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.state, PlanState::Working);
     assert!(plan.leg(B).pending_resubmit);
     // The residual and the cash flow of the asymmetric fills stay visible:
@@ -1217,7 +1227,7 @@ fn gated_resubmission_waits_for_fresh_liquidity() {
     .unwrap();
     // No view yet: held.
     let r = plan.apply(&rejected(B, 0, 10)).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert!(plan.leg(B).pending_resubmit);
     // Bid below the limit: held.
     let r = plan
@@ -1226,7 +1236,7 @@ fn gated_resubmission_waits_for_fresh_liquidity() {
             view: view_of("Y", 20, Some((dec!(100.4), dec!(50)))),
         })
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     // Bid at the limit but only 5: held.
     let r = plan
         .apply(&LegExecution::VenueUpdate {
@@ -1234,7 +1244,7 @@ fn gated_resubmission_waits_for_fresh_liquidity() {
             view: view_of("Y", 30, Some((dec!(100.5), dec!(5)))),
         })
         .unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     // Enough size, but the plan clock (a tick at 100) makes it stale.
     plan.apply(&LegExecution::VenueUpdate {
         leg: B,
@@ -1242,7 +1252,7 @@ fn gated_resubmission_waits_for_fresh_liquidity() {
     })
     .unwrap();
     let r = plan.apply(&LegExecution::Tick { at: t(100) }).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     // A fresh, deep view admits it: liquidity recovered.
     let r = plan
         .apply(&LegExecution::VenueUpdate {
@@ -1295,7 +1305,7 @@ fn a_held_resubmission_past_the_deadline_falls_back() {
     ))
     .unwrap();
     let r = plan.apply(&ack(B, 0, dec!(4), 10)).unwrap();
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert!(plan.leg(B).pending_resubmit);
     // Liquidity never comes back before the deadline: unwind the residual.
     let r = plan.apply(&LegExecution::Tick { at: t(1_000) }).unwrap();

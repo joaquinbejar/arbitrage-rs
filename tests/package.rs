@@ -5,6 +5,15 @@
 //! sell 100 futures; options of 0.1 XYZ, futures of 0.01 XYZ, lots of one
 //! contract, so the grid is 0.1 XYZ).
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::legs::{ExecId, FailurePolicy, Fallback, LegSpec, PlanState};
 use arbitrage_rs::package::{
     CALL_LEG, FUTURE_LEG, PUT_LEG, PackageAction, PackageEvent, PackageLegSpec, PackagePlan,
@@ -170,7 +179,7 @@ fn p1_complete() {
     assert_eq!(r.state, PlanState::Completed);
     assert_eq!(r.matched, dec!(1));
     assert_eq!(r.excess, vec![dec!(0), dec!(0), dec!(0)]);
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     // Cash with the multipliers: buy 10 * 0.1 * 6.10, sell 10 * 0.1 * 4.90
     // and 100 * 0.01 * 101.50.
     assert_eq!(plan.net_cash().unwrap().amount(), dec!(100.30));
@@ -252,7 +261,7 @@ fn p2_abort_keeps_the_residual() {
     let mut plan = reversal(FailurePolicy::Abort);
     let r = put_short_by_four(&mut plan);
     assert_eq!(r.state, PlanState::Aborted);
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.matched, dec!(0.6));
     assert_eq!(r.excess, vec![dec!(4), dec!(0), dec!(40)]);
 }
@@ -312,7 +321,7 @@ fn p4_nothing_filled_by_the_deadline() {
     plan.apply(&ack(PUT_LEG, 0, dec!(0), DEADLINE)).unwrap();
     let r = plan.apply(&ack(FUTURE_LEG, 0, dec!(0), DEADLINE)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert!(r.actions.is_empty());
+    assert_eq!(r.actions.len(), 0);
     assert_eq!(r.matched, dec!(0));
     assert_eq!(r.excess, vec![dec!(0), dec!(0), dec!(0)]);
 }
@@ -399,7 +408,7 @@ fn events_are_idempotent_and_validated() {
     assert_eq!(plan.legs()[CALL_LEG].executed().unwrap(), dec!(4));
 }
 
-fn manual_leg(id: &str, side: Side, qty: Decimal, size: Decimal) -> PackageLegSpec {
+fn manual_leg(id: &str, side: Side, qty: Decimal, book_size: Decimal) -> PackageLegSpec {
     PackageLegSpec {
         spec: LegSpec {
             leg: Leg {
@@ -411,7 +420,7 @@ fn manual_leg(id: &str, side: Side, qty: Decimal, size: Decimal) -> PackageLegSp
             deadline: None,
             venue: None,
         },
-        contract_size: q(size),
+        contract_size: q(book_size),
         lot: q(dec!(1)),
     }
 }
@@ -539,13 +548,13 @@ fn overfill_on_every_leg_alike_is_excess() {
                 ]
             );
         } else {
-            assert!(r.actions.is_empty());
+            assert_eq!(r.actions.len(), 0);
         }
     }
 }
 
-fn lot_leg(id: &str, side: Side, qty: Decimal, size: Decimal, lot: Decimal) -> PackageLegSpec {
-    let mut l = manual_leg(id, side, qty, size);
+fn lot_leg(id: &str, side: Side, qty: Decimal, book_size: Decimal, lot: Decimal) -> PackageLegSpec {
+    let mut l = manual_leg(id, side, qty, book_size);
     l.lot = q(lot);
     l
 }

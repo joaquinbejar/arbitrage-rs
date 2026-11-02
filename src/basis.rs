@@ -227,6 +227,115 @@ impl BasisEvaluation {
     }
 }
 
+/// `q * (perp - spot - exit_basis)` for long spot, the negative otherwise:
+/// one exact sum of products.
+fn gross_edge(
+    input: &BasisInput,
+    qv: Decimal,
+    spot_px: Decimal,
+    perp_px: Decimal,
+) -> Result<Money> {
+    let sign = match input.direction {
+        BasisDirection::LongSpotShortPerp => Decimal::ONE,
+        BasisDirection::ShortSpotLongPerp => Decimal::NEGATIVE_ONE,
+    };
+    let neg = exact::neg(sign);
+    let gross = wide::sum_products_exact(
+        &[
+            &[sign, qv, perp_px],
+            &[neg, qv, spot_px],
+            &[neg, qv, input.expected_exit_basis],
+        ],
+        "basis gross",
+    )?;
+    Ok(Money::new(gross, input.quote_currency))
+}
+
+/// Entry and exit fees of both legs: spot entry, perpetual entry, spot exit
+/// (at the entry price) and perpetual exit (at spot + exit basis).
+fn trade_fees(
+    input: &BasisInput,
+    spot_px: Decimal,
+    perp_px: Decimal,
+    qv: Decimal,
+) -> Result<[Cost; 4]> {
+    let ccy = input.quote_currency;
+    let spot_entry_fee = input.spot.fee.fee_on_factors(&[spot_px, qv], ccy)?;
+    let perp_entry_fee = input.perp.fee.fee_on_factors(&[perp_px, qv], ccy)?;
+    // Implied exit: spot unchanged, perpetual at spot + exit basis.
+    let perp_exit_price =
+        Price::new(exact::add(spot_px, input.expected_exit_basis)?).map_err(|_| {
+            ArbitrageError::InvalidInput {
+                reason: "spot entry price + expected_exit_basis must be positive",
+            }
+        })?;
+    let perp_exit_fee = input
+        .perp
+        .fee
+        .fee_on_factors(&[perp_exit_price.value(), qv], ccy)?;
+    Ok([
+        spot_entry_fee,
+        perp_entry_fee,
+        spot_entry_fee,
+        perp_exit_fee,
+    ])
+}
+
+/// The carry costs, each on its leg's entry notional.
+fn carry_costs(
+    input: &BasisInput,
+    spot_px: Decimal,
+    perp_px: Decimal,
+    qv: Decimal,
+) -> Result<Vec<CarryCost>> {
+    let spot_side = input.direction.spot_side();
+    input
+        .carry
+        .iter()
+        .map(|item| {
+            let price = if item.leg == spot_side {
+                spot_px
+            } else {
+                perp_px
+            };
+            Ok(CarryCost {
+                kind: item.kind,
+                leg: item.leg,
+                cost: item
+                    .rate
+                    .fee_on_factors(&[price, qv], input.quote_currency)?,
+            })
+        })
+        .collect()
+}
+
+/// The funding of the perpetual position over the events.
+fn funding_costs(input: &BasisInput, q: Quantity) -> Result<Vec<FundingCost>> {
+    let ccy = input.quote_currency;
+    // The perpetual position: short q when long spot, long q otherwise.
+    let perp_position = match input.direction {
+        BasisDirection::LongSpotShortPerp => exact::neg(q.value()),
+        BasisDirection::ShortSpotLongPerp => q.value(),
+    };
+    input
+        .funding
+        .iter()
+        .map(|event| {
+            let cost = match input.funding_rounding {
+                None => funding_cashflow(input.convention, perp_position, event, ccy)?,
+                Some(r) => {
+                    funding_cashflow_rounded(input.convention, perp_position, event, ccy, r)?
+                }
+            };
+            Ok(FundingCost {
+                time: event.time,
+                kind: event.rate.kind(),
+                cost,
+            })
+        })
+        .collect()
+}
+
 /// Evaluates a spot-perpetual basis trade net of fees, carry and funding.
 ///
 /// # Errors
@@ -274,83 +383,21 @@ pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
         ));
     }
 
-    // q * (perp - spot - exit_basis) for long spot, the negative otherwise:
-    // one exact sum of products.
     let (qv, spot_px, perp_px) = (
         q.value(),
         spot_level.price.value(),
         perp_level.price.value(),
     );
-    let sign = match dir {
-        BasisDirection::LongSpotShortPerp => Decimal::ONE,
-        BasisDirection::ShortSpotLongPerp => Decimal::NEGATIVE_ONE,
-    };
-    let neg = exact::neg(sign);
     let entry_basis = exact::sub(perp_px, spot_px)?;
-    let gross = Money::new(
-        wide::sum_products_exact(
-            &[
-                &[sign, qv, perp_px],
-                &[neg, qv, spot_px],
-                &[neg, qv, input.expected_exit_basis],
-            ],
-            "basis gross",
-        )?,
-        ccy,
-    );
+    let gross = gross_edge(input, qv, spot_px, perp_px)?;
 
-    let spot_entry_fee = input.spot.fee.fee_on_factors(&[spot_px, qv], ccy)?;
-    let perp_entry_fee = input.perp.fee.fee_on_factors(&[perp_px, qv], ccy)?;
-    // Implied exit: spot unchanged, perpetual at spot + exit basis.
-    let perp_exit_price = Price::new(exact::add(
-        spot_level.price.value(),
-        input.expected_exit_basis,
-    )?)
-    .map_err(|_| ArbitrageError::InvalidInput {
-        reason: "spot entry price + expected_exit_basis must be positive",
-    })?;
-    let spot_exit_fee = spot_entry_fee;
-    let perp_exit_fee = input
-        .perp
-        .fee
-        .fee_on_factors(&[perp_exit_price.value(), qv], ccy)?;
+    let [spot_entry_fee, perp_entry_fee, spot_exit_fee, perp_exit_fee] =
+        trade_fees(input, spot_px, perp_px, qv)?;
     let mut items = vec![spot_entry_fee, perp_entry_fee, spot_exit_fee, perp_exit_fee];
-
-    let mut carry = Vec::with_capacity(input.carry.len());
-    for item in &input.carry {
-        let price = if item.leg == dir.spot_side() {
-            spot_px
-        } else {
-            perp_px
-        };
-        let cost = item.rate.fee_on_factors(&[price, qv], ccy)?;
-        items.push(cost);
-        carry.push(CarryCost {
-            kind: item.kind,
-            leg: item.leg,
-            cost,
-        });
-    }
-
-    // The perpetual position: short q when long spot, long q otherwise.
-    let perp_position = match dir {
-        BasisDirection::LongSpotShortPerp => exact::neg(q.value()),
-        BasisDirection::ShortSpotLongPerp => q.value(),
-    };
-    let mut funding = Vec::with_capacity(input.funding.len());
-    let mut funding_items = Vec::with_capacity(input.funding.len());
-    for event in &input.funding {
-        let cost = match input.funding_rounding {
-            None => funding_cashflow(input.convention, perp_position, event, ccy)?,
-            Some(r) => funding_cashflow_rounded(input.convention, perp_position, event, ccy, r)?,
-        };
-        funding_items.push(cost);
-        funding.push(FundingCost {
-            time: event.time,
-            kind: event.rate.kind(),
-            cost,
-        });
-    }
+    let carry = carry_costs(input, spot_px, perp_px, qv)?;
+    items.extend(carry.iter().map(|c| c.cost));
+    let funding = funding_costs(input, q)?;
+    let funding_items: Vec<Cost> = funding.iter().map(|f| f.cost).collect();
     let funding_total = Cost::total(&funding_items, ccy)?;
     items.extend(funding_items);
     let total = Cost::total(&items, ccy)?;

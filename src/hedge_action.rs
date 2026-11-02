@@ -189,6 +189,97 @@ impl ActionOutcome {
     }
 }
 
+/// Applies `max_quantity` under the excess policy.
+fn max_quantity(
+    quantity: Quantity,
+    requested: Decimal,
+    limits: &HedgeLimits,
+    adjustments: &mut Vec<Adjustment>,
+) -> Result<Quantity> {
+    if quantity <= limits.max_quantity {
+        return Ok(quantity);
+    }
+    match limits.on_excess {
+        ExcessPolicy::Clip => {
+            adjustments.push(Adjustment::MaxQuantity);
+            Ok(limits.max_quantity)
+        }
+        ExcessPolicy::Reject => Err(ArbitrageError::InvalidValue {
+            field: "action quantity",
+            value: requested,
+            reason: "above max_quantity",
+        }),
+    }
+}
+
+/// Bounds `quantity` by reduce-only and the exposure cap; the inner error
+/// is the reason no plan can be made.
+fn bound_by_exposure(
+    action: &HedgeAction,
+    limits: &HedgeLimits,
+    exposure: Decimal,
+    mut quantity: Quantity,
+    adjustments: &mut Vec<Adjustment>,
+) -> Result<core::result::Result<Quantity, NoPlanReason>> {
+    // True if the side moves the exposure toward zero.
+    let reduces = match action.side {
+        Side::Buy => exposure < Decimal::ZERO,
+        Side::Sell => exposure > Decimal::ZERO,
+    };
+    if limits.reduce_only {
+        if !reduces {
+            return Ok(Err(NoPlanReason::NotReducing));
+        }
+        let room = Quantity::new(exposure.abs())?;
+        if quantity > room {
+            quantity = room;
+            adjustments.push(Adjustment::ReduceOnly);
+        }
+    }
+    if let Some(cap) = limits.exposure_cap {
+        // Buy: exposure + q <= cap. Sell: exposure - q >= -cap.
+        let room = match action.side {
+            Side::Buy => exact::sub(cap.value(), exposure)?,
+            Side::Sell => exact::add(cap.value(), exposure)?,
+        };
+        if room <= Decimal::ZERO {
+            return Ok(Err(NoPlanReason::ExposureLimit));
+        }
+        let room = Quantity::new(room)?;
+        if quantity > room {
+            quantity = room;
+            adjustments.push(Adjustment::ExposureLimit);
+        }
+    }
+    Ok(Ok(quantity))
+}
+
+/// The final validation of the exposure cap, after every bound: the
+/// reason no plan can be made, if any.
+fn check_final_cap(
+    limits: &HedgeLimits,
+    exposure: Decimal,
+    exposure_after: Decimal,
+    adjustments: &mut Vec<Adjustment>,
+) -> Option<NoPlanReason> {
+    let cap = limits.exposure_cap?;
+    let (before, after) = (exposure.abs(), exposure_after.abs());
+    let within = after <= cap.value();
+    let reduces_above = before > cap.value() && after < before && {
+        // Crossing zero never goes beyond the cap on the other side.
+        let crossed = exposure.is_sign_positive() != exposure_after.is_sign_positive()
+            && !exposure_after.is_zero();
+        !crossed || within
+    };
+    if before <= cap.value() && !within || before > cap.value() && !reduces_above {
+        return Some(NoPlanReason::ExposureLimit);
+    }
+    if !within {
+        adjustments.push(Adjustment::ExposureAboveCap);
+    }
+    None
+}
+
 /// Validates and bounds `action` and builds the hedge plan for it.
 ///
 /// # Errors
@@ -222,60 +313,18 @@ pub fn hedge_plan_from_action(
         });
     }
 
-    let mut quantity = Quantity::new(requested)?;
-    if quantity > limits.max_quantity {
-        match limits.on_excess {
-            ExcessPolicy::Clip => {
-                quantity = limits.max_quantity;
-                adjustments.push(Adjustment::MaxQuantity);
-            }
-            ExcessPolicy::Reject => {
-                return Err(ArbitrageError::InvalidValue {
-                    field: "action quantity",
-                    value: requested,
-                    reason: "above max_quantity",
-                });
-            }
-        }
-    }
-
+    let quantity = max_quantity(
+        Quantity::new(requested)?,
+        requested,
+        limits,
+        &mut adjustments,
+    )?;
     let exposure = market.exposure.normalize();
-    // True if the side moves the exposure toward zero.
-    let reduces = match action.side {
-        Side::Buy => exposure < Decimal::ZERO,
-        Side::Sell => exposure > Decimal::ZERO,
-    };
-    if limits.reduce_only {
-        if !reduces {
-            return Ok(ActionOutcome::NoPlan {
-                requested,
-                reason: NoPlanReason::NotReducing,
-            });
-        }
-        let room = Quantity::new(exposure.abs())?;
-        if quantity > room {
-            quantity = room;
-            adjustments.push(Adjustment::ReduceOnly);
-        }
-    }
-    if let Some(cap) = limits.exposure_cap {
-        // Buy: exposure + q <= cap. Sell: exposure - q >= -cap.
-        let room = match action.side {
-            Side::Buy => exact::sub(cap.value(), exposure)?,
-            Side::Sell => exact::add(cap.value(), exposure)?,
+    let mut quantity =
+        match bound_by_exposure(action, limits, exposure, quantity, &mut adjustments)? {
+            Ok(q) => q,
+            Err(reason) => return Ok(ActionOutcome::NoPlan { requested, reason }),
         };
-        if room <= Decimal::ZERO {
-            return Ok(ActionOutcome::NoPlan {
-                requested,
-                reason: NoPlanReason::ExposureLimit,
-            });
-        }
-        let room = Quantity::new(room)?;
-        if quantity > room {
-            quantity = room;
-            adjustments.push(Adjustment::ExposureLimit);
-        }
-    }
 
     let Some(level) = market.book.executable(action.side) else {
         return Ok(ActionOutcome::NoPlan {
@@ -308,25 +357,10 @@ pub fn hedge_plan_from_action(
         Side::Buy => exact::add(exposure, quantity.value())?,
         Side::Sell => exact::sub(exposure, quantity.value())?,
     };
-    // Final validation of the exposure cap, after every bound.
-    if let Some(cap) = limits.exposure_cap {
-        let (before, after) = (exposure.abs(), expected_exposure_after.abs());
-        let within = after <= cap.value();
-        let reduces_above = before > cap.value() && after < before && {
-            // Crossing zero never goes beyond the cap on the other side.
-            let crossed = exposure.is_sign_positive() != expected_exposure_after.is_sign_positive()
-                && !expected_exposure_after.is_zero();
-            !crossed || within
-        };
-        if before <= cap.value() && !within || before > cap.value() && !reduces_above {
-            return Ok(ActionOutcome::NoPlan {
-                requested,
-                reason: NoPlanReason::ExposureLimit,
-            });
-        }
-        if !within {
-            adjustments.push(Adjustment::ExposureAboveCap);
-        }
+    if let Some(reason) =
+        check_final_cap(limits, exposure, expected_exposure_after, &mut adjustments)
+    {
+        return Ok(ActionOutcome::NoPlan { requested, reason });
     }
 
     let ccy = market.quote_currency;

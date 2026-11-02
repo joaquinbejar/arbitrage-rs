@@ -6,6 +6,15 @@
 //! 1 XYZ, so 10 option contracts and 100 future contracts. Fees are
 //! truncated to 1e-6 USDC.
 
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+
 use arbitrage_rs::parity::{
     DirectionEvaluation, OptionFee, ParityDirection, ParityFuture, ParityInput, ParityOption,
     ParityUnavailable, evaluate_parity,

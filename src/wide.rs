@@ -16,6 +16,27 @@ use rust_decimal::Decimal;
 
 const LIMBS: usize = 12;
 
+/// The low 64 bits of `x`.
+fn lo64(x: u128) -> u64 {
+    // The mask makes the value fit, so the fallback is never taken.
+    u64::try_from(x & u128::from(u64::MAX)).unwrap_or_default()
+}
+
+/// The high 64 bits of `x`.
+fn hi64(x: u128) -> u64 {
+    lo64(x >> 64)
+}
+
+/// `lhs * rhs + addend + carry` as `(low, high)` limbs. The value is at
+/// most `(2^64 - 1)^2 + 2 (2^64 - 1) = 2^128 - 1`, so it never wraps.
+fn mul_add(lhs: u64, rhs: u64, addend: u64, carry: u64) -> (u64, u64) {
+    let value = u128::from(lhs)
+        .wrapping_mul(u128::from(rhs))
+        .wrapping_add(u128::from(addend))
+        .wrapping_add(u128::from(carry));
+    (lo64(value), hi64(value))
+}
+
 /// Little-endian 64-bit limbs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct U768([u64; LIMBS]);
@@ -25,8 +46,9 @@ impl U768 {
 
     pub(crate) fn from_u128(x: u128) -> Self {
         let mut limbs = [0; LIMBS];
-        limbs[0] = x as u64;
-        limbs[1] = (x >> 64) as u64;
+        let [l0, l1, ..] = &mut limbs;
+        *l0 = lo64(x);
+        *l1 = hi64(x);
         Self(limbs)
     }
 
@@ -39,30 +61,46 @@ impl U768 {
         self.0.iter().all(|l| *l == 0)
     }
 
+    fn is_odd(&self) -> bool {
+        self.0.first().is_some_and(|l| l & 1 == 1)
+    }
+
     fn to_u128(self) -> Option<u128> {
-        if self.0[2..].iter().any(|l| *l != 0) {
+        let [l0, l1, rest @ ..] = self.0;
+        if rest.iter().any(|l| *l != 0) {
             return None;
         }
-        Some(u128::from(self.0[0]) | (u128::from(self.0[1]) << 64))
+        Some(u128::from(l0) | (u128::from(l1) << 64))
+    }
+
+    /// The limb at `i`, zero outside the number.
+    fn limb(&self, i: Option<usize>) -> u64 {
+        i.and_then(|i| self.0.get(i)).copied().unwrap_or(0)
     }
 
     /// `self * other`, or `None` on overflow.
     pub(crate) fn checked_mul(&self, other: &Self) -> Option<Self> {
         let mut out = [0u64; LIMBS * 2];
         for (i, a) in self.0.iter().enumerate() {
-            let mut carry = 0u128;
-            for (j, b) in other.0.iter().enumerate() {
-                let cur = u128::from(out[i + j]) + u128::from(*a) * u128::from(*b) + carry;
-                out[i + j] = cur as u64;
-                carry = cur >> 64;
+            let mut carry = 0u64;
+            let mut slots = out.iter_mut().skip(i);
+            // `other` first, so the zip stops without consuming a slot.
+            for (b, slot) in other.0.iter().zip(slots.by_ref()) {
+                let (lo, hi) = mul_add(*a, *b, *slot, carry);
+                *slot = lo;
+                carry = hi;
             }
-            out[i + LIMBS] = carry as u64;
+            if let Some(slot) = slots.next() {
+                *slot = carry;
+            }
         }
-        if out[LIMBS..].iter().any(|l| *l != 0) {
+        if out.iter().skip(LIMBS).any(|l| *l != 0) {
             return None;
         }
         let mut limbs = [0; LIMBS];
-        limbs.copy_from_slice(&out[..LIMBS]);
+        for (l, o) in limbs.iter_mut().zip(out.iter()) {
+            *l = *o;
+        }
         Some(Self(limbs))
     }
 
@@ -76,23 +114,24 @@ impl U768 {
         Some(r)
     }
 
+    /// Whole limbs and remaining bits of a shift, `None` past the width.
+    fn split_shift(bits: u32) -> Option<(usize, u32)> {
+        let words = usize::try_from(bits / 64).ok()?;
+        (words < LIMBS).then_some((words, bits % 64))
+    }
+
     /// `self << bits`, or `None` if bits are lost.
     fn checked_shl(&self, bits: u32) -> Option<Self> {
-        if bits >= 64 * LIMBS as u32 {
-            return if self.is_zero() { Some(*self) } else { None };
-        }
-        let (words, rest) = ((bits / 64) as usize, bits % 64);
+        let Some((words, rest)) = Self::split_shift(bits) else {
+            return self.is_zero().then_some(*self);
+        };
         let mut out = [0u64; LIMBS];
-        for i in (0..LIMBS).rev() {
-            if i < words {
-                continue;
-            }
-            let src = i - words;
-            let mut v = self.0[src] << rest;
-            if rest > 0 && src > 0 {
-                v |= self.0[src - 1] >> (64 - rest);
-            }
-            out[i] = v;
+        for (i, slot) in out.iter_mut().enumerate().skip(words) {
+            let src = i.checked_sub(words);
+            // The limb pair (src, src - 1) shifted left; its high half.
+            let pair = (u128::from(self.limb(src)) << 64)
+                | u128::from(self.limb(src.and_then(|s| s.checked_sub(1))));
+            *slot = hi64(pair << rest);
         }
         let back = Self(out).shr(bits);
         if back == *self { Some(Self(out)) } else { None }
@@ -100,21 +139,16 @@ impl U768 {
 
     /// `self >> bits`.
     fn shr(&self, bits: u32) -> Self {
-        if bits >= 64 * LIMBS as u32 {
+        let Some((words, rest)) = Self::split_shift(bits) else {
             return Self::ZERO;
-        }
-        let (words, rest) = ((bits / 64) as usize, bits % 64);
+        };
         let mut out = [0u64; LIMBS];
         for (i, slot) in out.iter_mut().enumerate() {
-            let src = i + words;
-            if src >= LIMBS {
-                break;
-            }
-            let mut v = self.0[src] >> rest;
-            if rest > 0 && src + 1 < LIMBS {
-                v |= self.0[src + 1] << (64 - rest);
-            }
-            *slot = v;
+            let src = i.checked_add(words);
+            // The limb pair (src + 1, src) shifted right; its low half.
+            let pair = (u128::from(self.limb(src.and_then(|s| s.checked_add(1)))) << 64)
+                | u128::from(self.limb(src));
+            *slot = lo64(pair >> rest);
         }
         Self(out)
     }
@@ -123,10 +157,10 @@ impl U768 {
     fn wrapping_sub(&self, other: &Self) -> Self {
         let mut out = [0u64; LIMBS];
         let mut borrow = 0u64;
-        for (i, slot) in out.iter_mut().enumerate() {
-            let (a, b1) = self.0[i].overflowing_sub(other.0[i]);
-            let (a, b2) = a.overflowing_sub(borrow);
-            *slot = a;
+        for ((slot, a), b) in out.iter_mut().zip(self.0.iter()).zip(other.0.iter()) {
+            let (v, b1) = a.overflowing_sub(*b);
+            let (v, b2) = v.overflowing_sub(borrow);
+            *slot = v;
             borrow = u64::from(b1 || b2);
         }
         Self(out)
@@ -136,10 +170,10 @@ impl U768 {
     fn checked_add(&self, other: &Self) -> Option<Self> {
         let mut out = [0u64; LIMBS];
         let mut carry = false;
-        for (i, slot) in out.iter_mut().enumerate() {
-            let (a, c1) = self.0[i].overflowing_add(other.0[i]);
-            let (a, c2) = a.overflowing_add(u64::from(carry));
-            *slot = a;
+        for ((slot, a), b) in out.iter_mut().zip(self.0.iter()).zip(other.0.iter()) {
+            let (v, c1) = a.overflowing_add(*b);
+            let (v, c2) = v.overflowing_add(u64::from(carry));
+            *slot = v;
             carry = c1 || c2;
         }
         if carry { None } else { Some(Self(out)) }
@@ -162,12 +196,13 @@ impl U768 {
     fn div_rem_10(&self) -> (Self, u64) {
         let mut q = [0u64; LIMBS];
         let mut rem = 0u128;
-        for i in (0..LIMBS).rev() {
-            let cur = (rem << 64) | u128::from(self.0[i]);
-            q[i] = (cur / 10) as u64;
+        for (slot, limb) in q.iter_mut().zip(self.0.iter()).rev() {
+            // rem < 10, so the shift loses nothing.
+            let cur = (rem << 64) | u128::from(*limb);
+            *slot = lo64(cur / 10);
             rem = cur % 10;
         }
-        (Self(q), rem as u64)
+        (Self(q), lo64(rem))
     }
 }
 
@@ -185,7 +220,9 @@ pub(crate) fn product(values: &[Decimal], op: &'static str) -> Result<(U768, u32
         m = m
             .checked_mul(&U768::from_mantissa(*v))
             .ok_or(ArbitrageError::Overflow { op })?;
-        scale += v.scale();
+        scale = scale
+            .checked_add(v.scale())
+            .ok_or(ArbitrageError::Overflow { op })?;
         negative ^= v.is_sign_negative() && !v.is_zero();
     }
     if m.is_zero() {
@@ -216,8 +253,10 @@ pub(crate) fn sum_products(terms: &[&[Decimal]], op: &'static str) -> Result<(U7
     let mut acc = U768::ZERO;
     let mut acc_negative = false;
     for (m, s, negative) in products {
-        let m = m
-            .checked_mul_pow10(scale - s)
+        // s <= scale, the largest of the scales.
+        let m = scale
+            .checked_sub(s)
+            .and_then(|k| m.checked_mul_pow10(k))
             .ok_or_else(|| overflow.clone())?;
         if acc_negative == negative || acc.is_zero() {
             acc = acc.checked_add(&m).ok_or_else(|| overflow.clone())?;
@@ -294,7 +333,8 @@ pub(crate) fn round_to_dp(
     let mut q = m;
     let mut top = 0u64;
     let mut below = false;
-    for _ in 0..(scale - dp) {
+    // scale > dp here.
+    for _ in 0..scale.saturating_sub(dp) {
         below |= top != 0;
         let (next, digit) = q.div_rem_10();
         top = digit;
@@ -308,7 +348,7 @@ pub(crate) fn round_to_dp(
         Rounding::HalfEven => {
             let above_half = top > 5 || (top == 5 && below);
             let at_half = top == 5 && !below;
-            above_half || (at_half && q.0[0] & 1 == 1)
+            above_half || (at_half && q.is_odd())
         }
     };
     if away {
@@ -327,8 +367,8 @@ impl PartialOrd for U768 {
 
 impl Ord for U768 {
     fn cmp(&self, other: &Self) -> Ordering {
-        for i in (0..LIMBS).rev() {
-            match self.0[i].cmp(&other.0[i]) {
+        for (a, b) in self.0.iter().zip(other.0.iter()).rev() {
+            match a.cmp(b) {
                 Ordering::Equal => {}
                 o => return o,
             }
@@ -356,7 +396,8 @@ pub(crate) fn to_decimal(m: U768, scale: u32, negative: bool, op: &'static str) 
             break;
         }
         m = q;
-        scale -= 1;
+        // scale > 0 in the loop.
+        scale = scale.saturating_sub(1);
     }
     if m.is_zero() {
         return Ok(Decimal::ZERO);
@@ -365,29 +406,32 @@ pub(crate) fn to_decimal(m: U768, scale: u32, negative: bool, op: &'static str) 
         .to_u128()
         .filter(|v| *v < (1u128 << 96))
         .filter(|_| scale <= MAX_SCALE);
-    match fits {
-        Some(v) => {
-            // v < 2^96 and scale <= 28, so this cannot fail.
-            let magnitude = i128::try_from(v).map_err(|_| ArbitrageError::Overflow { op })?;
-            let signed = if negative { -magnitude } else { magnitude };
-            Decimal::try_from_i128_with_scale(signed, scale)
-                .map_err(|_| ArbitrageError::Overflow { op })
-                .map(|d| d.normalize())
-        }
-        None => {
-            // Out of range if the integer part alone needs more than 96 bits.
-            let ten_s = U768::from_u128(1)
-                .checked_mul_pow10(scale)
-                .ok_or(ArbitrageError::Overflow { op })?;
-            let max_plus_one = U768::from_u128(1u128 << 96);
-            let limit = max_plus_one
-                .checked_mul(&ten_s)
-                .ok_or(ArbitrageError::Overflow { op })?;
-            if m >= limit {
-                Err(ArbitrageError::Overflow { op })
-            } else {
-                Err(ArbitrageError::Inexact { op })
-            }
+    if let Some(v) = fits {
+        // v < 2^96 and scale <= 28, so this cannot fail.
+        let magnitude = i128::try_from(v).map_err(|_| ArbitrageError::Overflow { op })?;
+        let signed = if negative {
+            magnitude
+                .checked_neg()
+                .ok_or(ArbitrageError::Overflow { op })?
+        } else {
+            magnitude
+        };
+        Decimal::try_from_i128_with_scale(signed, scale)
+            .map_err(|_| ArbitrageError::Overflow { op })
+            .map(|d| d.normalize())
+    } else {
+        // Out of range if the integer part alone needs more than 96 bits.
+        let ten_s = U768::from_u128(1)
+            .checked_mul_pow10(scale)
+            .ok_or(ArbitrageError::Overflow { op })?;
+        let max_plus_one = U768::from_u128(1u128 << 96);
+        let limit = max_plus_one
+            .checked_mul(&ten_s)
+            .ok_or(ArbitrageError::Overflow { op })?;
+        if m >= limit {
+            Err(ArbitrageError::Overflow { op })
+        } else {
+            Err(ArbitrageError::Inexact { op })
         }
     }
 }
@@ -418,55 +462,124 @@ pub(crate) fn f64_to_decimal_half_even(x: f64, dp: u32) -> Result<(Decimal, bool
     let bits = x.to_bits();
     let exp_bits = i64::try_from((bits >> 52) & 0x7ff).unwrap_or_default();
     let frac = bits & ((1u64 << 52) - 1);
-    let (m, e) = if exp_bits == 0 {
+    let out_of_range = || unsupported("action quantity is outside the supported Decimal range");
+    let (mantissa, exponent) = if exp_bits == 0 {
         (frac, -1074i64)
     } else {
-        (frac | (1u64 << 52), exp_bits - 1075)
+        // exp_bits is at most 0x7ff.
+        (
+            frac | (1u64 << 52),
+            exp_bits.checked_sub(1075).ok_or_else(out_of_range)?,
+        )
     };
-    if m == 0 {
+    if mantissa == 0 {
         return Ok((Decimal::ZERO, false));
     }
-    let out_of_range = || unsupported("action quantity is outside the supported Decimal range");
-    let m = U768::from_u128(u128::from(m));
-    if e >= 0 {
+    let mantissa = U768::from_u128(u128::from(mantissa));
+    if exponent >= 0 {
         // An integer: exact at scale 0 if it fits.
-        let shift = u32::try_from(e).map_err(|_| out_of_range())?;
-        let n = m.checked_shl(shift).ok_or_else(out_of_range)?;
-        let d = to_decimal(n, 0, false, "float").map_err(|_| out_of_range())?;
-        return Ok((d, false));
+        let shift = u32::try_from(exponent).map_err(|_| out_of_range())?;
+        let value = mantissa.checked_shl(shift).ok_or_else(out_of_range)?;
+        let decimal = to_decimal(value, 0, false, "float").map_err(|_| out_of_range())?;
+        return Ok((decimal, false));
     }
-    let k = u32::try_from(-e).map_err(|_| out_of_range())?;
-    // numerator = m * 10^dp < 2^53 * 2^94; a quotient by 2^k with k above
-    // 300 is below one half, so it rounds to zero.
-    let numerator = m.checked_mul_pow10(dp).ok_or_else(out_of_range)?;
-    if k > 300 {
+    let shift = exponent
+        .checked_neg()
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or_else(out_of_range)?;
+    // numerator = mantissa * 10^dp < 2^53 * 2^94; a quotient by 2^shift
+    // with shift above 300 is below one half, so it rounds to zero.
+    let numerator = mantissa.checked_mul_pow10(dp).ok_or_else(out_of_range)?;
+    if shift > 300 {
         return Ok((Decimal::ZERO, true));
     }
-    let q = numerator.shr(k);
-    let back = q.checked_shl(k).ok_or_else(out_of_range)?;
-    let r = numerator.wrapping_sub(&back);
-    let half = U768::from_u128(1)
-        .checked_shl(k - 1)
+    let quotient = numerator.shr(shift);
+    let back = quotient.checked_shl(shift).ok_or_else(out_of_range)?;
+    let remainder = numerator.wrapping_sub(&back);
+    // shift >= 1 here (the exponent is negative).
+    let half = shift
+        .checked_sub(1)
+        .and_then(|h| U768::from_u128(1).checked_shl(h))
         .ok_or_else(out_of_range)?;
-    let inexact = !r.is_zero();
-    let up = match r.cmp(&half) {
+    let inexact = !remainder.is_zero();
+    let up = match remainder.cmp(&half) {
         Ordering::Greater => true,
-        Ordering::Equal => q.0[0] & 1 == 1,
+        Ordering::Equal => quotient.is_odd(),
         Ordering::Less => false,
     };
-    let n = if up {
-        q.checked_add_one().ok_or_else(out_of_range)?
+    let rounded = if up {
+        quotient.checked_add_one().ok_or_else(out_of_range)?
     } else {
-        q
+        quotient
     };
-    let d = to_decimal(n, dp, false, "float").map_err(|_| out_of_range())?;
-    Ok((d, inexact))
+    let decimal = to_decimal(rounded, dp, false, "float").map_err(|_| out_of_range())?;
+    Ok((decimal, inexact))
 }
 
 #[cfg(test)]
+// Tests fail loudly: the library's no-panic lints do not apply here.
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    /// The limb loops of U768 against native `u128` arithmetic on values
+    /// that fit, over a fixed xorshift sequence.
+    #[test]
+    fn limb_arithmetic_matches_u128() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..20_000 {
+            let a = (u128::from(next()) << 64) | u128::from(next());
+            let b = u128::from(next()) >> (next() % 64);
+            let shift = u32::try_from(next() % 140).unwrap();
+            let (ua, ub) = (U768::from_u128(a), U768::from_u128(b));
+            assert_eq!(ua.cmp(&ub), a.cmp(&b));
+            let product = ua.checked_mul(&ub).unwrap();
+            assert_eq!(product.to_u128(), a.checked_mul(b));
+            assert_eq!(ua.checked_add(&ub).unwrap().to_u128(), a.checked_add(b));
+            if a >= b {
+                assert_eq!(ua.wrapping_sub(&ub).to_u128(), Some(a.wrapping_sub(b)));
+            }
+            let (q, r) = ua.div_rem_10();
+            assert_eq!(
+                (q.to_u128(), r),
+                (Some(a / 10), u64::try_from(a % 10).unwrap())
+            );
+            assert_eq!(
+                ua.shr(shift).to_u128(),
+                Some(a.checked_shr(shift).unwrap_or(0))
+            );
+            let shifted = ua.checked_shl(shift).unwrap();
+            assert_eq!(shifted.shr(shift), ua);
+            if shift < 128 && (a << shift) >> shift == a {
+                assert_eq!(shifted.to_u128(), Some(a << shift));
+            }
+            assert_eq!(ua.is_odd(), a % 2 == 1);
+        }
+        // Past the width: only zero shifts losslessly.
+        assert_eq!(U768::ZERO.checked_shl(800), Some(U768::ZERO));
+        assert_eq!(
+            U768::from_u128(1).checked_shl(767).map(|v| v.shr(767)),
+            Some(U768::from_u128(1))
+        );
+        assert_eq!(U768::from_u128(2).checked_shl(767), None);
+        assert_eq!(U768::from_u128(1).shr(768), U768::ZERO);
+        // The top limb carries out of a product.
+        let top = U768::from_u128(1).checked_shl(700).unwrap();
+        assert_eq!(top.checked_mul(&top), None);
+    }
 
     #[test]
     fn mul_and_compare() {
@@ -653,7 +766,7 @@ mod tests {
                 .iter()
                 .map(|[a, b]| a * b)
                 .fold(Decimal::ZERO, |acc, x| acc + x);
-            let refs: Vec<&[Decimal]> = terms.iter().map(|t| t.as_slice()).collect();
+            let refs: Vec<&[Decimal]> = terms.iter().map(<[Decimal; 2]>::as_slice).collect();
             assert_eq!(sum_products_exact(&refs, "t").unwrap(), expected);
         }
     }
