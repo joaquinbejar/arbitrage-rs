@@ -320,10 +320,11 @@ fn ack_reports_fills_in_flight_so_no_resubmit_overlaps_them() {
     assert_eq!(r.state, PlanState::Completed);
     assert_eq!(plan.leg(B).fees, fee(dec!(0.5)));
     assert_eq!(plan.leg(B).attempts.len(), 1);
-    // A fill beyond the acknowledged final quantity is impossible.
-    let before = plan.clone();
-    assert!(matches!(
-        plan.apply(&fill(
+    // A real fill beyond the acknowledged quantity is recorded, not
+    // rejected: B is oversold by 1 and the fallback (abort) keeps it
+    // visible.
+    let r = plan
+        .apply(&fill(
             B,
             0,
             "b3",
@@ -331,11 +332,12 @@ fn ack_reports_fills_in_flight_so_no_resubmit_overlaps_them() {
             dec!(11),
             dec!(100.5),
             dec!(0.05),
-            4
-        )),
-        Err(ArbitrageError::InvalidInput { .. })
-    ));
-    assert_eq!(plan, before);
+            4,
+        ))
+        .unwrap();
+    assert_eq!(r.state, PlanState::Aborted);
+    assert_eq!(r.residual, dec!(-1));
+    assert_eq!(plan.leg(B).overfill().unwrap(), dec!(1));
 }
 
 #[test]
@@ -394,8 +396,7 @@ fn partial_fill_in_flight_shrinks_the_resubmission() {
         .unwrap();
     assert!(r.actions.is_empty());
     assert_eq!(r.residual, dec!(5));
-    // Attempt 1 fills its 5 and the plan completes; a further real fill on
-    // attempt 1 would exceed its quantity and is rejected, not hidden.
+    // Attempt 1 fills its 5 and the plan completes.
     let r = plan
         .apply(&fill(
             B,
@@ -410,8 +411,10 @@ fn partial_fill_in_flight_shrinks_the_resubmission() {
         .unwrap();
     assert_eq!(r.state, PlanState::Completed);
     assert_eq!(r.residual, dec!(0));
-    assert!(matches!(
-        plan.apply(&fill(
+    // A further real fill on attempt 1 exceeds it: recorded as exposure,
+    // and the fallback (abort) keeps the residual visible.
+    let r = plan
+        .apply(&fill(
             B,
             1,
             "b4",
@@ -419,10 +422,11 @@ fn partial_fill_in_flight_shrinks_the_resubmission() {
             dec!(6),
             dec!(100.5),
             dec!(0.05),
-            5
-        )),
-        Err(ArbitrageError::InvalidInput { .. })
-    ));
+            5,
+        ))
+        .unwrap();
+    assert_eq!(r.state, PlanState::Aborted);
+    assert_eq!(r.residual, dec!(-1));
 }
 
 #[test]
@@ -598,8 +602,6 @@ fn invalid_events_leave_the_plan_unchanged() {
     let before = plan.clone();
 
     let cases = [
-        // Overfill: cum 11 > 10.
-        fill(A, 0, "a2", dec!(7), dec!(11), dec!(100), dec!(0.2), 11),
         // cum_qty not previous + fill.
         fill(A, 0, "a3", dec!(1), dec!(4), dec!(100), dec!(0.2), 11),
         // Attempt never sent.
@@ -608,9 +610,9 @@ fn invalid_events_leave_the_plan_unchanged() {
         fill(A, 0, "a1", dec!(5), dec!(5), dec!(100), dec!(0.2), 11),
         // Rejection of an attempt with fills.
         rejected(A, 0, 11),
-        // Ack below the fills already applied, or above the attempt.
+        // Ack below the fills already applied, or negative.
         ack(A, 0, dec!(3), 11),
-        ack(A, 0, dec!(11), 11),
+        ack(A, 0, dec!(-1), 11),
         // A non-fill event older than the last applied one.
         LegExecution::Tick { at: t(9) },
     ];
@@ -750,4 +752,251 @@ fn plan_from_an_accepted_opportunity() {
     assert_eq!(plan.leg(B).spec.deadline, Some(t(200)));
     assert_eq!(plan.leg(A).remaining().unwrap(), dec!(3));
     assert_eq!(plan.state(), PlanState::Working);
+}
+
+#[test]
+fn a_late_fill_beyond_the_ack_cancels_the_surplus_retry() {
+    // The ack under-reports (3) and the plan resubmits 7; then the late fill
+    // of 7 on attempt 0 shows B was already complete. The live retry is
+    // surplus: cancel it, and complete once it is acknowledged empty.
+    let policy = FailurePolicy::Complete {
+        max_resubmits: 3,
+        then: Fallback::Unwind,
+    };
+    let mut plan = plan(policy, None);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    plan.apply(&fill(
+        B,
+        0,
+        "b1",
+        dec!(3),
+        dec!(3),
+        dec!(100.5),
+        dec!(0.15),
+        2,
+    ))
+    .unwrap();
+    let r = plan.apply(&ack(B, 0, dec!(3), 3)).unwrap();
+    assert_eq!(
+        r.actions,
+        vec![PlanAction::Resubmit {
+            leg: B,
+            attempt: 1,
+            quantity: q(dec!(7)),
+            price: p(dec!(100.5)),
+        }]
+    );
+    let r = plan
+        .apply(&fill(
+            B,
+            0,
+            "b2",
+            dec!(7),
+            dec!(10),
+            dec!(100.5),
+            dec!(0.35),
+            2,
+        ))
+        .unwrap();
+    assert_eq!(r.actions, vec![PlanAction::Cancel { leg: B, attempt: 1 }]);
+    assert_eq!(r.state, PlanState::Working);
+    assert_eq!(r.residual, dec!(0));
+    let r = plan.apply(&ack(B, 1, dec!(0), 4)).unwrap();
+    assert_eq!(r.state, PlanState::Completed);
+    assert_eq!(r.residual, dec!(0));
+}
+
+#[test]
+fn a_retry_that_fills_before_its_cancel_is_an_overfill_offset_by_unwind() {
+    // Same race, but the surplus retry fills 2 before its cancel: B is
+    // oversold by 2. Under the unwind fallback the plan buys 2 of Y back.
+    let policy = FailurePolicy::Complete {
+        max_resubmits: 3,
+        then: Fallback::Unwind,
+    };
+    let mut plan = plan(policy, None);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    plan.apply(&fill(
+        B,
+        0,
+        "b1",
+        dec!(3),
+        dec!(3),
+        dec!(100.5),
+        dec!(0.15),
+        2,
+    ))
+    .unwrap();
+    plan.apply(&ack(B, 0, dec!(3), 3)).unwrap();
+    plan.apply(&fill(
+        B,
+        0,
+        "b2",
+        dec!(7),
+        dec!(10),
+        dec!(100.5),
+        dec!(0.35),
+        2,
+    ))
+    .unwrap();
+    let r = plan
+        .apply(&fill(
+            B,
+            1,
+            "b3",
+            dec!(2),
+            dec!(2),
+            dec!(100.5),
+            dec!(0.1),
+            4,
+        ))
+        .unwrap();
+    assert_eq!(r.state, PlanState::Unwinding);
+    assert_eq!(r.residual, dec!(-2));
+    let r = plan.apply(&ack(B, 1, dec!(2), 5)).unwrap();
+    assert_eq!(r.state, PlanState::UnwindRequested);
+    assert_eq!(r.actions, vec![unwind("Y", Side::Buy, dec!(2))]);
+    assert_eq!(plan.leg(B).overfill().unwrap(), dec!(2));
+}
+
+#[test]
+fn an_overfill_after_completion_is_recorded_and_unwound() {
+    let mut plan = plan(FailurePolicy::Unwind, None);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    let r = plan
+        .apply(&fill(
+            B,
+            0,
+            "b1",
+            dec!(10),
+            dec!(10),
+            dec!(100.5),
+            dec!(0.5),
+            2,
+        ))
+        .unwrap();
+    assert_eq!(r.state, PlanState::Completed);
+    let r = plan
+        .apply(&fill(
+            B,
+            0,
+            "b2",
+            dec!(1),
+            dec!(11),
+            dec!(100.5),
+            dec!(0.05),
+            3,
+        ))
+        .unwrap();
+    assert_eq!(r.state, PlanState::UnwindRequested);
+    assert_eq!(r.actions, vec![unwind("Y", Side::Buy, dec!(1))]);
+    assert_eq!(r.residual, dec!(-1));
+}
+
+#[test]
+fn an_ack_reporting_more_than_the_attempt_is_recorded() {
+    let mut plan = plan(FailurePolicy::Abort, None);
+    plan.apply(&fill(
+        A,
+        0,
+        "a1",
+        dec!(10),
+        dec!(10),
+        dec!(100),
+        dec!(0.5),
+        1,
+    ))
+    .unwrap();
+    let r = plan.apply(&ack(B, 0, dec!(12), 2)).unwrap();
+    assert_eq!(r.state, PlanState::Aborted);
+    assert_eq!(r.residual, dec!(-2));
+    assert_eq!(plan.leg(B).overfill().unwrap(), dec!(2));
+}
+
+#[test]
+fn no_resubmit_at_or_after_the_deadline_without_a_tick() {
+    let policy = FailurePolicy::Complete {
+        max_resubmits: 2,
+        then: Fallback::Abort,
+    };
+    // Codex repro: a CancelAck exactly at the deadline, no tick before it.
+    let mut plan_a = plan(policy, Some(t(10)));
+    let r = plan_a.apply(&ack(B, 0, dec!(0), 10)).unwrap();
+    assert_eq!(r.actions, vec![PlanAction::Cancel { leg: A, attempt: 0 }]);
+    assert_eq!(r.state, PlanState::Aborting);
+    assert_eq!(plan_a.leg(B).resubmits(), 0);
+    // A rejection after the deadline, no tick before it.
+    let mut plan_b = plan(policy, Some(t(10)));
+    let r = plan_b.apply(&rejected(B, 0, 11)).unwrap();
+    assert!(
+        !r.actions
+            .iter()
+            .any(|a| matches!(a, PlanAction::Resubmit { .. }))
+    );
+    assert_eq!(r.state, PlanState::Aborting);
+    // Before the deadline the same rejection is resubmitted.
+    let mut plan_c = plan(policy, Some(t(10)));
+    let r = plan_c.apply(&rejected(B, 0, 9)).unwrap();
+    assert_eq!(
+        r.actions,
+        vec![PlanAction::Resubmit {
+            leg: B,
+            attempt: 1,
+            quantity: q(dec!(10)),
+            price: p(dec!(100.5)),
+        }]
+    );
+}
+
+#[test]
+fn no_resubmit_of_an_expired_instrument_without_a_tick() {
+    let policy = FailurePolicy::Complete {
+        max_resubmits: 2,
+        then: Fallback::Unwind,
+    };
+    let first = spec("X", Side::Buy, dec!(10), dec!(100), None);
+    let mut second = spec("Y-FUT", Side::Sell, dec!(10), dec!(100.5), None);
+    second.leg.instrument = Instrument::dated(InstrumentId::new("Y-FUT").unwrap(), t(50));
+    // Rejected after the expiry and acknowledged at the expiry: no resubmit.
+    for ev in [rejected(B, 0, 60), ack(B, 0, dec!(0), 50)] {
+        let mut plan = TwoLegPlan::new(first.clone(), second.clone(), policy, usd(), t(0)).unwrap();
+        let r = plan.apply(&ev).unwrap();
+        assert_eq!(
+            r.actions,
+            vec![PlanAction::Cancel { leg: A, attempt: 0 }],
+            "{ev:?}"
+        );
+        assert_eq!(r.state, PlanState::Unwinding, "{ev:?}");
+        assert_eq!(plan.leg(B).resubmits(), 0, "{ev:?}");
+    }
 }

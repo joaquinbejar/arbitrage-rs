@@ -28,18 +28,27 @@
 //! a cancel acknowledgement carries the attempt's final one:
 //!
 //! - a fill is accepted when its `cum_qty` equals the attempt's previous
-//!   cumulative plus the fill, does not exceed the attempt's quantity and,
-//!   once the attempt is acknowledged, does not exceed the acknowledged
-//!   final quantity. Its timestamp may be older than the last event: a fill
-//!   that was executed before a cancel but delivered after its
-//!   acknowledgement is consistent and is applied;
-//! - the **executed** quantity of an acknowledged attempt is the final
-//!   quantity from the acknowledgement, even while some of its fills are
-//!   still in flight; the residual exposure and every resubmission use it,
-//!   so a late fill never makes the plan resubmit or unwind too much;
+//!   cumulative plus the fill, whatever its timestamp: a fill executed
+//!   before a cancel but delivered after its acknowledgement is applied. A
+//!   `cum_qty` that breaks that sequence is an inconsistent report and is
+//!   rejected;
+//! - the **executed** quantity of an attempt is the larger of its observed
+//!   fills and the acknowledged final quantity, so fills still in flight
+//!   count as soon as the acknowledgement reports them; the residual
+//!   exposure and every resubmission use it;
+//! - a real execution is never rejected for exceeding a quantity. A fill or
+//!   acknowledgement beyond the attempt or the leg is recorded as exposure:
+//!   a live attempt made surplus by it is cancelled, and a leg executed
+//!   beyond its quantity (an overfill) is a failure handled by the policy's
+//!   fallback (abort keeps the residual visible, unwind offsets it);
+//! - the plan completes only when both legs are executed in full and no
+//!   attempt is still live;
 //! - fees and notional come from fills only, so they grow as late fills
 //!   arrive.
 //!
+//! Adapter contract: the fills of one attempt must be applied in the
+//! venue's execution order (each `cum_qty` builds on the previous one);
+//! fills of different attempts or legs may interleave in any order.
 //! Rejections, acknowledgements and ticks must arrive with non-decreasing
 //! timestamps; an older one is rejected.
 //!
@@ -260,11 +269,19 @@ impl AttemptState {
         }
     }
 
-    /// Executed quantity: the acknowledged final cumulative if known, else
-    /// the fills observed so far.
+    /// Executed quantity: the larger of the observed fills and the
+    /// acknowledged final cumulative.
     #[must_use]
     pub fn executed(&self) -> Decimal {
-        self.final_cum.unwrap_or(self.observed)
+        self.final_cum
+            .map_or(self.observed, |f| f.max(self.observed))
+    }
+
+    /// True while the attempt can still execute: not closed and not filled
+    /// to its quantity.
+    #[must_use]
+    pub fn is_live(&self) -> bool {
+        self.outcome.is_none() && self.observed < self.quantity.value()
     }
 }
 
@@ -281,7 +298,7 @@ pub enum LegStatus {
         /// Attempt being cancelled.
         attempt: u32,
     },
-    /// The whole quantity is executed.
+    /// The whole quantity (or more) is executed and no attempt is live.
     Filled,
     /// The last attempt was rejected with quantity left.
     Rejected,
@@ -339,13 +356,22 @@ impl LegState {
             .try_fold(Decimal::ZERO, |acc, a| exact::add(acc, a.executed()))
     }
 
-    /// Quantity left to execute.
+    /// Quantity left to execute; negative after an overfill.
     ///
     /// # Errors
     ///
     /// Arithmetic errors.
     pub fn remaining(&self) -> Result<Decimal> {
         exact::sub(self.spec.leg.quantity.value(), self.executed()?)
+    }
+
+    /// Quantity executed beyond the leg's quantity (zero if none).
+    ///
+    /// # Errors
+    ///
+    /// Arithmetic errors.
+    pub fn overfill(&self) -> Result<Decimal> {
+        Ok(exact::neg(self.remaining()?).max(Decimal::ZERO))
     }
 
     /// Signed executed position: positive for a buy leg, negative for a
@@ -374,16 +400,24 @@ impl LegState {
     ///
     /// Arithmetic errors.
     pub fn status(&self) -> Result<LegStatus> {
-        if self.remaining()?.is_zero() {
-            return Ok(LegStatus::Filled);
-        }
         let attempt = self.resubmits();
         let current = self.current();
-        Ok(match (current.outcome, current.cancel_requested) {
-            (Some(AttemptOutcome::Rejected), _) => LegStatus::Rejected,
-            (Some(AttemptOutcome::Cancelled), _) => LegStatus::Cancelled,
-            (None, true) => LegStatus::CancelRequested { attempt },
-            (None, false) => LegStatus::Working { attempt },
+        if current.is_live() {
+            return Ok(if current.cancel_requested {
+                LegStatus::CancelRequested { attempt }
+            } else {
+                LegStatus::Working { attempt }
+            });
+        }
+        if self.remaining()? <= Decimal::ZERO {
+            return Ok(LegStatus::Filled);
+        }
+        Ok(match current.outcome {
+            Some(AttemptOutcome::Rejected) => LegStatus::Rejected,
+            // Cancelled, or filled to its own quantity while the leg still
+            // needs more (cannot happen with resubmissions sized to the
+            // remaining quantity, reported as cancelled to stay terminal).
+            _ => LegStatus::Cancelled,
         })
     }
 
@@ -557,12 +591,12 @@ impl TwoLegPlan {
     /// # Errors
     ///
     /// - [`ArbitrageError::InvalidInput`] for an attempt that was never sent,
-    ///   an inconsistent `cum_qty` (not the previous cumulative plus the
-    ///   fill, above the attempt quantity, or above or below what an
-    ///   acknowledgement or the applied fills say), a reused execution id
-    ///   with different content, a rejection of an attempt with fills, a
-    ///   fill on a rejected attempt, an attempt closed twice differently, or
-    ///   a non-fill event older than the last applied one.
+    ///   an inconsistent `cum_qty` (a fill's that is not the previous
+    ///   cumulative plus the fill, or an acknowledgement's below the fills
+    ///   already applied), a reused execution id with different content, a
+    ///   rejection of an attempt with fills, a fill on a rejected attempt, an
+    ///   attempt closed twice differently, or a non-fill event older than
+    ///   the last applied one. Executions beyond a quantity are not errors.
     /// - [`ArbitrageError::CurrencyMismatch`] for a fee in another currency.
     /// - Arithmetic errors.
     pub fn apply(&mut self, event: &LegExecution) -> Result<PlanActions> {
@@ -714,12 +748,8 @@ impl TwoLegPlan {
         if cum != fill.cum_qty.value() {
             return invalid("cum_qty is not the attempt's cumulative plus the fill");
         }
-        if cum > state.quantity.value() {
-            return invalid("cum_qty exceeds the attempt quantity");
-        }
-        if state.final_cum.is_some_and(|f| cum > f) {
-            return invalid("cum_qty exceeds the acknowledged final quantity");
-        }
+        // Beyond the attempt quantity or the acknowledged final quantity it
+        // is still a real execution: it is recorded, never rejected.
         state.observed = cum;
         let notional = fill.price.notional(fill.quantity, self.currency)?;
         let leg_state = &mut self.legs[fill.leg.slot()];
@@ -747,29 +777,50 @@ impl TwoLegPlan {
         if final_cum < state.observed {
             return invalid("acknowledged cum_qty is below the fills already applied");
         }
-        if final_cum > state.quantity.value() {
-            return invalid("acknowledged cum_qty exceeds the attempt quantity");
+        if final_cum < Decimal::ZERO {
+            return invalid("acknowledged cum_qty is negative");
         }
         state.outcome = Some(outcome);
         state.final_cum = Some(final_cum.normalize());
         Ok(())
     }
 
-    /// Re-evaluates deadlines, completion and the failure policy at `at`.
+    /// Re-evaluates deadlines, surplus attempts, overfills, completion and
+    /// the failure policy at `at`.
     fn step(&mut self, at: Timestamp, actions: &mut Vec<PlanAction>) -> Result<()> {
-        // Effective deadlines (own deadline or instrument expiry) request a
-        // cancel once per leg.
         for i in [LegIndex::First, LegIndex::Second] {
-            let status = self.legs[i.slot()].status()?;
+            let remaining = self.legs[i.slot()].remaining()?;
             let state = &mut self.legs[i.slot()];
-            if let LegStatus::Working { attempt } = status {
-                if !state.deadline_cancelled
-                    && state.spec.effective_deadline().is_some_and(|d| d <= at)
-                {
-                    state.deadline_cancelled = true;
-                    state.current_mut().cancel_requested = true;
-                    actions.push(PlanAction::Cancel { leg: i, attempt });
-                }
+            let attempt = state.resubmits();
+            if !state.current().is_live() || state.current().cancel_requested {
+                continue;
+            }
+            // A live attempt made surplus by executions elsewhere (a late
+            // fill beyond an acknowledgement) is cancelled.
+            let surplus = remaining <= Decimal::ZERO;
+            // Effective deadlines (own deadline or instrument expiry).
+            let expired = !state.deadline_cancelled
+                && state.spec.effective_deadline().is_some_and(|d| d <= at);
+            if expired {
+                state.deadline_cancelled = true;
+            }
+            if surplus || expired {
+                state.current_mut().cancel_requested = true;
+                actions.push(PlanAction::Cancel { leg: i, attempt });
+            }
+        }
+
+        // An overfill is a failure handled by the policy's fallback, even
+        // after completion.
+        if matches!(self.state, PlanState::Working | PlanState::Completed) {
+            let overfilled = [LegIndex::First, LegIndex::Second]
+                .into_iter()
+                .map(|i| self.legs[i.slot()].overfill().map(|o| (i, o)))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .find(|(_, o)| *o > Decimal::ZERO);
+            if let Some((leg, _)) = overfilled {
+                self.enter_fallback(self.fallback(), leg, actions)?;
             }
         }
 
@@ -789,7 +840,7 @@ impl TwoLegPlan {
                 )
             });
             if let Some(leg) = failed {
-                self.on_failure(leg, actions)?;
+                self.on_failure(leg, at, actions)?;
             }
         }
 
@@ -808,46 +859,67 @@ impl TwoLegPlan {
         Ok(())
     }
 
-    fn on_failure(&mut self, leg: LegIndex, actions: &mut Vec<PlanAction>) -> Result<()> {
-        let fallback = match self.policy {
+    /// The fallback the policy applies once recovery by resubmission is not
+    /// possible.
+    fn fallback(&self) -> Fallback {
+        match self.policy {
             FailurePolicy::Abort => Fallback::Abort,
             FailurePolicy::Unwind => Fallback::Unwind,
-            FailurePolicy::Complete {
-                max_resubmits,
-                then,
-            } => {
-                let total: u32 = self.legs.iter().map(LegState::resubmits).sum();
-                let state = &mut self.legs[leg.slot()];
-                if total < max_resubmits && !state.deadline_cancelled {
-                    // The executed quantity includes fills that the
-                    // acknowledgement reported but that are still in flight,
-                    // so the resubmission never overlaps them.
-                    let quantity = Quantity::new(state.remaining()?)?;
-                    state.attempts.push(AttemptState::new(quantity));
-                    actions.push(PlanAction::Resubmit {
-                        leg,
-                        attempt: state.resubmits(),
-                        quantity,
-                        price: state.spec.leg.price,
-                    });
-                    return Ok(());
-                }
-                then
-            }
-        };
+            FailurePolicy::Complete { then, .. } => then,
+        }
+    }
+
+    /// Enters `fallback` because of `leg` and cancels every live attempt
+    /// that is not already being cancelled.
+    fn enter_fallback(
+        &mut self,
+        fallback: Fallback,
+        leg: LegIndex,
+        actions: &mut Vec<PlanAction>,
+    ) -> Result<()> {
         self.state = match fallback {
             Fallback::Abort => PlanState::Aborting,
             Fallback::Unwind => PlanState::Unwinding,
         };
-        let other = leg.other();
-        if let LegStatus::Working { attempt } = self.legs[other.slot()].status()? {
-            self.legs[other.slot()].current_mut().cancel_requested = true;
-            actions.push(PlanAction::Cancel {
-                leg: other,
-                attempt,
-            });
+        for i in [leg.other(), leg] {
+            if let LegStatus::Working { attempt } = self.legs[i.slot()].status()? {
+                self.legs[i.slot()].current_mut().cancel_requested = true;
+                actions.push(PlanAction::Cancel { leg: i, attempt });
+            }
         }
         Ok(())
+    }
+
+    fn on_failure(
+        &mut self,
+        leg: LegIndex,
+        at: Timestamp,
+        actions: &mut Vec<PlanAction>,
+    ) -> Result<()> {
+        if let FailurePolicy::Complete { max_resubmits, .. } = self.policy {
+            let total: u32 = self.legs.iter().map(LegState::resubmits).sum();
+            let state = &mut self.legs[leg.slot()];
+            // Checked against the event time itself: a rejection or an
+            // acknowledgement at or after the effective deadline (or
+            // expiry) never resubmits, with or without an earlier tick.
+            let past_deadline = state.deadline_cancelled
+                || state.spec.effective_deadline().is_some_and(|d| d <= at);
+            if total < max_resubmits && !past_deadline {
+                // The executed quantity includes fills that the
+                // acknowledgement reported but that are still in flight, so
+                // the resubmission never overlaps them.
+                let quantity = Quantity::new(state.remaining()?)?;
+                state.attempts.push(AttemptState::new(quantity));
+                actions.push(PlanAction::Resubmit {
+                    leg,
+                    attempt: state.resubmits(),
+                    quantity,
+                    price: state.spec.leg.price,
+                });
+                return Ok(());
+            }
+        }
+        self.enter_fallback(self.fallback(), leg, actions)
     }
 
     fn request_unwind(&mut self, actions: &mut Vec<PlanAction>) -> Result<()> {
