@@ -31,7 +31,7 @@
 use crate::cost::FeeRate;
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
-use crate::instrument::{Instrument, InstrumentId, Side, Timestamp, TopOfBook};
+use crate::instrument::{Action, Dir, Instrument, InstrumentId, Timestamp, TopOfBook};
 use crate::legs::{LegIndex, LegSpec};
 use crate::money::{Currency, Money};
 use crate::units::Quantity;
@@ -362,6 +362,7 @@ pub fn check_view(
     as_of: Timestamp,
     max_staleness_ms: i64,
 ) -> Result<Option<AdmissionReject>> {
+    Dir::try_from(spec.leg.side)?;
     if view.instrument.id != spec.leg.instrument.id {
         return Err(ArbitrageError::InvalidInput {
             reason: "venue view is for another instrument",
@@ -391,12 +392,12 @@ pub fn check_view(
             max_staleness_ms,
         }));
     }
-    let Some(level) = view.book.executable(spec.leg.side) else {
+    let Some(level) = view.book.executable(spec.leg.side)? else {
         return Ok(Some(AdmissionReject::NoQuote));
     };
-    let within_limit = match spec.leg.side {
-        Side::Buy => level.price <= spec.leg.price,
-        Side::Sell => level.price >= spec.leg.price,
+    let within_limit = match Dir::try_from(spec.leg.side)? {
+        Dir::Buy => level.price <= spec.leg.price,
+        Dir::Sell => level.price >= spec.leg.price,
     };
     if !within_limit {
         return Ok(Some(AdmissionReject::PriceBeyondLimit));
@@ -425,6 +426,9 @@ pub fn admit_two_legs(
     as_of: Timestamp,
     max_staleness_ms: i64,
 ) -> Result<Admission> {
+    // Both directions before either leg can be rejected for another reason.
+    Dir::try_from(first.spec.leg.side)?;
+    Dir::try_from(second.spec.leg.side)?;
     let mut next = budgets.clone();
     let mut reserved = Vec::with_capacity(2);
     for (leg, request) in [(LegIndex::First, first), (LegIndex::Second, second)] {
@@ -472,9 +476,12 @@ pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservatio
     let leg = &request.spec.leg;
     // A buy limit bounds its price from above; a sell limit only from below,
     // so a sell is valued at the higher of its limit and the observed bid.
-    let price = match (leg.side, request.view.book.executable(Side::Sell)) {
-        (Side::Sell, Some(bid)) => leg.price.max(bid.price),
-        _ => leg.price,
+    let price = match (
+        Dir::try_from(leg.side)?,
+        request.view.book.executable(Action::Sell)?,
+    ) {
+        (Dir::Sell, Some(bid)) => leg.price.max(bid.price),
+        (Dir::Sell, None) | (Dir::Buy, _) => leg.price,
     };
     let (px, q) = (price.value(), leg.quantity.value());
     let fee = request.fee.fee_on_factors(&[px, q], ccy)?.money();
@@ -483,18 +490,18 @@ pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservatio
     } else {
         fee
     };
-    let (cash, inventory) = match (leg.side, request.sell_funding) {
-        (Side::Buy, _) => (
+    let (cash, inventory) = match (Dir::try_from(leg.side)?, request.sell_funding) {
+        (Dir::Buy, _) => (
             Money::new(
                 wide::sum_products_exact(&[&[px, q][..], &[fee.amount()]], "requirement")?,
                 ccy,
             ),
             None,
         ),
-        (Side::Sell, SellFunding::Inventory) => {
+        (Dir::Sell, SellFunding::Inventory) => {
             (fee, Some((leg.instrument.id.clone(), leg.quantity)))
         }
-        (Side::Sell, SellFunding::Margin { rate }) => {
+        (Dir::Sell, SellFunding::Margin { rate }) => {
             if rate <= Decimal::ZERO || rate > Decimal::ONE {
                 return Err(ArbitrageError::InvalidValue {
                     field: "margin rate",

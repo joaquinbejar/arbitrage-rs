@@ -21,8 +21,8 @@ use arbitrage_rs::package::{
 };
 use arbitrage_rs::parity::{OptionFee, ParityFuture, ParityInput, ParityOption, evaluate_parity};
 use arbitrage_rs::{
-    ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Leg, Level, Money,
-    Price, Quantity, Rounding, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Leg, Level,
+    Money, Price, Quantity, Rounding, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 
@@ -128,7 +128,7 @@ fn ack(leg: usize, attempt: u32, cum: Decimal, at: i64) -> PackageEvent {
     }
 }
 
-fn unwind(leg: usize, side: Side, qty: Decimal) -> PackageAction {
+fn unwind(leg: usize, side: Action, qty: Decimal) -> PackageAction {
     let id = match leg {
         CALL_LEG => "XYZ-100-C",
         PUT_LEG => "XYZ-100-P",
@@ -160,9 +160,9 @@ fn grid_and_legs_from_the_parity_edge() {
     assert_eq!(plan.grid().value(), dec!(0.1));
     assert_eq!(plan.package().value(), dec!(1));
     let legs = plan.legs();
-    assert_eq!(legs[CALL_LEG].spec.spec.leg.side, Side::Buy);
-    assert_eq!(legs[PUT_LEG].spec.spec.leg.side, Side::Sell);
-    assert_eq!(legs[FUTURE_LEG].spec.spec.leg.side, Side::Sell);
+    assert_eq!(legs[CALL_LEG].spec.spec.leg.side, Action::Buy);
+    assert_eq!(legs[PUT_LEG].spec.spec.leg.side, Action::Sell);
+    assert_eq!(legs[FUTURE_LEG].spec.spec.leg.side, Action::Sell);
     assert_eq!(legs[FUTURE_LEG].spec.spec.leg.quantity.value(), dec!(100));
 }
 
@@ -195,8 +195,8 @@ fn p2_unwind() {
     assert_eq!(
         r.actions,
         vec![
-            unwind(CALL_LEG, Side::Sell, dec!(4)),
-            unwind(FUTURE_LEG, Side::Buy, dec!(40)),
+            unwind(CALL_LEG, Action::Sell, dec!(4)),
+            unwind(FUTURE_LEG, Action::Buy, dec!(40)),
         ]
     );
 }
@@ -236,8 +236,8 @@ fn p2_complete_resubmits_until_the_deadline_then_falls_back() {
     assert_eq!(
         r.actions,
         vec![
-            unwind(CALL_LEG, Side::Sell, dec!(4)),
-            unwind(FUTURE_LEG, Side::Buy, dec!(40)),
+            unwind(CALL_LEG, Action::Sell, dec!(4)),
+            unwind(FUTURE_LEG, Action::Buy, dec!(40)),
         ]
     );
 }
@@ -282,8 +282,8 @@ fn p3_overfill_is_recorded_and_unwound() {
     assert_eq!(
         r.actions,
         vec![
-            unwind(CALL_LEG, Side::Sell, dec!(4)),
-            unwind(FUTURE_LEG, Side::Buy, dec!(41)),
+            unwind(CALL_LEG, Action::Sell, dec!(4)),
+            unwind(FUTURE_LEG, Action::Buy, dec!(41)),
         ]
     );
 }
@@ -300,7 +300,7 @@ fn overfill_with_every_leg_filled_unwinds_the_excess_only() {
         .unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
     assert_eq!(r.matched, dec!(1));
-    assert_eq!(r.actions, vec![unwind(FUTURE_LEG, Side::Buy, dec!(1))]);
+    assert_eq!(r.actions, vec![unwind(FUTURE_LEG, Action::Buy, dec!(1))]);
 }
 
 #[test]
@@ -342,9 +342,9 @@ fn p5_matched_is_rounded_down_to_the_grid() {
     assert_eq!(
         r.actions,
         vec![
-            unwind(CALL_LEG, Side::Sell, dec!(5)),
-            unwind(PUT_LEG, Side::Buy, dec!(5)),
-            unwind(FUTURE_LEG, Side::Buy, dec!(5)),
+            unwind(CALL_LEG, Action::Sell, dec!(5)),
+            unwind(PUT_LEG, Action::Buy, dec!(5)),
+            unwind(FUTURE_LEG, Action::Buy, dec!(5)),
         ]
     );
 }
@@ -362,8 +362,8 @@ fn late_fill_after_the_unwind_requests_the_difference() {
     assert_eq!(
         r.actions,
         vec![
-            unwind(CALL_LEG, Side::Buy, dec!(2)),
-            unwind(FUTURE_LEG, Side::Sell, dec!(20)),
+            unwind(CALL_LEG, Action::Buy, dec!(2)),
+            unwind(FUTURE_LEG, Action::Sell, dec!(20)),
         ]
     );
 }
@@ -408,7 +408,7 @@ fn events_are_idempotent_and_validated() {
     assert_eq!(plan.legs()[CALL_LEG].executed().unwrap(), dec!(4));
 }
 
-fn manual_leg(id: &str, side: Side, qty: Decimal, book_size: Decimal) -> PackageLegSpec {
+fn manual_leg(id: &str, side: Action, qty: Decimal, book_size: Decimal) -> PackageLegSpec {
     PackageLegSpec {
         spec: LegSpec {
             leg: Leg {
@@ -432,8 +432,8 @@ fn construction_is_validated() {
     assert_eq!(
         new(
             vec![
-                manual_leg("A", Side::Buy, dec!(1.5), dec!(0.1)),
-                manual_leg("B", Side::Sell, dec!(15), dec!(0.01)),
+                manual_leg("A", Action::Buy, dec!(1.5), dec!(0.1)),
+                manual_leg("B", Action::Sell, dec!(15), dec!(0.01)),
             ],
             dec!(0.15)
         ),
@@ -444,8 +444,8 @@ fn construction_is_validated() {
     assert_eq!(
         new(
             vec![
-                manual_leg("A", Side::Buy, dec!(10), dec!(0.1)),
-                manual_leg("B", Side::Sell, dec!(90), dec!(0.01)),
+                manual_leg("A", Action::Buy, dec!(10), dec!(0.1)),
+                manual_leg("B", Action::Sell, dec!(90), dec!(0.01)),
             ],
             dec!(1)
         ),
@@ -455,7 +455,7 @@ fn construction_is_validated() {
     );
     assert_eq!(
         new(
-            vec![manual_leg("A", Side::Buy, dec!(10), dec!(0.1))],
+            vec![manual_leg("A", Action::Buy, dec!(10), dec!(0.1))],
             dec!(1)
         ),
         Err(ArbitrageError::InvalidInput {
@@ -465,8 +465,8 @@ fn construction_is_validated() {
     assert_eq!(
         new(
             vec![
-                manual_leg("A", Side::Buy, dec!(10), dec!(0.1)),
-                manual_leg("A", Side::Sell, dec!(10), dec!(0.1)),
+                manual_leg("A", Action::Buy, dec!(10), dec!(0.1)),
+                manual_leg("A", Action::Sell, dec!(10), dec!(0.1)),
             ],
             dec!(1)
         ),
@@ -477,8 +477,8 @@ fn construction_is_validated() {
     // A coarser grid: contracts of 0.3 and 0.02 give 0.3.
     let plan = new(
         vec![
-            manual_leg("A", Side::Buy, dec!(2), dec!(0.3)),
-            manual_leg("B", Side::Sell, dec!(30), dec!(0.02)),
+            manual_leg("A", Action::Buy, dec!(2), dec!(0.3)),
+            manual_leg("B", Action::Sell, dec!(30), dec!(0.02)),
         ],
         dec!(0.6),
     )
@@ -492,9 +492,9 @@ fn net_cash_is_one_exact_sum() {
     let max = Decimal::MAX;
     let mut plan = PackagePlan::new(
         vec![
-            manual_leg("A", Side::Buy, dec!(1), dec!(1)),
-            manual_leg("B", Side::Buy, dec!(1), dec!(1)),
-            manual_leg("C", Side::Sell, dec!(1), dec!(1)),
+            manual_leg("A", Action::Buy, dec!(1), dec!(1)),
+            manual_leg("B", Action::Buy, dec!(1), dec!(1)),
+            manual_leg("C", Action::Sell, dec!(1), dec!(1)),
         ],
         q(dec!(1)),
         FailurePolicy::Abort,
@@ -542,9 +542,9 @@ fn overfill_on_every_leg_alike_is_excess() {
             assert_eq!(
                 r.actions,
                 vec![
-                    unwind(CALL_LEG, Side::Sell, dec!(10)),
-                    unwind(PUT_LEG, Side::Buy, dec!(10)),
-                    unwind(FUTURE_LEG, Side::Buy, dec!(100)),
+                    unwind(CALL_LEG, Action::Sell, dec!(10)),
+                    unwind(PUT_LEG, Action::Buy, dec!(10)),
+                    unwind(FUTURE_LEG, Action::Buy, dec!(100)),
                 ]
             );
         } else {
@@ -553,7 +553,13 @@ fn overfill_on_every_leg_alike_is_excess() {
     }
 }
 
-fn lot_leg(id: &str, side: Side, qty: Decimal, book_size: Decimal, lot: Decimal) -> PackageLegSpec {
+fn lot_leg(
+    id: &str,
+    side: Action,
+    qty: Decimal,
+    book_size: Decimal,
+    lot: Decimal,
+) -> PackageLegSpec {
     let mut l = manual_leg(id, side, qty, book_size);
     l.lot = q(lot);
     l
@@ -564,8 +570,8 @@ fn decimal_lots_are_supported() {
     // Spot-like legs of 1 unit per contract with a lot of 0.1.
     let mut plan = PackagePlan::new(
         vec![
-            lot_leg("A", Side::Buy, dec!(0.1), dec!(1), dec!(0.1)),
-            lot_leg("B", Side::Sell, dec!(0.1), dec!(1), dec!(0.1)),
+            lot_leg("A", Action::Buy, dec!(0.1), dec!(1), dec!(0.1)),
+            lot_leg("B", Action::Sell, dec!(0.1), dec!(1), dec!(0.1)),
         ],
         q(dec!(0.1)),
         FailurePolicy::Abort,
@@ -594,8 +600,8 @@ fn decimal_lots_are_supported() {
     // (5 lots).
     let mut plan = PackagePlan::new(
         vec![
-            lot_leg("A", Side::Buy, dec!(8), dec!(0.25), dec!(2)),
-            lot_leg("B", Side::Sell, dec!(2), dec!(1), dec!(0.2)),
+            lot_leg("A", Action::Buy, dec!(8), dec!(0.25), dec!(2)),
+            lot_leg("B", Action::Sell, dec!(2), dec!(1), dec!(0.2)),
         ],
         q(dec!(2)),
         FailurePolicy::Unwind,
@@ -637,15 +643,34 @@ fn decimal_lots_are_supported() {
             PackageAction::Unwind {
                 leg: 0,
                 instrument: dated("A"),
-                side: Side::Sell,
+                side: Action::Sell,
                 quantity: q(dec!(4)),
             },
             PackageAction::Unwind {
                 leg: 1,
                 instrument: dated("B"),
-                side: Side::Buy,
+                side: Action::Buy,
                 quantity: q(dec!(0.4)),
             },
         ]
+    );
+}
+
+#[test]
+fn an_unsupported_action_cannot_build_a_package() {
+    assert_eq!(
+        PackagePlan::new(
+            vec![
+                manual_leg("A", Action::Buy, dec!(1), dec!(1)),
+                manual_leg("B", Action::Other, dec!(1), dec!(1)),
+            ],
+            q(dec!(1)),
+            FailurePolicy::Abort,
+            usdc(),
+            ts(0)
+        ),
+        Err(ArbitrageError::UnsupportedAction {
+            action: Action::Other
+        })
     );
 }

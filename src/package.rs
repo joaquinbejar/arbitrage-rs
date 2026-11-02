@@ -53,7 +53,7 @@ pub const FUTURE_LEG: usize = 2;
 use crate::cost::Cost;
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
-use crate::instrument::{Instrument, Leg, Side, Timestamp};
+use crate::instrument::{Action, Dir, Instrument, Leg, Timestamp};
 use crate::legs::{
     AttemptOutcome, AttemptState, ExecId, FailurePolicy, Fallback, LegSpec, LegStatus, PlanState,
 };
@@ -176,8 +176,8 @@ pub enum PackageAction {
         leg: usize,
         /// Instrument to trade.
         instrument: Instrument,
-        /// Side that reduces the excess.
-        side: Side,
+        /// The action that reduces the excess.
+        side: Action,
         /// Contracts to offset.
         quantity: Quantity,
     },
@@ -355,6 +355,9 @@ impl PackagePlan {
         currency: Currency,
         created_at: Timestamp,
     ) -> Result<Self> {
+        for leg in &legs {
+            Dir::try_from(leg.spec.leg.side)?;
+        }
         let invalid = |reason| Err(ArbitrageError::InvalidInput { reason });
         if legs.len() < 2 {
             return invalid("a package needs at least two legs");
@@ -534,9 +537,9 @@ impl PackagePlan {
     pub fn net_cash(&self) -> Result<Money> {
         let mut terms = Vec::with_capacity(self.legs.len().saturating_mul(2));
         for leg in &self.legs {
-            let sign = match leg.spec.spec.leg.side {
-                Side::Sell => Decimal::ONE,
-                Side::Buy => Decimal::NEGATIVE_ONE,
+            let sign = match Dir::try_from(leg.spec.spec.leg.side)? {
+                Dir::Sell => Decimal::ONE,
+                Dir::Buy => Decimal::NEGATIVE_ONE,
             };
             terms.push([sign, leg.filled_notional.amount()]);
             terms.push([Decimal::NEGATIVE_ONE, leg.fees.money().amount()]);
@@ -560,12 +563,12 @@ impl PackagePlan {
     /// - [`ArbitrageError::CurrencyMismatch`] for a fee in another currency.
     /// - Arithmetic errors.
     pub fn apply(&mut self, event: &PackageEvent) -> Result<PackageReport> {
-        if let Some(leg) = event.leg() {
-            if leg >= self.legs.len() {
-                return Err(ArbitrageError::InvalidInput {
-                    reason: "event for a leg that is not in the plan",
-                });
-            }
+        if let Some(leg) = event.leg()
+            && leg >= self.legs.len()
+        {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "event for a leg that is not in the plan",
+            });
         }
         if self.is_duplicate(event)? {
             return self.report(Vec::new(), true);
@@ -942,9 +945,9 @@ impl PackagePlan {
         let excess = self.excess()?;
         let pending = excess.iter().zip(self.unwind_requested.iter_mut());
         for ((i, leg), (excess, requested)) in self.legs.iter().enumerate().zip(pending) {
-            let signed = match leg.spec.spec.leg.side {
-                Side::Buy => *excess,
-                Side::Sell => exact::neg(*excess),
+            let signed = match Dir::try_from(leg.spec.spec.leg.side)? {
+                Dir::Buy => *excess,
+                Dir::Sell => exact::neg(*excess),
             };
             let open = exact::sub(signed, *requested)?;
             if open.is_zero() {
@@ -954,9 +957,9 @@ impl PackagePlan {
                 leg: i,
                 instrument: leg.spec.spec.leg.instrument.clone(),
                 side: if open.is_sign_positive() {
-                    Side::Sell
+                    Action::Sell
                 } else {
-                    Side::Buy
+                    Action::Buy
                 },
                 quantity: Quantity::new(open.abs())?,
             });

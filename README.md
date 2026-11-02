@@ -7,7 +7,7 @@
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/joaquinbejar/arbitrage-rs/ci.yml?branch=main)](https://github.com/joaquinbejar/arbitrage-rs/actions)
 [![Documentation](https://docs.rs/arbitrage-rs/badge.svg)](https://docs.rs/arbitrage-rs)
-[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://github.com/joaquinbejar/arbitrage-rs/blob/main/Cargo.toml)
+[![MSRV](https://img.shields.io/badge/MSRV-1.88-blue)](https://github.com/joaquinbejar/arbitrage-rs/blob/main/Cargo.toml)
 
 ## Arbitrage Library
 
@@ -95,8 +95,11 @@ Two principles hold everywhere:
 
 The monetary types are at the crate root: `Currency`, `Money`, `Cost`,
 `FeeRate`, `Price`, `Quantity`, `Rounding`, and the instrument types
-`Instrument`, `InstrumentId`, `Side`, `Level`, `TopOfBook`, `Leg` and
-`Timestamp`.
+`Instrument`, `InstrumentId`, `Action`, `Level`, `TopOfBook`, `Leg` and
+`Timestamp`. `Action` is the trade direction shared with other crates
+([`financial_types::Action`](https://docs.rs/financial_types)); only
+`Action::Buy` and `Action::Sell` are supported, and any other action is
+`ArbitrageError::UnsupportedAction`.
 
 ### Exact arithmetic
 
@@ -179,7 +182,7 @@ Executing it as a two-leg plan, when the second leg is rejected:
 #     TopOfBook,
 # };
 use arbitrage_rs::legs::{ExecId, FailurePolicy, LegExecution, LegIndex, PlanAction, PlanState, TwoLegPlan};
-use arbitrage_rs::{Cost, Side};
+use arbitrage_rs::{Action, Cost};
 use rust_decimal_macros::dec;
 
 # fn main() -> Result<(), arbitrage_rs::ArbitrageError> {
@@ -230,7 +233,7 @@ assert_eq!(report.state, PlanState::UnwindRequested);
 assert_eq!(report.residual, dec!(3));
 assert!(matches!(
     &report.actions[..],
-    [PlanAction::Unwind { side: Side::Sell, .. }]
+    [PlanAction::Unwind { side: Action::Sell, .. }]
 ));
 # Ok(())
 # }
@@ -304,8 +307,9 @@ More examples are in the crate documentation and in `tests/`.
 
 ### Dependency direction
 
-arbitrage-rs depends only on `rust_decimal` and `thiserror`. It does not
-depend on any simulator, backtest engine or connector. Integration goes the
+arbitrage-rs depends only on `rust_decimal`, `thiserror` and
+`financial_types` (shared enums; it brings `serde` with its derive macros,
+which arbitrage-rs does not use). It does not depend on any simulator, backtest engine or connector. Integration goes the
 other way: the consumer, or an adapter next to it, depends on arbitrage-rs
 and translates its prices, inventory and ledgers into these types.
 
@@ -317,7 +321,7 @@ patch release does not. Changes are listed in
 [`CHANGELOG.md`](CHANGELOG.md). `Decimal` is re-exported and part of the
 public API, so `rust_decimal` 1.x is too.
 
-MSRV: Rust 1.85 (edition 2024), checked in CI.
+MSRV: Rust 1.88 (edition 2024), checked in CI.
 
 ## 🛠 Makefile Commands
 
@@ -365,7 +369,7 @@ Repositories by the same author that this project depends on, and repositories t
 
 ### Depends on
 
-None: arbitrage-rs depends only on `rust_decimal` and `thiserror`.
+[financial_types](https://github.com/joaquinbejar/financial_types): the shared `Action` enum.
 
 ### Used by
 

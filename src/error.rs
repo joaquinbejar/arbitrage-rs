@@ -65,6 +65,14 @@ pub enum ArbitrageError {
         id: String,
     },
 
+    /// A trade direction other than buy or sell, for example
+    /// `Action::Other`.
+    #[error("unsupported action {action}: only buy and sell are supported")]
+    UnsupportedAction {
+        /// The action given.
+        action: crate::instrument::Action,
+    },
+
     /// An instrument is used at or after its expiry.
     #[error("instrument {instrument} expired at {expiry}, evaluated at {as_of}")]
     Expired {

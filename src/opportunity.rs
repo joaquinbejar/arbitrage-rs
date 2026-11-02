@@ -14,7 +14,7 @@
 
 use crate::cost::{Cost, FeeRate};
 use crate::error::{ArbitrageError, Result};
-use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
+use crate::instrument::{Action, Dir, Instrument, Leg, Timestamp, TopOfBook};
 use crate::money::{Currency, Money};
 use crate::units::Quantity;
 use crate::wide;
@@ -42,7 +42,7 @@ pub struct Carry {
     /// What the item pays for.
     pub kind: CarryKind,
     /// The leg whose notional it is charged on.
-    pub leg: Side,
+    pub leg: Action,
     /// Rate for the holding period, in basis points of that notional.
     pub rate: FeeRate,
 }
@@ -85,7 +85,7 @@ pub struct CarryCost {
     /// What it pays for.
     pub kind: CarryKind,
     /// The leg it was charged on.
-    pub leg: Side,
+    pub leg: Action,
     /// The cost.
     pub cost: Cost,
 }
@@ -132,7 +132,7 @@ pub enum RejectReason {
         /// The instrument without the needed side.
         instrument: Instrument,
         /// The side the leg trades (a buy needs an ask, a sell a bid).
-        side: Side,
+        side: Action,
     },
     /// Less size is executable on both legs than `min_quantity`.
     InsufficientLiquidity {
@@ -217,16 +217,16 @@ pub fn evaluate(input: &OpportunityInput) -> Result<Evaluation> {
     validate(input)?;
     let ccy = input.quote_currency;
 
-    let Some(ask) = input.buy.book.executable(Side::Buy) else {
+    let Some(ask) = input.buy.book.executable(Action::Buy)? else {
         return Ok(Evaluation::Rejected(RejectReason::MissingQuote {
             instrument: input.buy.instrument.clone(),
-            side: Side::Buy,
+            side: Action::Buy,
         }));
     };
-    let Some(bid) = input.sell.book.executable(Side::Sell) else {
+    let Some(bid) = input.sell.book.executable(Action::Sell)? else {
         return Ok(Evaluation::Rejected(RejectReason::MissingQuote {
             instrument: input.sell.instrument.clone(),
-            side: Side::Sell,
+            side: Action::Sell,
         }));
     };
 
@@ -257,9 +257,9 @@ pub fn evaluate(input: &OpportunityInput) -> Result<Evaluation> {
     let mut items = vec![buy_fee, sell_fee];
     let mut carry = Vec::with_capacity(input.carry.len());
     for item in &input.carry {
-        let price = match item.leg {
-            Side::Buy => ask_px,
-            Side::Sell => bid_px,
+        let price = match Dir::try_from(item.leg)? {
+            Dir::Buy => ask_px,
+            Dir::Sell => bid_px,
         };
         let cost = item.rate.fee_on_factors(&[price, q], ccy)?;
         items.push(cost);
@@ -291,13 +291,13 @@ pub fn evaluate(input: &OpportunityInput) -> Result<Evaluation> {
         as_of: input.as_of,
         buy: Leg {
             instrument: input.buy.instrument.clone(),
-            side: Side::Buy,
+            side: Action::Buy,
             quantity,
             price: ask.price,
         },
         sell: Leg {
             instrument: input.sell.instrument.clone(),
-            side: Side::Sell,
+            side: Action::Sell,
             quantity,
             price: bid.price,
         },
@@ -308,6 +308,11 @@ pub fn evaluate(input: &OpportunityInput) -> Result<Evaluation> {
 }
 
 fn validate(input: &OpportunityInput) -> Result<()> {
+    // Directions first: an unsupported action is never reported as a
+    // rejection for another reason.
+    for item in &input.carry {
+        Dir::try_from(item.leg)?;
+    }
     if input.buy.instrument.id == input.sell.instrument.id {
         return Err(ArbitrageError::InvalidInput {
             reason: "buy and sell legs are the same instrument",

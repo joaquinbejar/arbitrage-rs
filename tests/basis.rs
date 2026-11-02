@@ -17,8 +17,8 @@ use arbitrage_rs::funding::{
 };
 use arbitrage_rs::opportunity::{Carry, CarryKind, LegQuote};
 use arbitrage_rs::{
-    ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Money, Price,
-    Quantity, Rounding, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Money,
+    Price, Quantity, Rounding, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 
@@ -132,14 +132,14 @@ fn cash_and_carry_accepted_with_funding_received() {
     input.perp.fee = bps(dec!(1));
     input.carry = vec![Carry {
         kind: CarryKind::Financing,
-        leg: Side::Buy,
+        leg: Action::Buy,
         rate: bps(dec!(3)),
     }];
     let eval = evaluate_spot_perp(&input).unwrap();
     let o = eval.accepted().expect("accepted");
-    assert_eq!(o.spot.side, Side::Buy);
+    assert_eq!(o.spot.side, Action::Buy);
     assert_eq!(o.spot.price.value(), dec!(30000));
-    assert_eq!(o.perp.side, Side::Sell);
+    assert_eq!(o.perp.side, Action::Sell);
     assert_eq!(o.perp.price.value(), dec!(30060));
     assert_eq!(o.entry_basis, dec!(60));
     assert_eq!(o.mark.value(), dec!(30050));
@@ -164,14 +164,14 @@ fn reverse_trade_receives_negative_funding() {
     input.funding = events(dec!(-0.0002), RateKind::Estimated);
     input.carry = vec![Carry {
         kind: CarryKind::Borrow,
-        leg: Side::Sell,
+        leg: Action::Sell,
         rate: bps(dec!(5)),
     }];
     let eval = evaluate_spot_perp(&input).unwrap();
     let o = eval.accepted().expect("accepted");
-    assert_eq!(o.spot.side, Side::Sell);
+    assert_eq!(o.spot.side, Action::Sell);
     assert_eq!(o.spot.price.value(), dec!(29990));
-    assert_eq!(o.perp.side, Side::Buy);
+    assert_eq!(o.perp.side, Action::Buy);
     assert_eq!(o.entry_basis, dec!(80));
     assert_eq!(o.expected_gross, m(dec!(20)));
     assert_eq!(o.expected_costs.funding_total.money(), m(dec!(-18.03)));
@@ -292,7 +292,7 @@ fn missing_quote_and_insufficient_size() {
     assert!(matches!(
         evaluate_spot_perp(&input).unwrap(),
         BasisEvaluation::Rejected(BasisRejectReason::MissingQuote {
-            side: Side::Sell,
+            side: Action::Sell,
             ..
         })
     ));
@@ -475,7 +475,7 @@ fn cost_total_is_one_exact_sum() {
     i.funding = events(dec!(0), RateKind::Estimated);
     i.carry = vec![Carry {
         kind: CarryKind::Other,
-        leg: Side::Buy,
+        leg: Action::Buy,
         rate: bps(dec!(-10000)),
     }];
     // Spot entry BIG and exit BIG (the implied exit keeps spot), carry -BIG:
@@ -486,4 +486,21 @@ fn cost_total_is_one_exact_sum() {
         }
         other => panic!("unexpected {other:?}"),
     }
+}
+
+#[test]
+fn an_unsupported_carry_action_is_an_error_before_any_rejection() {
+    let mut input = base();
+    input.spot.book.ask = None;
+    input.carry = vec![Carry {
+        kind: CarryKind::Borrow,
+        leg: Action::Other,
+        rate: bps(dec!(5)),
+    }];
+    assert_eq!(
+        evaluate_spot_perp(&input),
+        Err(ArbitrageError::UnsupportedAction {
+            action: Action::Other
+        })
+    );
 }

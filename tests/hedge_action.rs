@@ -14,8 +14,8 @@ use arbitrage_rs::hedge_action::{
     HedgeLimits, NoPlanReason, hedge_plan_from_action,
 };
 use arbitrage_rs::{
-    ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Money,
-    Price, Quantity, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level,
+    Money, Price, Quantity, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 
@@ -54,7 +54,7 @@ fn limits(on_excess: ExcessPolicy) -> HedgeLimits {
     }
 }
 
-fn action(side: Side, quantity: ActionQuantity) -> HedgeAction {
+fn action(side: Action, quantity: ActionQuantity) -> HedgeAction {
     HedgeAction {
         as_of: Timestamp::from_millis(1_000),
         instrument: Instrument::dated(
@@ -82,12 +82,12 @@ fn plan(
 fn an_exact_action_becomes_the_same_plan_as_the_band_hedger() {
     // Sell 12.5 at 99.5: fee 1243.75 * 0.0005 = 0.621875, spread vs mid
     // 0.5 * 12.5 = 6.25, cost 6.871875; exposure 12.5 -> 0.
-    let a = action(Side::Sell, ActionQuantity::Exact(dec!(12.5)));
+    let a = action(Action::Sell, ActionQuantity::Exact(dec!(12.5)));
     let p = plan(&a, &limits(ExcessPolicy::Clip), &market());
     assert_eq!(p.requested, dec!(12.5));
     assert_eq!(p.feasible, q(dec!(12.5)));
     assert_eq!(p.adjustments.len(), 0);
-    assert_eq!(p.plan.leg.side, Side::Sell);
+    assert_eq!(p.plan.leg.side, Action::Sell);
     assert_eq!(p.plan.leg.price.value(), dec!(99.5));
     assert_eq!(
         p.plan.leg.instrument.expiry,
@@ -105,7 +105,7 @@ fn an_exact_action_becomes_the_same_plan_as_the_band_hedger() {
 #[test]
 fn out_of_range_actions_cannot_create_unbounded_plans() {
     // 1e6 asked: clipped to 20 and recorded.
-    let a = action(Side::Buy, ActionQuantity::Exact(dec!(1000000)));
+    let a = action(Action::Buy, ActionQuantity::Exact(dec!(1000000)));
     let p = plan(&a, &limits(ExcessPolicy::Clip), &market());
     assert_eq!(p.requested, dec!(1000000));
     assert_eq!(p.feasible, q(dec!(20)));
@@ -120,7 +120,7 @@ fn out_of_range_actions_cannot_create_unbounded_plans() {
         })
     ));
     // The largest finite float within Decimal's range is still clipped.
-    let huge = action(Side::Buy, ActionQuantity::Float(7.9e28));
+    let huge = action(Action::Buy, ActionQuantity::Float(7.9e28));
     let p = plan(&huge, &limits(ExcessPolicy::Clip), &market());
     assert_eq!(p.feasible, q(dec!(20)));
 }
@@ -131,7 +131,7 @@ fn unsupported_float_values_are_errors() {
         assert!(
             matches!(
                 hedge_plan_from_action(
-                    &action(Side::Buy, ActionQuantity::Float(x)),
+                    &action(Action::Buy, ActionQuantity::Float(x)),
                     &limits(ExcessPolicy::Clip),
                     &market()
                 ),
@@ -144,7 +144,7 @@ fn unsupported_float_values_are_errors() {
     bad.float_dp = 29;
     assert!(matches!(
         hedge_plan_from_action(
-            &action(Side::Buy, ActionQuantity::Float(1.0)),
+            &action(Action::Buy, ActionQuantity::Float(1.0)),
             &bad,
             &market()
         ),
@@ -152,7 +152,7 @@ fn unsupported_float_values_are_errors() {
     ));
     assert!(matches!(
         hedge_plan_from_action(
-            &action(Side::Buy, ActionQuantity::Exact(dec!(-1))),
+            &action(Action::Buy, ActionQuantity::Exact(dec!(-1))),
             &limits(ExcessPolicy::Clip),
             &market()
         ),
@@ -164,7 +164,7 @@ fn unsupported_float_values_are_errors() {
 fn float_actions_are_rounded_once_and_recorded() {
     // 12.34 as f64 is 12.3399999999999998578...; half-even at 8 places is
     // 12.34, then lots of 0.1 give 12.3.
-    let a = action(Side::Sell, ActionQuantity::Float(12.34));
+    let a = action(Action::Sell, ActionQuantity::Float(12.34));
     let p = plan(&a, &limits(ExcessPolicy::Clip), &market());
     assert_eq!(p.requested, dec!(12.34));
     assert_eq!(p.feasible, q(dec!(12.3)));
@@ -174,7 +174,7 @@ fn float_actions_are_rounded_once_and_recorded() {
     );
     // A dyadic float is exact: no rounding recorded.
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Float(12.5)),
+        &action(Action::Sell, ActionQuantity::Float(12.5)),
         &limits(ExcessPolicy::Clip),
         &market(),
     );
@@ -187,7 +187,7 @@ fn quoted_size_and_lot_bound_the_plan() {
     let mut m = market();
     m.book.bid = Some(lvl(dec!(99.5), dec!(4.05)));
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(12.5))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(12.5))),
         &limits(ExcessPolicy::Clip),
         &m,
     );
@@ -202,7 +202,7 @@ fn no_plan_cases_keep_the_exposure() {
     let l = limits(ExcessPolicy::Clip);
     assert_eq!(
         hedge_plan_from_action(
-            &action(Side::Sell, ActionQuantity::Exact(dec!(0))),
+            &action(Action::Sell, ActionQuantity::Exact(dec!(0))),
             &l,
             &market()
         )
@@ -215,7 +215,7 @@ fn no_plan_cases_keep_the_exposure() {
     // A float below the representable precision is zero too.
     assert!(matches!(
         hedge_plan_from_action(
-            &action(Side::Sell, ActionQuantity::Float(1e-30)),
+            &action(Action::Sell, ActionQuantity::Float(1e-30)),
             &l,
             &market()
         )
@@ -228,8 +228,12 @@ fn no_plan_cases_keep_the_exposure() {
     let mut m = market();
     m.book.bid = None;
     assert_eq!(
-        hedge_plan_from_action(&action(Side::Sell, ActionQuantity::Exact(dec!(1))), &l, &m)
-            .unwrap(),
+        hedge_plan_from_action(
+            &action(Action::Sell, ActionQuantity::Exact(dec!(1))),
+            &l,
+            &m
+        )
+        .unwrap(),
         ActionOutcome::NoPlan {
             requested: dec!(1),
             reason: NoPlanReason::NoLiquidity
@@ -237,7 +241,7 @@ fn no_plan_cases_keep_the_exposure() {
     );
     assert_eq!(
         hedge_plan_from_action(
-            &action(Side::Sell, ActionQuantity::Exact(dec!(0.05))),
+            &action(Action::Sell, ActionQuantity::Exact(dec!(0.05))),
             &l,
             &market()
         )
@@ -253,7 +257,7 @@ fn no_plan_cases_keep_the_exposure() {
 fn the_conversion_posts_nothing_and_claims_no_execution() {
     // Inputs are borrowed immutably and unchanged; the plan only carries
     // expected amounts and an intended leg.
-    let a = action(Side::Buy, ActionQuantity::Exact(dec!(2)));
+    let a = action(Action::Buy, ActionQuantity::Exact(dec!(2)));
     let l = limits(ExcessPolicy::Clip);
     let m = market();
     let (a0, m0) = (a.clone(), m.clone());
@@ -267,7 +271,7 @@ fn the_conversion_posts_nothing_and_claims_no_execution() {
 
 #[test]
 fn an_expired_instrument_is_an_error() {
-    let mut a = action(Side::Sell, ActionQuantity::Exact(dec!(1)));
+    let mut a = action(Action::Sell, ActionQuantity::Exact(dec!(1)));
     a.as_of = Timestamp::from_millis(10_000);
     assert!(matches!(
         hedge_plan_from_action(&a, &limits(ExcessPolicy::Clip), &market()),
@@ -290,7 +294,7 @@ fn requested_of(x: f64, dp: u32) -> Result<Decimal, ArbitrageError> {
     m.fee = FeeRate::zero();
     // Zero exposure so that tiny quantities stay representable after it.
     m.exposure = Decimal::ZERO;
-    match hedge_plan_from_action(&action(Side::Buy, ActionQuantity::Float(x)), &l, &m)? {
+    match hedge_plan_from_action(&action(Action::Buy, ActionQuantity::Float(x)), &l, &m)? {
         ActionOutcome::Plan(p) => Ok(p.requested),
         ActionOutcome::NoPlan { requested, .. } => Ok(requested),
     }
@@ -355,7 +359,7 @@ fn reduce_only_never_increases_or_flips_the_exposure() {
     l.reduce_only = true;
     assert_eq!(
         hedge_plan_from_action(
-            &action(Side::Buy, ActionQuantity::Exact(dec!(1))),
+            &action(Action::Buy, ActionQuantity::Exact(dec!(1))),
             &l,
             &market()
         )
@@ -367,7 +371,7 @@ fn reduce_only_never_increases_or_flips_the_exposure() {
     );
     // A sell of 18 is clipped to 12.5 so the position does not flip.
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(18))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(18))),
         &l,
         &market(),
     );
@@ -379,7 +383,7 @@ fn reduce_only_never_increases_or_flips_the_exposure() {
     flat.exposure = dec!(0);
     assert!(matches!(
         hedge_plan_from_action(
-            &action(Side::Sell, ActionQuantity::Exact(dec!(1))),
+            &action(Action::Sell, ActionQuantity::Exact(dec!(1))),
             &l,
             &flat
         )
@@ -398,7 +402,7 @@ fn the_exposure_limit_clips_the_quantity() {
     let mut l = limits(ExcessPolicy::Clip);
     l.exposure_cap = Some(q(dec!(15)));
     let p = plan(
-        &action(Side::Buy, ActionQuantity::Exact(dec!(10))),
+        &action(Action::Buy, ActionQuantity::Exact(dec!(10))),
         &l,
         &market(),
     );
@@ -406,7 +410,7 @@ fn the_exposure_limit_clips_the_quantity() {
     assert_eq!(p.adjustments, vec![Adjustment::ExposureLimit]);
     assert_eq!(p.plan.expected_exposure_after, dec!(15));
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(30))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(30))),
         &l,
         &market(),
     );
@@ -418,7 +422,7 @@ fn the_exposure_limit_clips_the_quantity() {
     over.exposure = dec!(16);
     assert_eq!(
         hedge_plan_from_action(
-            &action(Side::Buy, ActionQuantity::Exact(dec!(1))),
+            &action(Action::Buy, ActionQuantity::Exact(dec!(1))),
             &l,
             &over
         )
@@ -429,7 +433,7 @@ fn the_exposure_limit_clips_the_quantity() {
         }
     );
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(3))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(3))),
         &l,
         &over,
     );
@@ -449,7 +453,7 @@ fn above_the_cap_only_reductions_are_accepted() {
     };
     // Long 100: selling 1 is a partial reduction above the cap, tagged.
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(1))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(1))),
         &l,
         &at(dec!(100)),
     );
@@ -457,14 +461,14 @@ fn above_the_cap_only_reductions_are_accepted() {
     assert_eq!(p.adjustments, vec![Adjustment::ExposureAboveCap]);
     // Short 100: buying 1 likewise.
     let p = plan(
-        &action(Side::Buy, ActionQuantity::Exact(dec!(1))),
+        &action(Action::Buy, ActionQuantity::Exact(dec!(1))),
         &l,
         &at(dec!(-100)),
     );
     assert_eq!(p.plan.expected_exposure_after, dec!(-99));
     assert_eq!(p.adjustments, vec![Adjustment::ExposureAboveCap]);
     // Increasing |exposure| above the cap: no plan, both signs.
-    for (side, exposure) in [(Side::Buy, dec!(100)), (Side::Sell, dec!(-100))] {
+    for (side, exposure) in [(Action::Buy, dec!(100)), (Action::Sell, dec!(-100))] {
         assert!(matches!(
             hedge_plan_from_action(
                 &action(side, ActionQuantity::Exact(dec!(1))),
@@ -481,7 +485,7 @@ fn above_the_cap_only_reductions_are_accepted() {
     // Crossing zero from +15 never goes beyond -10. With max 20 a sell of
     // 30 is clipped to 20 (to -5); with max 100 it is clipped to 25 (-10).
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(30))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(30))),
         &l,
         &at(dec!(15)),
     );
@@ -490,7 +494,7 @@ fn above_the_cap_only_reductions_are_accepted() {
     let mut wide_max = l;
     wide_max.max_quantity = q(dec!(100));
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(30))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(30))),
         &wide_max,
         &at(dec!(15)),
     );
@@ -500,7 +504,7 @@ fn above_the_cap_only_reductions_are_accepted() {
     // From -100 a buy of 150 is clipped to 100 by max_quantity, which is
     // within the cap's room of 110 (up to +10): it ends flat.
     let p = plan(
-        &action(Side::Buy, ActionQuantity::Exact(dec!(150))),
+        &action(Action::Buy, ActionQuantity::Exact(dec!(150))),
         &wide_max,
         &at(dec!(-100)),
     );
@@ -512,7 +516,7 @@ fn above_the_cap_only_reductions_are_accepted() {
     let mut thin = at(dec!(100));
     thin.book.bid = Some(lvl(dec!(99.5), dec!(0.5)));
     let p = plan(
-        &action(Side::Sell, ActionQuantity::Exact(dec!(1))),
+        &action(Action::Sell, ActionQuantity::Exact(dec!(1))),
         &l,
         &thin,
     );
@@ -532,7 +536,7 @@ fn fee_is_exact_when_the_notional_passes_max() {
         ask: Some(lvl(big + dec!(2), dec!(100))),
     };
     mk.fee = FeeRate::from_bps(dec!(1)).unwrap();
-    let a = action(Side::Sell, ActionQuantity::Exact(dec!(10)));
+    let a = action(Action::Sell, ActionQuantity::Exact(dec!(10)));
     let out = plan(&a, &limits(ExcessPolicy::Clip), &mk);
     assert_eq!(
         out.plan.expected_fee.money().amount(),
@@ -542,4 +546,24 @@ fn fee_is_exact_when_the_notional_passes_max() {
         out.plan.expected_spread_cost,
         Some(Cost::new(Money::new(dec!(10), usd())))
     );
+}
+
+#[test]
+fn an_unsupported_action_is_an_error_before_any_other_outcome() {
+    // A zero quantity would otherwise be a NoPlan.
+    for quantity in [
+        ActionQuantity::Exact(dec!(0)),
+        ActionQuantity::Exact(dec!(2)),
+    ] {
+        assert_eq!(
+            hedge_plan_from_action(
+                &action(Action::Other, quantity),
+                &limits(ExcessPolicy::Clip),
+                &market()
+            ),
+            Err(ArbitrageError::UnsupportedAction {
+                action: Action::Other
+            })
+        );
+    }
 }

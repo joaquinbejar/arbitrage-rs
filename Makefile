@@ -1,6 +1,6 @@
 # arbitrage-rs common tasks. `make pre-push` must pass before every push.
 
-MSRV := 1.85
+MSRV := 1.88
 
 .PHONY: all
 all: pre-push

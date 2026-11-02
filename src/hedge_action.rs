@@ -28,7 +28,7 @@ use crate::cost::FeeRate;
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
 use crate::hedge::{HedgePlan, spread_cost};
-use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
+use crate::instrument::{Action, Dir, Instrument, Leg, Timestamp, TopOfBook};
 use crate::money::Currency;
 use crate::units::Quantity;
 use crate::wide;
@@ -52,7 +52,7 @@ pub struct HedgeAction {
     /// Instrument to trade, with its expiry if dated.
     pub instrument: Instrument,
     /// Direction.
-    pub side: Side,
+    pub side: Action,
     /// Proposed quantity, in the instrument's units.
     pub quantity: ActionQuantity,
 }
@@ -222,9 +222,9 @@ fn bound_by_exposure(
     adjustments: &mut Vec<Adjustment>,
 ) -> Result<core::result::Result<Quantity, NoPlanReason>> {
     // True if the side moves the exposure toward zero.
-    let reduces = match action.side {
-        Side::Buy => exposure < Decimal::ZERO,
-        Side::Sell => exposure > Decimal::ZERO,
+    let reduces = match Dir::try_from(action.side)? {
+        Dir::Buy => exposure < Decimal::ZERO,
+        Dir::Sell => exposure > Decimal::ZERO,
     };
     if limits.reduce_only {
         if !reduces {
@@ -238,9 +238,9 @@ fn bound_by_exposure(
     }
     if let Some(cap) = limits.exposure_cap {
         // Buy: exposure + q <= cap. Sell: exposure - q >= -cap.
-        let room = match action.side {
-            Side::Buy => exact::sub(cap.value(), exposure)?,
-            Side::Sell => exact::add(cap.value(), exposure)?,
+        let room = match Dir::try_from(action.side)? {
+            Dir::Buy => exact::sub(cap.value(), exposure)?,
+            Dir::Sell => exact::add(cap.value(), exposure)?,
         };
         if room <= Decimal::ZERO {
             return Ok(Err(NoPlanReason::ExposureLimit));
@@ -296,6 +296,9 @@ pub fn hedge_plan_from_action(
     limits: &HedgeLimits,
     market: &ActionMarket,
 ) -> Result<ActionOutcome> {
+    // The direction first: an unsupported action is never reported as a
+    // missing plan for another reason.
+    Dir::try_from(action.side)?;
     action.instrument.ensure_live(action.as_of)?;
     let mut adjustments = Vec::new();
     let requested = requested_quantity(action.quantity, limits.float_dp, &mut adjustments)?;
@@ -326,7 +329,7 @@ pub fn hedge_plan_from_action(
             Err(reason) => return Ok(ActionOutcome::NoPlan { requested, reason }),
         };
 
-    let Some(level) = market.book.executable(action.side) else {
+    let Some(level) = market.book.executable(action.side)? else {
         return Ok(ActionOutcome::NoPlan {
             requested,
             reason: NoPlanReason::NoLiquidity,
@@ -353,9 +356,9 @@ pub fn hedge_plan_from_action(
         }
     }
 
-    let expected_exposure_after = match action.side {
-        Side::Buy => exact::add(exposure, quantity.value())?,
-        Side::Sell => exact::sub(exposure, quantity.value())?,
+    let expected_exposure_after = match Dir::try_from(action.side)? {
+        Dir::Buy => exact::add(exposure, quantity.value())?,
+        Dir::Sell => exact::sub(exposure, quantity.value())?,
     };
     if let Some(reason) =
         check_final_cap(limits, exposure, expected_exposure_after, &mut adjustments)

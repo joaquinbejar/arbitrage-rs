@@ -15,8 +15,8 @@ use arbitrage_rs::legs::{
 };
 use arbitrage_rs::opportunity::{Evaluation, LegQuote, OpportunityInput, evaluate};
 use arbitrage_rs::{
-    ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Leg, Level, Money,
-    Price, Quantity, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Leg, Level,
+    Money, Price, Quantity, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 
@@ -43,7 +43,7 @@ fn inst(id: &str) -> Instrument {
 
 fn spec(
     id: &str,
-    side: Side,
+    side: Action,
     qty: Decimal,
     price: Decimal,
     deadline: Option<Timestamp>,
@@ -63,8 +63,8 @@ fn spec(
 /// Buy 10 X at 100 (first) and sell 10 Y at 100.5 (second), created at 0.
 fn plan(policy: FailurePolicy, deadline: Option<Timestamp>) -> TwoLegPlan {
     TwoLegPlan::new(
-        spec("X", Side::Buy, dec!(10), dec!(100), deadline),
-        spec("Y", Side::Sell, dec!(10), dec!(100.5), deadline),
+        spec("X", Action::Buy, dec!(10), dec!(100), deadline),
+        spec("Y", Action::Sell, dec!(10), dec!(100.5), deadline),
         policy,
         usd(),
         t(0),
@@ -113,7 +113,7 @@ fn rejected(leg: LegIndex, attempt: u32, at: i64) -> LegExecution {
     }
 }
 
-fn unwind(id: &str, side: Side, qty: Decimal) -> PlanAction {
+fn unwind(id: &str, side: Action, qty: Decimal) -> PlanAction {
     PlanAction::Unwind {
         instrument: inst(id),
         side,
@@ -209,7 +209,7 @@ fn filled_and_rejected_under_unwind_requests_the_offset() {
     .unwrap();
     let r = plan.apply(&rejected(B, 0, 2)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(10))]);
+    assert_eq!(r.actions, vec![unwind("X", Action::Sell, dec!(10))]);
     // The unwind is an intent: the residual stays visible.
     assert_eq!(r.residual, dec!(10));
 }
@@ -270,7 +270,7 @@ fn complete_policy_resubmits_then_falls_back() {
     .unwrap();
     let r = plan.apply(&ack(B, 1, dec!(2), 5)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(5))]);
+    assert_eq!(r.actions, vec![unwind("X", Action::Sell, dec!(5))]);
     assert_eq!(plan.leg(B).resubmits(), 1);
     assert_eq!(plan.leg(B).executed().unwrap(), dec!(5));
 }
@@ -461,7 +461,7 @@ fn unwind_waits_for_the_other_cancel_and_uses_the_ack_quantity() {
     // The ack reports 9 executed: unwind 9 at once.
     let r = plan.apply(&ack(A, 0, dec!(9), 4)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(9))]);
+    assert_eq!(r.actions, vec![unwind("X", Action::Sell, dec!(9))]);
     assert_eq!(r.residual, dec!(9));
     // The in-flight fill of 1 arrives after the ack: no new unwind.
     let r = plan
@@ -518,8 +518,8 @@ fn deadline_requests_a_cancel_and_waits_for_the_ack() {
 fn a_dated_leg_expiring_while_working_is_cancelled_and_not_resubmitted() {
     // The sell leg is a future expiring at 2_000; the plan deadline is
     // later (5_000), so the expiry is the effective deadline.
-    let first = spec("X", Side::Buy, dec!(10), dec!(100), Some(t(5_000)));
-    let mut second = spec("Y-FUT", Side::Sell, dec!(10), dec!(100.5), Some(t(5_000)));
+    let first = spec("X", Action::Buy, dec!(10), dec!(100), Some(t(5_000)));
+    let mut second = spec("Y-FUT", Action::Sell, dec!(10), dec!(100.5), Some(t(5_000)));
     second.leg.instrument = Instrument::dated(InstrumentId::new("Y-FUT").unwrap(), t(2_000));
     assert_eq!(second.effective_deadline(), Some(t(2_000)));
     let policy = FailurePolicy::Complete {
@@ -554,7 +554,7 @@ fn a_dated_leg_expiring_while_working_is_cancelled_and_not_resubmitted() {
     // After the ack the expired leg is not resubmitted: fall back to unwind.
     let r = plan.apply(&ack(B, 0, dec!(4), 2_100)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(6))]);
+    assert_eq!(r.actions, vec![unwind("X", Action::Sell, dec!(6))]);
     assert_eq!(plan.leg(B).resubmits(), 0);
 
     // A plan created at or after the expiry is rejected.
@@ -679,8 +679,8 @@ fn an_error_after_the_state_change_leaves_the_plan_unchanged() {
     // representable. The fill is valid on its own; the step fails after it.
     let big = Decimal::MAX;
     let mut plan = TwoLegPlan::new(
-        spec("X", Side::Buy, big, dec!(1), None),
-        spec("Y", Side::Sell, big, dec!(1), None),
+        spec("X", Action::Buy, big, dec!(1), None),
+        spec("Y", Action::Sell, big, dec!(1), None),
         FailurePolicy::Abort,
         usd(),
         t(0),
@@ -701,17 +701,38 @@ fn an_error_after_the_state_change_leaves_the_plan_unchanged() {
 fn construction_is_validated() {
     let new = |a, b| TwoLegPlan::new(a, b, FailurePolicy::Abort, usd(), t(0));
     let leg = |id: &str, side, qty| spec(id, side, qty, dec!(1), None);
-    assert!(new(leg("X", Side::Buy, dec!(1)), leg("X", Side::Sell, dec!(1))).is_err());
-    assert!(new(leg("X", Side::Buy, dec!(1)), leg("Y", Side::Buy, dec!(1))).is_err());
+    assert!(
+        new(
+            leg("X", Action::Buy, dec!(1)),
+            leg("X", Action::Sell, dec!(1))
+        )
+        .is_err()
+    );
+    assert!(
+        new(
+            leg("X", Action::Buy, dec!(1)),
+            leg("Y", Action::Buy, dec!(1))
+        )
+        .is_err()
+    );
     // Codex probe: buy 10 / sell 5 cannot offset one to one.
     assert!(matches!(
-        new(leg("X", Side::Buy, dec!(10)), leg("Y", Side::Sell, dec!(5))),
+        new(
+            leg("X", Action::Buy, dec!(10)),
+            leg("Y", Action::Sell, dec!(5))
+        ),
         Err(ArbitrageError::InvalidInput { .. })
     ));
-    let mut late = leg("Y", Side::Sell, dec!(1));
+    let mut late = leg("Y", Action::Sell, dec!(1));
     late.deadline = Some(t(0));
-    assert!(new(leg("X", Side::Buy, dec!(1)), late).is_err());
-    assert!(new(leg("X", Side::Buy, dec!(1)), leg("Y", Side::Sell, dec!(1))).is_ok());
+    assert!(new(leg("X", Action::Buy, dec!(1)), late).is_err());
+    assert!(
+        new(
+            leg("X", Action::Buy, dec!(1)),
+            leg("Y", Action::Sell, dec!(1))
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -757,8 +778,8 @@ fn plan_from_an_accepted_opportunity() {
     };
     let plan =
         TwoLegPlan::from_opportunity(&o, Some(t(200)), FailurePolicy::Unwind, usd()).unwrap();
-    assert_eq!(plan.leg(A).spec.leg.side, Side::Buy);
-    assert_eq!(plan.leg(B).spec.leg.side, Side::Sell);
+    assert_eq!(plan.leg(A).spec.leg.side, Action::Buy);
+    assert_eq!(plan.leg(B).spec.leg.side, Action::Sell);
     assert_eq!(plan.leg(A).spec.leg.quantity, q(dec!(3)));
     assert_eq!(plan.leg(B).spec.deadline, Some(t(200)));
     assert_eq!(plan.leg(A).remaining().unwrap(), dec!(3));
@@ -886,7 +907,7 @@ fn a_retry_that_fills_before_its_cancel_is_an_overfill_offset_by_unwind() {
     assert_eq!(r.residual, dec!(-2));
     let r = plan.apply(&ack(B, 1, dec!(2), 5)).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("Y", Side::Buy, dec!(2))]);
+    assert_eq!(r.actions, vec![unwind("Y", Action::Buy, dec!(2))]);
     assert_eq!(plan.leg(B).overfill().unwrap(), dec!(2));
 }
 
@@ -930,7 +951,7 @@ fn an_overfill_after_completion_is_recorded_and_unwound() {
         ))
         .unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("Y", Side::Buy, dec!(1))]);
+    assert_eq!(r.actions, vec![unwind("Y", Action::Buy, dec!(1))]);
     assert_eq!(r.residual, dec!(-1));
 }
 
@@ -995,8 +1016,8 @@ fn no_resubmit_of_an_expired_instrument_without_a_tick() {
         max_resubmits: 2,
         then: Fallback::Unwind,
     };
-    let first = spec("X", Side::Buy, dec!(10), dec!(100), None);
-    let mut second = spec("Y-FUT", Side::Sell, dec!(10), dec!(100.5), None);
+    let first = spec("X", Action::Buy, dec!(10), dec!(100), None);
+    let mut second = spec("Y-FUT", Action::Sell, dec!(10), dec!(100.5), None);
     second.leg.instrument = Instrument::dated(InstrumentId::new("Y-FUT").unwrap(), t(50));
     // Rejected after the expiry and acknowledged at the expiry: no resubmit.
     for ev in [rejected(B, 0, 60), ack(B, 0, dec!(0), 50)] {
@@ -1063,7 +1084,7 @@ fn an_overfill_waits_for_the_other_leg_and_unwinds_only_the_excess() {
         ))
         .unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(2))]);
+    assert_eq!(r.actions, vec![unwind("X", Action::Sell, dec!(2))]);
     assert_eq!(r.residual, dec!(2));
 
     // Under abort the same excess is kept and visible.
@@ -1310,7 +1331,7 @@ fn a_held_resubmission_past_the_deadline_falls_back() {
     // Liquidity never comes back before the deadline: unwind the residual.
     let r = plan.apply(&LegExecution::Tick { at: t(1_000) }).unwrap();
     assert_eq!(r.state, PlanState::UnwindRequested);
-    assert_eq!(r.actions, vec![unwind("X", Side::Sell, dec!(6))]);
+    assert_eq!(r.actions, vec![unwind("X", Action::Sell, dec!(6))]);
     assert!(!plan.leg(B).pending_resubmit);
     // Net cash: 4 * 100.5 - 10 * 100 - 0.7 = -598.7, with residual 6.
     assert_eq!(plan.net_cash().unwrap(), Money::new(dec!(-598.7), usd()));
@@ -1376,4 +1397,24 @@ fn net_cash_is_one_exact_sum() {
     plan.apply(&fill(B, 0, "b", dec!(10), dec!(10), px, dec!(0), 2))
         .unwrap();
     assert_eq!(plan.net_cash().unwrap().amount(), -big);
+}
+
+#[test]
+fn an_unsupported_action_cannot_build_a_plan() {
+    for (first, second) in [(Action::Other, Action::Sell), (Action::Buy, Action::Other)] {
+        assert_eq!(
+            TwoLegPlan::new(
+                spec("X", first, dec!(10), dec!(100), None),
+                // The same instrument would be another error: the action is
+                // checked first.
+                spec("X", second, dec!(10), dec!(100.5), None),
+                FailurePolicy::Abort,
+                usd(),
+                t(0),
+            ),
+            Err(ArbitrageError::UnsupportedAction {
+                action: Action::Other
+            })
+        );
+    }
 }

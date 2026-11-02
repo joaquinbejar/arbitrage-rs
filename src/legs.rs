@@ -83,7 +83,7 @@
 use crate::cost::Cost;
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
-use crate::instrument::{Instrument, Leg, Side, Timestamp};
+use crate::instrument::{Action, Dir, Instrument, Leg, Timestamp};
 use crate::money::{Currency, Money};
 use crate::opportunity::Opportunity;
 use crate::units::{Price, Quantity};
@@ -314,8 +314,8 @@ pub enum PlanAction {
     Unwind {
         /// Instrument to trade.
         instrument: Instrument,
-        /// Side that reduces the residual.
-        side: Side,
+        /// The action that reduces the residual.
+        side: Action,
         /// Quantity to offset.
         quantity: Quantity,
     },
@@ -472,12 +472,12 @@ impl LegState {
     }
 
     /// The signed executions of each attempt: positive for a buy leg.
-    fn signed_attempts(&self) -> impl Iterator<Item = Decimal> + '_ {
-        let side = self.spec.leg.side;
-        self.attempts.iter().map(move |a| match side {
-            Side::Buy => a.executed(),
-            Side::Sell => exact::neg(a.executed()),
-        })
+    fn signed_attempts(&self) -> Result<impl Iterator<Item = Decimal> + '_> {
+        let dir = Dir::try_from(self.spec.leg.side)?;
+        Ok(self.attempts.iter().map(move |a| match dir {
+            Dir::Buy => a.executed(),
+            Dir::Sell => exact::neg(a.executed()),
+        }))
     }
 
     /// Quantity executed beyond the leg's quantity (zero if none).
@@ -497,9 +497,9 @@ impl LegState {
     /// Arithmetic errors.
     pub fn position(&self) -> Result<Decimal> {
         let executed = self.executed()?;
-        Ok(match self.spec.leg.side {
-            Side::Buy => executed,
-            Side::Sell => exact::neg(executed),
+        Ok(match Dir::try_from(self.spec.leg.side)? {
+            Dir::Buy => executed,
+            Dir::Sell => exact::neg(executed),
         })
     }
 
@@ -602,12 +602,16 @@ impl TwoLegPlan {
         currency: Currency,
         created_at: Timestamp,
     ) -> Result<Self> {
+        let (first_dir, second_dir) = (
+            Dir::try_from(first.leg.side)?,
+            Dir::try_from(second.leg.side)?,
+        );
         if first.leg.instrument.id == second.leg.instrument.id {
             return Err(ArbitrageError::InvalidInput {
                 reason: "the two legs are the same instrument",
             });
         }
-        if first.leg.side == second.leg.side {
+        if first_dir == second_dir {
             return Err(ArbitrageError::InvalidInput {
                 reason: "the two legs must be on opposite sides to offset",
             });
@@ -696,8 +700,8 @@ impl TwoLegPlan {
     /// Arithmetic errors.
     pub fn residual(&self) -> Result<Decimal> {
         let values = self.legs[0]
-            .signed_attempts()
-            .chain(self.legs[1].signed_attempts())
+            .signed_attempts()?
+            .chain(self.legs[1].signed_attempts()?)
             .collect::<Vec<_>>();
         wide::sum(&values, "residual")
     }
@@ -735,9 +739,9 @@ impl TwoLegPlan {
         let mut values = Vec::with_capacity(4);
         for leg in &self.legs {
             let notional = leg.filled_notional.amount();
-            values.push(match leg.spec.leg.side {
-                Side::Sell => notional,
-                Side::Buy => exact::neg(notional),
+            values.push(match Dir::try_from(leg.spec.leg.side)? {
+                Dir::Sell => notional,
+                Dir::Buy => exact::neg(notional),
             });
             values.push(exact::neg(leg.fees.money().amount()));
         }
@@ -1181,9 +1185,9 @@ impl TwoLegPlan {
             &self.legs[1]
         };
         let side = if open.is_sign_positive() {
-            Side::Sell
+            Action::Sell
         } else {
-            Side::Buy
+            Action::Buy
         };
         actions.push(PlanAction::Unwind {
             instrument: source.spec.leg.instrument.clone(),

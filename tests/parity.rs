@@ -20,8 +20,8 @@ use arbitrage_rs::parity::{
     ParityUnavailable, evaluate_parity,
 };
 use arbitrage_rs::{
-    ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Price, Quantity,
-    Rounding, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Price,
+    Quantity, Rounding, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 
@@ -171,7 +171,7 @@ fn legs_are_sized_in_contracts_at_executable_prices() {
     let r = ev.reversal.edge().unwrap();
     assert_eq!(
         (r.legs.call.side, r.legs.put.side, r.legs.future.side),
-        (Side::Buy, Side::Sell, Side::Sell)
+        (Action::Buy, Action::Sell, Action::Sell)
     );
     assert_eq!(r.legs.call.quantity.value(), dec!(10));
     assert_eq!(r.legs.put.quantity.value(), dec!(10));
@@ -183,7 +183,7 @@ fn legs_are_sized_in_contracts_at_executable_prices() {
     let c = ev.conversion.edge().unwrap();
     assert_eq!(
         (c.legs.call.side, c.legs.put.side, c.legs.future.side),
-        (Side::Sell, Side::Buy, Side::Buy)
+        (Action::Sell, Action::Buy, Action::Buy)
     );
     assert_eq!(c.legs.call.price.value(), dec!(6.00));
     assert_eq!(c.legs.put.price.value(), dec!(5.00));
@@ -238,7 +238,7 @@ fn missing_side_makes_only_that_direction_unavailable() {
         ev.reversal,
         DirectionEvaluation::Unavailable(ParityUnavailable::MissingQuote {
             instrument: i.put.instrument.clone(),
-            side: Side::Sell,
+            side: Action::Sell,
         })
     );
     assert_eq!(
