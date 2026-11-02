@@ -284,6 +284,8 @@ fn check_final_cap(
 ///
 /// # Errors
 ///
+/// - [`ArbitrageError::UnsupportedAction`] if the action's side is not buy or
+///   sell (checked first).
 /// - [`ArbitrageError::InvalidInput`] for a float quantity that is not
 ///   finite or not representable as a `Decimal`, or `float_dp` above 28.
 /// - [`ArbitrageError::InvalidValue`] for a negative quantity, or one above

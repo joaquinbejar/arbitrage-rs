@@ -340,6 +340,8 @@ fn funding_costs(input: &BasisInput, q: Quantity) -> Result<Vec<FundingCost>> {
 ///
 /// # Errors
 ///
+/// - [`ArbitrageError::UnsupportedAction`] if a carry item's leg is not buy or
+///   sell (checked first).
 /// - [`ArbitrageError::InvalidInput`] if the legs are the same instrument,
 ///   `min_quantity` is above `target_quantity`, `exit_time` is not after
 ///   `as_of`, the funding events are not exactly the schedule's instants in

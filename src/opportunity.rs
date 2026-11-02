@@ -204,6 +204,8 @@ impl Evaluation {
 ///
 /// # Errors
 ///
+/// - [`ArbitrageError::UnsupportedAction`] if a carry item's leg is not buy or
+///   sell (checked first).
 /// - [`ArbitrageError::InvalidInput`] if both legs are the same instrument or
 ///   `min_quantity` is above `target_quantity`.
 /// - [`ArbitrageError::InvalidValue`] if `min_net_edge` is negative.
