@@ -24,8 +24,17 @@ pub enum ArbitrageError {
     /// The exact result needs more precision than [`Decimal`] holds at the
     /// operands' scale (at most 28 decimal places and a 96-bit mantissa).
     ///
-    /// The check is conservative: in rare cases a result that could be stored
-    /// exactly at a smaller scale is also reported, never the reverse.
+    /// The check is conservative: a rounded result is never returned, but two
+    /// kinds of exact result are also reported as `Inexact`:
+    ///
+    /// - a non-zero product whose normalized operand scales add up to more
+    ///   than 28, even if the product itself fits (`0.5 * 2e-28 = 1e-28`);
+    /// - a non-zero result whose mantissa at the exact scale is wider than
+    ///   96 bits, even if it would fit at a smaller scale because its last
+    ///   digits are zeros.
+    ///
+    /// A zero result is always exact and never reported: a zero operand of a
+    /// product, or a sum that cancels, returns `Ok(0)`.
     #[error("inexact result in {op}: the exact value does not fit in a Decimal")]
     Inexact {
         /// Operation that would have rounded.

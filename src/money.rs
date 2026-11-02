@@ -326,6 +326,14 @@ mod tests {
         assert_eq!(a.checked_scale(dec!(-2.5)).unwrap().amount(), dec!(-0.25));
         assert_eq!(a.neg().amount(), dec!(-0.1));
         assert_eq!(a.neg().abs(), a);
+        // A zero factor is an exact zero, whatever the amount's scale.
+        assert!(a.checked_scale(dec!(0)).unwrap().is_zero());
+        assert!(
+            Money::zero(usd())
+                .checked_scale(dec!(0.25))
+                .unwrap()
+                .is_zero()
+        );
         let big = Money::new(dec!(7922816251426433759354395033.5), usd());
         assert_eq!(
             big.checked_add(Money::new(dec!(0.01), usd())),

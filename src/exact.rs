@@ -10,8 +10,11 @@
 //! the result's scale, so a result whose scale is below the exact scale of the
 //! operation (the larger operand scale for addition, the sum of the scales for
 //! multiplication) has been rounded and is reported as
-//! [`ArbitrageError::Inexact`]. Every `Ok` value is the exact result,
-//! normalized (no trailing zeros, no negative zero).
+//! [`ArbitrageError::Inexact`]. A product with a zero operand is returned as
+//! an exact zero before that check, because `rust_decimal` gives it scale 0.
+//! Every `Ok` value is the exact result, normalized (no trailing zeros, no
+//! negative zero). The cases where an exact result is still reported as
+//! `Inexact` are listed on [`ArbitrageError::Inexact`].
 
 use crate::error::{ArbitrageError, Result};
 use rust_decimal::Decimal;
@@ -58,6 +61,11 @@ pub fn sub(a: Decimal, b: Decimal) -> Result<Decimal> {
 /// would be rounded.
 pub fn mul(a: Decimal, b: Decimal) -> Result<Decimal> {
     let (a, b) = (a.normalize(), b.normalize());
+    // rust_decimal returns a zero product at scale 0, which the scale check
+    // below would misread as rounding. A zero operand gives an exact zero.
+    if a.is_zero() || b.is_zero() {
+        return Ok(Decimal::ZERO);
+    }
     let exact_scale = a.scale() + b.scale();
     if exact_scale > MAX_SCALE {
         return Err(ArbitrageError::Inexact { op: "mul" });
@@ -164,6 +172,22 @@ mod tests {
             mul(Decimal::MAX, dec!(2)),
             Err(ArbitrageError::Overflow { op: "mul" })
         );
+    }
+
+    #[test]
+    fn zero_operands_and_zero_results_are_exact() {
+        // rust_decimal returns 100.1 * 0 at scale 0, below the operand scale.
+        assert_eq!(mul(dec!(100.1), Decimal::ZERO).unwrap(), Decimal::ZERO);
+        assert_eq!(mul(Decimal::ZERO, dec!(0.25)).unwrap(), Decimal::ZERO);
+        assert_eq!(mul(dec!(0.000), dec!(-1.5)).unwrap(), Decimal::ZERO);
+        assert_eq!(
+            mul(Decimal::ZERO, dec!(0.0000000000000000000000000001)).unwrap(),
+            Decimal::ZERO
+        );
+        assert_eq!(add(dec!(1.5), dec!(-1.5)).unwrap(), Decimal::ZERO);
+        assert_eq!(add(Decimal::ZERO, dec!(0.25)).unwrap(), dec!(0.25));
+        assert_eq!(sub(dec!(1.5), dec!(1.5)).unwrap(), Decimal::ZERO);
+        assert_eq!(sub(Decimal::ZERO, dec!(0.25)).unwrap(), dec!(-0.25));
     }
 
     #[test]

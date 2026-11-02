@@ -180,6 +180,11 @@ mod tests {
             FeeRate::zero().fee_on(usd(dec!(405))).unwrap(),
             Cost::new(usd(dec!(0)))
         );
+        // Zero rate on a fractional notional: an exact zero, not Inexact.
+        assert_eq!(
+            FeeRate::zero().fee_on(usd(dec!(100.1))).unwrap(),
+            Cost::new(usd(dec!(0)))
+        );
     }
 
     #[test]
