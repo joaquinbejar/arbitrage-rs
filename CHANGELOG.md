@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Research, outside the crate (M5-06, #6): `experiments/deep_hedging.py`
+  compares a learned hedge with the delta and the `plan_band_hedge` band on
+  one synthetic setting; the report is `research/results/deep_hedging.md`.
+  The band's decisions are cross-checked exactly in `tests/hedge.rs`, whose
+  fixture `tests/fixtures/deep_hedging_band.csv` is now packaged.
+
 ## [0.3.0] - 2026-11-02
 
 ### Breaking
