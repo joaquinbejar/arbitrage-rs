@@ -110,7 +110,8 @@ The monetary types are at the crate root: `Currency`, `Money`, `Cost`,
 - A figure built from more than two terms (a sum of products, or a product
   of more than two factors) is formed exactly in 768-bit integers and
   converted or rounded **once**, so an intermediate never fails when the
-  result is representable.
+  result is representable. The rule and its audit are in
+  [`docs/exact-arithmetic.md`](docs/exact-arithmetic.md).
 - Rounding happens only where a caller asks for it, with an explicit
   `Rounding` mode: `Up`, `Down`, `TowardZero` or `HalfEven`.
 

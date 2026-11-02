@@ -40,6 +40,7 @@ use crate::instrument::{Instrument, Leg, Side, Timestamp};
 use crate::money::{Currency, Money};
 use crate::opportunity::{Carry, CarryCost, LegQuote};
 use crate::units::{Price, Quantity};
+use crate::wide;
 use rust_decimal::Decimal;
 
 /// Which way the basis is traded.
@@ -273,17 +274,33 @@ pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
         ));
     }
 
-    let entry_basis = exact::sub(perp_level.price.value(), spot_level.price.value())?;
-    let per_unit = match dir {
-        BasisDirection::LongSpotShortPerp => exact::sub(entry_basis, input.expected_exit_basis)?,
-        BasisDirection::ShortSpotLongPerp => exact::sub(input.expected_exit_basis, entry_basis)?,
+    // q * (perp - spot - exit_basis) for long spot, the negative otherwise:
+    // one exact sum of products.
+    let (qv, spot_px, perp_px) = (
+        q.value(),
+        spot_level.price.value(),
+        perp_level.price.value(),
+    );
+    let sign = match dir {
+        BasisDirection::LongSpotShortPerp => Decimal::ONE,
+        BasisDirection::ShortSpotLongPerp => Decimal::NEGATIVE_ONE,
     };
-    let gross = Money::new(exact::mul(per_unit, q.value())?, ccy);
+    let neg = exact::neg(sign);
+    let entry_basis = exact::sub(perp_px, spot_px)?;
+    let gross = Money::new(
+        wide::sum_products_exact(
+            &[
+                &[sign, qv, perp_px],
+                &[neg, qv, spot_px],
+                &[neg, qv, input.expected_exit_basis],
+            ],
+            "basis gross",
+        )?,
+        ccy,
+    );
 
-    let spot_notional = spot_level.price.notional(q, ccy)?;
-    let perp_notional = perp_level.price.notional(q, ccy)?;
-    let spot_entry_fee = input.spot.fee.fee_on(spot_notional)?;
-    let perp_entry_fee = input.perp.fee.fee_on(perp_notional)?;
+    let spot_entry_fee = input.spot.fee.fee_on_factors(&[spot_px, qv], ccy)?;
+    let perp_entry_fee = input.perp.fee.fee_on_factors(&[perp_px, qv], ccy)?;
     // Implied exit: spot unchanged, perpetual at spot + exit basis.
     let perp_exit_price = Price::new(exact::add(
         spot_level.price.value(),
@@ -293,21 +310,21 @@ pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
         reason: "spot entry price + expected_exit_basis must be positive",
     })?;
     let spot_exit_fee = spot_entry_fee;
-    let perp_exit_fee = input.perp.fee.fee_on(perp_exit_price.notional(q, ccy)?)?;
-    let mut total = spot_entry_fee
-        .checked_add(perp_entry_fee)?
-        .checked_add(spot_exit_fee)?
-        .checked_add(perp_exit_fee)?;
+    let perp_exit_fee = input
+        .perp
+        .fee
+        .fee_on_factors(&[perp_exit_price.value(), qv], ccy)?;
+    let mut items = vec![spot_entry_fee, perp_entry_fee, spot_exit_fee, perp_exit_fee];
 
     let mut carry = Vec::with_capacity(input.carry.len());
     for item in &input.carry {
-        let notional = if item.leg == dir.spot_side() {
-            spot_notional
+        let price = if item.leg == dir.spot_side() {
+            spot_px
         } else {
-            perp_notional
+            perp_px
         };
-        let cost = item.rate.fee_on(notional)?;
-        total = total.checked_add(cost)?;
+        let cost = item.rate.fee_on_factors(&[price, qv], ccy)?;
+        items.push(cost);
         carry.push(CarryCost {
             kind: item.kind,
             leg: item.leg,
@@ -321,20 +338,22 @@ pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
         BasisDirection::ShortSpotLongPerp => q.value(),
     };
     let mut funding = Vec::with_capacity(input.funding.len());
-    let mut funding_total = Cost::new(Money::zero(ccy));
+    let mut funding_items = Vec::with_capacity(input.funding.len());
     for event in &input.funding {
         let cost = match input.funding_rounding {
             None => funding_cashflow(input.convention, perp_position, event, ccy)?,
             Some(r) => funding_cashflow_rounded(input.convention, perp_position, event, ccy, r)?,
         };
-        funding_total = funding_total.checked_add(cost)?;
+        funding_items.push(cost);
         funding.push(FundingCost {
             time: event.time,
             kind: event.rate.kind(),
             cost,
         });
     }
-    total = total.checked_add(funding_total)?;
+    let funding_total = Cost::total(&funding_items, ccy)?;
+    items.extend(funding_items);
+    let total = Cost::total(&items, ccy)?;
 
     let costs = BasisCosts {
         spot_entry_fee,

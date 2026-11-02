@@ -16,6 +16,7 @@ use crate::exact;
 use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
 use crate::money::{Currency, Money};
 use crate::units::Quantity;
+use crate::wide;
 use rust_decimal::Decimal;
 
 /// Exposure band with a re-hedge target, in hedge instrument units.
@@ -247,9 +248,10 @@ pub fn plan_band_hedge(view: &PositionView) -> Result<HedgeDecision> {
     };
 
     let ccy = view.quote_currency;
-    let notional = level.price.notional(quantity, ccy)?;
-    let expected_fee = view.fee.fee_on(notional)?;
-    let expected_spread_cost = spread_cost(&view.book, side, quantity, ccy)?;
+    let expected_fee = view
+        .fee
+        .fee_on_factors(&[level.price.value(), quantity.value()], ccy)?;
+    let expected_spread_cost = spread_cost(&view.book, quantity, ccy)?;
     let expected_cost = match expected_spread_cost {
         Some(s) => expected_fee.checked_add(s)?,
         None => expected_fee,
@@ -277,22 +279,21 @@ pub fn plan_band_hedge(view: &PositionView) -> Result<HedgeDecision> {
 }
 
 /// `(ask - mid) * q` for a buy, `(mid - bid) * q` for a sell, when both sides
-/// are quoted. Signed: a crossed book gives a negative cost.
-pub(crate) fn spread_cost(
-    book: &TopOfBook,
-    side: Side,
-    q: Quantity,
-    ccy: Currency,
-) -> Result<Option<Cost>> {
+/// are quoted; both equal `(ask - bid) * q / 2`. Signed: a crossed book gives
+/// a negative cost.
+pub(crate) fn spread_cost(book: &TopOfBook, q: Quantity, ccy: Currency) -> Result<Option<Cost>> {
     let (Some(bid), Some(ask)) = (book.bid, book.ask) else {
         return Ok(None);
     };
+    // Formed as one exact sum of products, so bid + ask may pass the range
+    // of a Decimal.
     let half = Decimal::new(5, 1);
-    let mid = exact::mul(exact::add(bid.price.value(), ask.price.value())?, half)?;
-    let per_unit = match side {
-        Side::Buy => exact::sub(ask.price.value(), mid)?,
-        Side::Sell => exact::sub(mid, bid.price.value())?,
-    };
-    let amount = exact::mul(per_unit, q.value())?;
+    let amount = wide::sum_products_exact(
+        &[
+            &[half, ask.price.value(), q.value()],
+            &[exact::neg(half), bid.price.value(), q.value()],
+        ],
+        "spread cost",
+    )?;
     Ok(Some(Cost::new(Money::new(amount, ccy))))
 }

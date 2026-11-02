@@ -513,3 +513,24 @@ fn above_the_cap_only_reductions_are_accepted() {
         vec![Adjustment::QuotedSize, Adjustment::ExposureAboveCap]
     );
 }
+
+#[test]
+fn fee_is_exact_when_the_notional_passes_max() {
+    let big = dec!(47536897508558602556126370201);
+    let mut mk = market();
+    mk.book = TopOfBook {
+        bid: lvl(big, dec!(100)),
+        ask: lvl(big + dec!(2), dec!(100)),
+    };
+    mk.fee = FeeRate::from_bps(dec!(1)).unwrap();
+    let a = action(Side::Sell, ActionQuantity::Exact(dec!(10)));
+    let out = plan(&a, &limits(ExcessPolicy::Clip), &mk);
+    assert_eq!(
+        out.plan.expected_fee.money().amount(),
+        dec!(47536897508558602556126370.201)
+    );
+    assert_eq!(
+        out.plan.expected_spread_cost,
+        Some(Cost::new(Money::new(dec!(10), usd())))
+    );
+}

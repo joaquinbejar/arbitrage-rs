@@ -35,6 +35,7 @@ use crate::instrument::{Instrument, InstrumentId, Side, Timestamp, TopOfBook};
 use crate::legs::{LegIndex, LegSpec};
 use crate::money::{Currency, Money};
 use crate::units::Quantity;
+use crate::wide;
 use core::fmt;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -475,15 +476,21 @@ pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservatio
         (Side::Sell, Some(bid)) => leg.price.max(bid.price),
         _ => leg.price,
     };
-    let notional = price.notional(leg.quantity, ccy)?;
-    let fee = request.fee.fee_on(notional)?.money();
+    let (px, q) = (price.value(), leg.quantity.value());
+    let fee = request.fee.fee_on_factors(&[px, q], ccy)?.money();
     let fee = if fee.is_negative() {
         Money::zero(ccy)
     } else {
         fee
     };
     let (cash, inventory) = match (leg.side, request.sell_funding) {
-        (Side::Buy, _) => (notional.checked_add(fee)?, None),
+        (Side::Buy, _) => (
+            Money::new(
+                wide::sum_products_exact(&[&[px, q][..], &[fee.amount()]], "requirement")?,
+                ccy,
+            ),
+            None,
+        ),
         (Side::Sell, SellFunding::Inventory) => {
             (fee, Some((leg.instrument.id.clone(), leg.quantity)))
         }
@@ -495,7 +502,18 @@ pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservatio
                     reason: "must be within (0, 1]",
                 });
             }
-            (notional.checked_scale(rate)?.checked_add(fee)?, None)
+            // rate * price * quantity + fee as one exact sum: the notional
+            // may pass the range of a Decimal when the margin does not.
+            (
+                Money::new(
+                    wide::sum_products_exact(
+                        &[&[rate, px, q][..], &[fee.amount()]],
+                        "requirement",
+                    )?,
+                    ccy,
+                ),
+                None,
+            )
         }
     };
     Ok(Reservation {

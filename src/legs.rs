@@ -88,6 +88,7 @@ use crate::money::{Currency, Money};
 use crate::opportunity::Opportunity;
 use crate::units::{Price, Quantity};
 use crate::venues::{VenueId, VenueView, check_view};
+use crate::wide;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
@@ -435,9 +436,12 @@ impl LegState {
     ///
     /// Arithmetic errors.
     pub fn executed(&self) -> Result<Decimal> {
-        self.attempts
+        let values = self
+            .attempts
             .iter()
-            .try_fold(Decimal::ZERO, |acc, a| exact::add(acc, a.executed()))
+            .map(AttemptState::executed)
+            .collect::<Vec<_>>();
+        wide::sum(&values, "executed")
     }
 
     /// Quantity left to execute; negative after an overfill.
@@ -446,7 +450,18 @@ impl LegState {
     ///
     /// Arithmetic errors.
     pub fn remaining(&self) -> Result<Decimal> {
-        exact::sub(self.spec.leg.quantity.value(), self.executed()?)
+        let mut values = vec![self.spec.leg.quantity.value()];
+        values.extend(self.attempts.iter().map(|a| exact::neg(a.executed())));
+        wide::sum(&values, "remaining")
+    }
+
+    /// The signed executions of each attempt: positive for a buy leg.
+    fn signed_attempts(&self) -> impl Iterator<Item = Decimal> + '_ {
+        let side = self.spec.leg.side;
+        self.attempts.iter().map(move |a| match side {
+            Side::Buy => a.executed(),
+            Side::Sell => exact::neg(a.executed()),
+        })
     }
 
     /// Quantity executed beyond the leg's quantity (zero if none).
@@ -664,7 +679,11 @@ impl TwoLegPlan {
     ///
     /// Arithmetic errors.
     pub fn residual(&self) -> Result<Decimal> {
-        exact::add(self.legs[0].position()?, self.legs[1].position()?)
+        let values = self.legs[0]
+            .signed_attempts()
+            .chain(self.legs[1].signed_attempts())
+            .collect::<Vec<_>>();
+        wide::sum(&values, "residual")
     }
 
     /// Fees of both legs.
@@ -697,15 +716,16 @@ impl TwoLegPlan {
     ///
     /// Arithmetic errors.
     pub fn net_cash(&self) -> Result<Money> {
-        let mut net = Money::zero(self.currency);
+        let mut values = Vec::with_capacity(4);
         for leg in &self.legs {
-            net = match leg.spec.leg.side {
-                Side::Sell => net.checked_add(leg.filled_notional)?,
-                Side::Buy => net.checked_sub(leg.filled_notional)?,
-            };
-            net = net.checked_sub(leg.fees.money())?;
+            let notional = leg.filled_notional.amount();
+            values.push(match leg.spec.leg.side {
+                Side::Sell => notional,
+                Side::Buy => exact::neg(notional),
+            });
+            values.push(exact::neg(leg.fees.money().amount()));
         }
-        Ok(net)
+        Ok(Money::new(wide::sum(&values, "net cash")?, self.currency))
     }
 
     /// Applies one observed event and returns the resulting intents.
@@ -910,9 +930,16 @@ impl TwoLegPlan {
         // Beyond the attempt quantity or the acknowledged final quantity it
         // is still a real execution: it is recorded, never rejected.
         state.observed = cum;
-        let notional = fill.price.notional(fill.quantity, self.currency)?;
         let leg_state = &mut self.legs[fill.leg.slot()];
-        leg_state.filled_notional = leg_state.filled_notional.checked_add(notional)?;
+        // The stored notional plus price * quantity, as one exact sum.
+        let notional = wide::sum_products_exact(
+            &[
+                &[leg_state.filled_notional.amount()],
+                &[fill.price.value(), fill.quantity.value()],
+            ],
+            "filled notional",
+        )?;
+        leg_state.filled_notional = Money::new(notional, self.currency);
         leg_state.fees = leg_state.fees.checked_add(fill.fee)?;
         self.fills.insert(exec_id.clone(), fill);
         Ok(())

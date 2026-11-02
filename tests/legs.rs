@@ -1353,3 +1353,17 @@ fn a_venue_update_from_another_venue_is_rejected() {
     ));
     assert_eq!(plan, before);
 }
+
+#[test]
+fn net_cash_is_one_exact_sum() {
+    // Buy notional BIG and a fee of BIG pass Decimal::MAX as a running sum;
+    // the sell notional BIG brings the net back to -BIG.
+    let big = dec!(47536897508558602556126370201);
+    let px = dec!(4753689750855860255612637020.1);
+    let mut plan = plan(FailurePolicy::Abort, None);
+    plan.apply(&fill(A, 0, "a", dec!(10), dec!(10), px, big, 1))
+        .unwrap();
+    plan.apply(&fill(B, 0, "b", dec!(10), dec!(10), px, dec!(0), 2))
+        .unwrap();
+    assert_eq!(plan.net_cash().unwrap().amount(), -big);
+}

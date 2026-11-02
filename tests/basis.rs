@@ -428,3 +428,53 @@ fn funding_settled_per_event_as_the_venue_rounds() {
     assert_eq!(o.expected_costs.funding_total.money(), m(dec!(-9.03)));
     assert_eq!(o.expected_net, m(dec!(69.03)));
 }
+
+/// 0.6 * Decimal::MAX: twice it passes the range of a Decimal.
+const BIG: Decimal = dec!(47536897508558602556126370201);
+
+#[test]
+fn gross_is_exact_when_notionals_pass_max() {
+    // Long spot at BIG, short perp at BIG + 1, q = 2: the notionals pass
+    // Decimal::MAX, the gross 2 * (1 - 0) fits. Zero fees and funding.
+    let mut i = base();
+    i.spot.book.ask = lvl(BIG, dec!(2));
+    i.perp.book.bid = lvl(BIG + dec!(1), dec!(2));
+    i.spot.fee = FeeRate::zero();
+    i.perp.fee = FeeRate::zero();
+    i.target_quantity = q(dec!(2));
+    i.funding = events(dec!(0), RateKind::Estimated);
+    match evaluate_spot_perp(&i).unwrap() {
+        BasisEvaluation::Accepted(o) => {
+            assert_eq!(o.expected_gross.amount(), dec!(2));
+            assert_eq!(o.expected_costs.total.money().amount(), dec!(0));
+            assert_eq!(o.expected_net.amount(), dec!(2));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn cost_total_is_one_exact_sum() {
+    // Entry fees of BIG and BIG + 1 (100 % of notional) pass Decimal::MAX
+    // as a running sum; carry benefits bring the total back.
+    let mut i = base();
+    i.spot.book.ask = lvl(BIG, dec!(2));
+    i.perp.book.bid = lvl(BIG + dec!(1), dec!(2));
+    i.spot.fee = bps(dec!(10000));
+    i.perp.fee = FeeRate::zero();
+    i.target_quantity = q(dec!(1));
+    i.funding = events(dec!(0), RateKind::Estimated);
+    i.carry = vec![Carry {
+        kind: CarryKind::Other,
+        leg: Side::Buy,
+        rate: bps(dec!(-10000)),
+    }];
+    // Spot entry BIG and exit BIG (the implied exit keeps spot), carry -BIG:
+    // total BIG.
+    match evaluate_spot_perp(&i).unwrap() {
+        BasisEvaluation::Rejected(BasisRejectReason::NetEdgeBelowThreshold { costs, .. }) => {
+            assert_eq!(costs.total.money().amount(), BIG);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}

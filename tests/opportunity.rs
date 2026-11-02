@@ -274,3 +274,61 @@ fn expired_leg_is_an_error() {
         Some(Timestamp::from_millis(1_000))
     );
 }
+
+/// 0.6 * Decimal::MAX: twice it passes the range of a Decimal.
+const BIG: Decimal = dec!(47536897508558602556126370201);
+
+#[test]
+fn gross_and_fees_are_exact_when_notionals_pass_max() {
+    // Notionals near 2 * 0.6 * MAX pass Decimal::MAX; the gross and the
+    // fees (1 bps of each notional) fit.
+    let ask = dec!(47536897508558602556126370000);
+    let mut i = base();
+    i.buy.book.ask = lvl(ask, dec!(5));
+    i.sell.book.bid = lvl(ask + dec!(10000), dec!(5));
+    i.buy.fee = bps(dec!(1));
+    i.sell.fee = bps(dec!(1));
+    i.target_quantity = q(dec!(2));
+    match evaluate(&i).unwrap() {
+        Evaluation::Rejected(RejectReason::NetEdgeBelowThreshold { gross, costs, .. }) => {
+            assert_eq!(gross.amount(), dec!(20000));
+            assert_eq!(
+                costs.buy_fee.money().amount(),
+                dec!(9507379501711720511225274)
+            );
+            assert_eq!(
+                costs.sell_fee.money().amount(),
+                dec!(9507379501711720511225276)
+            );
+            assert_eq!(
+                costs.total.money().amount(),
+                dec!(19014759003423441022450550)
+            );
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn cost_total_is_one_exact_sum() {
+    // Fees of BIG and BIG + 1 (100 % of notional) pass Decimal::MAX as a
+    // running sum; a carry benefit of BIG brings the total back to BIG + 1.
+    let mut i = base();
+    i.buy.book.ask = lvl(BIG, dec!(5));
+    i.sell.book.bid = lvl(BIG + dec!(1), dec!(5));
+    i.buy.fee = bps(dec!(10000));
+    i.sell.fee = bps(dec!(10000));
+    i.target_quantity = q(dec!(1));
+    i.carry = vec![Carry {
+        kind: CarryKind::Other,
+        leg: Side::Buy,
+        rate: bps(dec!(-10000)),
+    }];
+    match evaluate(&i).unwrap() {
+        Evaluation::Rejected(RejectReason::NetEdgeBelowThreshold { costs, net, .. }) => {
+            assert_eq!(costs.total.money().amount(), BIG + dec!(1));
+            assert_eq!(net.amount(), -BIG);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}

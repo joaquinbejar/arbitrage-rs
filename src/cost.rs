@@ -1,13 +1,16 @@
 //! Trading costs and fee rates.
 
 use crate::error::{ArbitrageError, Result};
-use crate::exact;
-use crate::money::Money;
+use crate::money::{Currency, Money};
+use crate::wide;
 use core::fmt;
 use rust_decimal::Decimal;
 
 /// Basis points in one unit (`1 = 10_000 bps`).
 pub const BPS_PER_UNIT: Decimal = Decimal::from_parts(10_000, 0, 0, false, 0);
+
+/// `1 / 10_000`, as an exact factor.
+const BPS_FRACTION: Decimal = Decimal::from_parts(1, 0, 0, false, 4);
 
 /// A cost in one currency, signed from the payer's side: positive is paid,
 /// negative is received (for example a maker rebate).
@@ -52,6 +55,27 @@ impl Cost {
     /// The errors of [`Money::checked_add`].
     pub fn checked_add(&self, other: Self) -> Result<Self> {
         self.0.checked_add(other.0).map(Self)
+    }
+
+    /// Exact sum of `costs` in `ccy`, converted once: a running sum may pass
+    /// the range of a `Decimal` when the total does not.
+    ///
+    /// # Errors
+    ///
+    /// [`ArbitrageError::CurrencyMismatch`] for a cost in another currency,
+    /// and [`ArbitrageError::Overflow`] if the total does not fit.
+    pub(crate) fn total(costs: &[Cost], ccy: Currency) -> Result<Self> {
+        let mut amounts = Vec::with_capacity(costs.len());
+        for c in costs {
+            if c.0.currency() != ccy {
+                return Err(ArbitrageError::CurrencyMismatch {
+                    left: ccy,
+                    right: c.0.currency(),
+                });
+            }
+            amounts.push(c.0.amount());
+        }
+        Ok(Self(Money::new(wide::sum(&amounts, "cost total")?, ccy)))
     }
 
     /// Exact `gross - self`, the result net of this cost.
@@ -130,10 +154,22 @@ impl FeeRate {
     ///
     /// # Errors
     ///
-    /// The errors of [`exact::mul`] and [`exact::div_pow10`].
+    /// [`ArbitrageError::Overflow`] or [`ArbitrageError::Inexact`] only if the
+    /// exact fee does not fit in a [`Decimal`].
     pub fn fee_on(&self, notional: Money) -> Result<Cost> {
-        let fee = exact::div_pow10(exact::mul(notional.amount().abs(), self.bps)?, 4)?;
-        Ok(Cost::new(Money::new(fee, notional.currency())))
+        self.fee_on_factors(&[notional.amount()], notional.currency())
+    }
+
+    /// Exact fee on the notional `|product of factors|`, for example
+    /// `[price, quantity]`: one product with the rate, converted once, so the
+    /// notional itself may exceed a `Decimal` when the fee does not.
+    pub(crate) fn fee_on_factors(&self, factors: &[Decimal], ccy: Currency) -> Result<Cost> {
+        let mut all = Vec::with_capacity(factors.len() + 2);
+        all.extend(factors.iter().map(|f| f.abs()));
+        all.push(self.bps);
+        all.push(BPS_FRACTION);
+        let fee = wide::sum_products_exact(&[&all], "fee")?;
+        Ok(Cost::new(Money::new(fee, ccy)))
     }
 }
 
@@ -202,10 +238,35 @@ mod tests {
     fn fee_that_needs_more_than_28_places_is_rejected() {
         let r = FeeRate::from_bps(dec!(0.0001)).unwrap();
         let n = usd(dec!(0.000000000000000000001));
-        assert_eq!(
-            r.fee_on(n),
-            Err(ArbitrageError::Inexact { op: "div_pow10" })
-        );
+        assert_eq!(r.fee_on(n), Err(ArbitrageError::Inexact { op: "fee" }));
+    }
+
+    #[test]
+    fn fee_on_a_notional_near_max_is_exact() {
+        // |n| * bps passes Decimal::MAX; |n| * bps / 10_000 fits.
+        let r = FeeRate::from_bps(dec!(4)).unwrap();
+        let fee = r.fee_on(usd(Decimal::MAX)).unwrap();
+        assert_eq!(fee.money().amount(), dec!(31691265005705735037417580.134));
+        // The same fee from the factors of a notional beyond Decimal::MAX.
+        let fee = r
+            .fee_on_factors(&[Decimal::MAX, dec!(2)], Currency::new("USD").unwrap())
+            .unwrap();
+        assert_eq!(fee.money().amount(), dec!(63382530011411470074835160.268));
+    }
+
+    #[test]
+    fn cost_total_is_one_exact_sum() {
+        let usd_ccy = Currency::new("USD").unwrap();
+        let big = Cost::new(usd(dec!(47536897508558602556126370201)));
+        let rebate = Cost::new(usd(dec!(-47536897508558602556126370201)));
+        // A running sum would pass Decimal::MAX after the first two.
+        let total = Cost::total(&[big, big, rebate], usd_ccy).unwrap();
+        assert_eq!(total, big);
+        let eur = Cost::new(Money::new(dec!(1), Currency::new("EUR").unwrap()));
+        assert!(matches!(
+            Cost::total(&[big, eur], usd_ccy),
+            Err(ArbitrageError::CurrencyMismatch { .. })
+        ));
     }
 
     #[test]
