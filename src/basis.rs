@@ -13,10 +13,18 @@
 //!
 //! A perpetual does not converge to spot, so the exit basis is an explicit
 //! assumption of the caller, as are the funding rates and marks of future
-//! funding instants. Costs subtracted from the gross edge: entry and exit
-//! fees on both legs (exit fees at the entry notionals and the same rates),
-//! carry items (borrow, financing) and funding over the holding window
-//! `(as_of, exit_time]`.
+//! funding instants. Costs subtracted from the gross (convergence) edge:
+//! entry and exit fees on both legs, carry items (borrow, financing) and
+//! funding over the holding window `(as_of, exit_time]`.
+//!
+//! The decision uses the net edge only. A zero or negative convergence edge
+//! is not a veto: a flat basis held while funding is received is the main
+//! spot-perpetual trade, and it is accepted when the net edge clears the
+//! threshold.
+//!
+//! Exit fees use the implied exit notionals: spot at its entry price (only
+//! the basis is assumed to move) and the perpetual at `spot entry price +
+//! expected_exit_basis`, at the same fee rates.
 //!
 //! As in [`crate::opportunity`], an accepted opportunity is an intent with
 //! expected numbers, not an executed or guaranteed profit.
@@ -86,7 +94,9 @@ pub struct BasisInput {
     pub min_quantity: Quantity,
     /// The perpetual's funding grid.
     pub schedule: FundingSchedule,
-    /// End of the holding window; the position is assumed closed at it.
+    /// End of the holding window. The position is held through it: a
+    /// funding instant exactly at `exit_time` is paid or received, and the
+    /// position is closed just after.
     pub exit_time: Timestamp,
     /// One event per funding instant in `(as_of, exit_time]`, in order.
     pub funding: Vec<FundingEvent>,
@@ -122,9 +132,10 @@ pub struct BasisCosts {
     pub spot_entry_fee: Cost,
     /// Entry fee on the perpetual leg.
     pub perp_entry_fee: Cost,
-    /// Exit fee on the spot leg (entry notional, same rate).
+    /// Exit fee on the spot leg (spot at its entry price, same rate).
     pub spot_exit_fee: Cost,
-    /// Exit fee on the perpetual leg (entry notional, same rate).
+    /// Exit fee on the perpetual leg (at `spot entry price +
+    /// expected_exit_basis`, same rate).
     pub perp_exit_fee: Cost,
     /// Carry items, in input order.
     pub carry: Vec<CarryCost>,
@@ -155,8 +166,8 @@ pub struct SpotPerpOpportunity {
     pub entry_basis: Decimal,
     /// The assumed exit basis.
     pub expected_exit_basis: Decimal,
-    /// Convergence edge: `(entry - exit) * q` long spot, `(exit - entry) *
-    /// q` short spot.
+    /// Convergence edge, of any sign: `(entry - exit) * q` long spot,
+    /// `(exit - entry) * q` short spot.
     pub expected_gross: Money,
     /// Costs subtracted from it.
     pub expected_costs: BasisCosts,
@@ -182,15 +193,9 @@ pub enum BasisRejectReason {
         /// The minimum asked for.
         required: Quantity,
     },
-    /// The convergence edge is zero or negative.
-    NoGrossEdge {
-        /// The gross edge.
-        gross: Money,
-    },
-    /// The gross edge is positive but the net edge is not above zero or is
-    /// below the threshold.
+    /// The net edge is not above zero or is below the threshold.
     NetEdgeBelowThreshold {
-        /// The gross edge, positive.
+        /// The convergence edge, of any sign.
         gross: Money,
         /// Costs subtracted from it (boxed: the itemized costs are large).
         costs: Box<BasisCosts>,
@@ -227,14 +232,16 @@ impl BasisEvaluation {
 ///
 /// - [`ArbitrageError::InvalidInput`] if the legs are the same instrument,
 ///   `min_quantity` is above `target_quantity`, `exit_time` is not after
-///   `as_of`, or the funding events are not exactly the schedule's instants
-///   in `(as_of, exit_time]`, in order.
+///   `as_of`, the funding events are not exactly the schedule's instants in
+///   `(as_of, exit_time]` in order, or the implied perpetual exit price
+///   (`spot entry price + expected_exit_basis`) is not positive.
 /// - [`ArbitrageError::LookAhead`] if an event uses a rate published after
 ///   `as_of`.
 /// - [`ArbitrageError::InvalidValue`] or
 ///   [`ArbitrageError::CurrencyMismatch`] for a bad `min_net_edge`, and
 ///   [`ArbitrageError::Expired`] for an expired leg.
-/// - Arithmetic errors; nothing is rounded.
+/// - Arithmetic errors. Nothing is rounded, except each funding amount when
+///   `funding_rounding` is `Some` (once per event, from its exact value).
 pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
     validate(input)?;
     let ccy = input.quote_currency;
@@ -272,18 +279,21 @@ pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
         BasisDirection::ShortSpotLongPerp => exact::sub(input.expected_exit_basis, entry_basis)?,
     };
     let gross = Money::new(exact::mul(per_unit, q.value())?, ccy);
-    if !gross.is_positive() {
-        return Ok(BasisEvaluation::Rejected(BasisRejectReason::NoGrossEdge {
-            gross,
-        }));
-    }
 
     let spot_notional = spot_level.price.notional(q, ccy)?;
     let perp_notional = perp_level.price.notional(q, ccy)?;
     let spot_entry_fee = input.spot.fee.fee_on(spot_notional)?;
     let perp_entry_fee = input.perp.fee.fee_on(perp_notional)?;
+    // Implied exit: spot unchanged, perpetual at spot + exit basis.
+    let perp_exit_price = Price::new(exact::add(
+        spot_level.price.value(),
+        input.expected_exit_basis,
+    )?)
+    .map_err(|_| ArbitrageError::InvalidInput {
+        reason: "spot entry price + expected_exit_basis must be positive",
+    })?;
     let spot_exit_fee = spot_entry_fee;
-    let perp_exit_fee = perp_entry_fee;
+    let perp_exit_fee = input.perp.fee.fee_on(perp_exit_price.notional(q, ccy)?)?;
     let mut total = spot_entry_fee
         .checked_add(perp_entry_fee)?
         .checked_add(spot_exit_fee)?

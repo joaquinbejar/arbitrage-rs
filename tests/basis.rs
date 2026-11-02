@@ -89,9 +89,10 @@ fn base() -> BasisInput {
 
 #[test]
 fn gross_positive_net_negative_is_rejected() {
-    // Gross (60 - 0) * 1 = 60. Fees: spot 30 + 30, perp 15.03 + 15.03 =
-    // 90.06. Funding: short 1 receives 30050 * 0.0001 = 3.005 three times,
-    // -9.015. Total 81.045; net -21.045.
+    // Gross (60 - 0) * 1 = 60. Fees: spot 30 + 30; perp 15.03 at entry and
+    // 15 at the implied exit price 30000 + 0: 90.03. Funding: short 1
+    // receives 30050 * 0.0001 = 3.005 three times, -9.015. Total 81.015;
+    // net -21.015.
     match evaluate_spot_perp(&base()).unwrap() {
         BasisEvaluation::Rejected(BasisRejectReason::NetEdgeBelowThreshold {
             gross,
@@ -101,12 +102,12 @@ fn gross_positive_net_negative_is_rejected() {
         }) => {
             assert_eq!(gross, m(dec!(60)));
             assert_eq!(costs.spot_entry_fee.money(), m(dec!(30)));
-            assert_eq!(costs.perp_exit_fee.money(), m(dec!(15.03)));
+            assert_eq!(costs.perp_exit_fee.money(), m(dec!(15)));
             assert_eq!(costs.funding.len(), 3);
             assert_eq!(costs.funding[0].cost.money(), m(dec!(-3.005)));
             assert_eq!(costs.funding_total.money(), m(dec!(-9.015)));
-            assert_eq!(costs.total.money(), m(dec!(81.045)));
-            assert_eq!(net, m(dec!(-21.045)));
+            assert_eq!(costs.total.money(), m(dec!(81.015)));
+            assert_eq!(net, m(dec!(-21.015)));
         }
         other => panic!("unexpected {other:?}"),
     }
@@ -114,9 +115,9 @@ fn gross_positive_net_negative_is_rejected() {
 
 #[test]
 fn cash_and_carry_accepted_with_funding_received() {
-    // Fees 2 bps spot (6 + 6) and 1 bp perp (3.006 + 3.006) = 18.012;
-    // funding -9.015; financing 3 bps on the spot notional = 9.
-    // Total 17.997; net 60 - 17.997 = 42.003.
+    // Fees 2 bps spot (6 + 6) and 1 bp perp (3.006 at entry, 3 at the
+    // implied exit 30000) = 18.006; funding -9.015; financing 3 bps on the
+    // spot notional = 9. Total 17.991; net 60 - 17.991 = 42.009.
     let mut input = base();
     input.spot.fee = bps(dec!(2));
     input.perp.fee = bps(dec!(1));
@@ -136,8 +137,8 @@ fn cash_and_carry_accepted_with_funding_received() {
     assert_eq!(o.index.value(), dec!(30000));
     assert_eq!(o.expected_costs.carry[0].cost.money(), m(dec!(9)));
     assert_eq!(o.expected_costs.funding_total.money(), m(dec!(-9.015)));
-    assert_eq!(o.expected_costs.total.money(), m(dec!(17.997)));
-    assert_eq!(o.expected_net, m(dec!(42.003)));
+    assert_eq!(o.expected_costs.total.money(), m(dec!(17.991)));
+    assert_eq!(o.expected_net, m(dec!(42.009)));
 }
 
 #[test]
@@ -185,14 +186,94 @@ fn reverse_trade_pays_positive_funding() {
     assert_eq!(o.expected_net, m(dec!(1.97)));
 }
 
-#[test]
-fn no_gross_edge_when_the_basis_does_not_converge() {
+/// Fee-free input with an explicit exit basis, direction and funding rate.
+fn fee_free(dir: BasisDirection, exit_basis: Decimal, rate: Decimal) -> BasisInput {
     let mut input = base();
-    input.expected_exit_basis = dec!(60);
-    assert_eq!(
-        evaluate_spot_perp(&input).unwrap(),
-        BasisEvaluation::Rejected(BasisRejectReason::NoGrossEdge { gross: m(dec!(0)) })
-    );
+    input.direction = dir;
+    input.spot.fee = FeeRate::zero();
+    input.perp.fee = FeeRate::zero();
+    input.expected_exit_basis = exit_basis;
+    input.funding = events(rate, RateKind::Estimated);
+    input
+}
+
+fn net_of(input: &BasisInput) -> (Money, Money, bool) {
+    match evaluate_spot_perp(input).unwrap() {
+        BasisEvaluation::Accepted(o) => (o.expected_gross, o.expected_net, true),
+        BasisEvaluation::Rejected(BasisRejectReason::NetEdgeBelowThreshold {
+            gross, net, ..
+        }) => (gross, net, false),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn flat_basis_with_funding_received_is_accepted() {
+    // Long spot / short perp, entry basis 60, exit 60: gross 0. The short
+    // receives 30050 * 0.0001 = 3.005 three times: net 9.015.
+    let long = fee_free(BasisDirection::LongSpotShortPerp, dec!(60), dec!(0.0001));
+    assert_eq!(net_of(&long), (m(dec!(0)), m(dec!(9.015)), true));
+    // Short spot / long perp, entry basis 80, exit 80: gross 0. The long
+    // receives 30050 * 0.0002 = 6.01 three times at -2 bp: net 18.03.
+    let short = fee_free(BasisDirection::ShortSpotLongPerp, dec!(80), dec!(-0.0002));
+    assert_eq!(net_of(&short), (m(dec!(0)), m(dec!(18.03)), true));
+}
+
+#[test]
+fn negative_convergence_offset_by_funding_is_accepted() {
+    // Exit basis 61 long spot: gross -1, net -1 + 9.015 = 8.015.
+    let long = fee_free(BasisDirection::LongSpotShortPerp, dec!(61), dec!(0.0001));
+    assert_eq!(net_of(&long), (m(dec!(-1)), m(dec!(8.015)), true));
+    // Exit basis 79 short spot: gross -1, net -1 + 18.03 = 17.03.
+    let short = fee_free(BasisDirection::ShortSpotLongPerp, dec!(79), dec!(-0.0002));
+    assert_eq!(net_of(&short), (m(dec!(-1)), m(dec!(17.03)), true));
+}
+
+#[test]
+fn funding_paid_that_pushes_net_to_zero_or_below_is_rejected() {
+    // Flat basis, long spot / short perp at -1 bp: the short pays 9.015.
+    let long = fee_free(BasisDirection::LongSpotShortPerp, dec!(60), dec!(-0.0001));
+    assert_eq!(net_of(&long), (m(dec!(0)), m(dec!(-9.015)), false));
+    // Flat basis, short spot / long perp at +2 bp: the long pays 18.03.
+    let short = fee_free(BasisDirection::ShortSpotLongPerp, dec!(80), dec!(0.0002));
+    assert_eq!(net_of(&short), (m(dec!(0)), m(dec!(-18.03)), false));
+    // Convergence 18.03 exactly offset by funding paid: net 0, rejected.
+    let zero = fee_free(BasisDirection::ShortSpotLongPerp, dec!(98.03), dec!(0.0002));
+    assert_eq!(net_of(&zero), (m(dec!(18.03)), m(dec!(0)), false));
+}
+
+#[test]
+fn exit_fee_uses_the_implied_exit_notional() {
+    // Long spot / short perp, exit basis 10: the perpetual is assumed to
+    // exit at 30000 + 10 = 30010, so its exit fee at 5 bps is 15.005
+    // instead of 15.03 on the entry notional.
+    let mut input = base();
+    input.expected_exit_basis = dec!(10);
+    match evaluate_spot_perp(&input).unwrap() {
+        BasisEvaluation::Rejected(BasisRejectReason::NetEdgeBelowThreshold { costs, .. }) => {
+            assert_eq!(costs.perp_entry_fee.money(), m(dec!(15.03)));
+            assert_eq!(costs.perp_exit_fee.money(), m(dec!(15.005)));
+            assert_eq!(costs.spot_exit_fee.money(), m(dec!(30)));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    // An exit basis that implies a non-positive perpetual price is invalid.
+    input.expected_exit_basis = dec!(-30000);
+    assert!(matches!(
+        evaluate_spot_perp(&input),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn a_funding_instant_at_exit_time_is_counted() {
+    // exit_time is exactly the third instant: three events, all counted.
+    let input = fee_free(BasisDirection::LongSpotShortPerp, dec!(60), dec!(0.0001));
+    assert_eq!(input.exit_time, t(3 * H8));
+    let eval = evaluate_spot_perp(&input).unwrap();
+    let o = eval.accepted().unwrap();
+    assert_eq!(o.expected_costs.funding.len(), 3);
+    assert_eq!(o.expected_costs.funding[2].time, t(3 * H8));
 }
 
 #[test]
