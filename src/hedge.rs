@@ -278,7 +278,12 @@ pub fn plan_band_hedge(view: &PositionView) -> Result<HedgeDecision> {
 
 /// `(ask - mid) * q` for a buy, `(mid - bid) * q` for a sell, when both sides
 /// are quoted. Signed: a crossed book gives a negative cost.
-fn spread_cost(book: &TopOfBook, side: Side, q: Quantity, ccy: Currency) -> Result<Option<Cost>> {
+pub(crate) fn spread_cost(
+    book: &TopOfBook,
+    side: Side,
+    q: Quantity,
+    ccy: Currency,
+) -> Result<Option<Cost>> {
     let (Some(bid), Some(ask)) = (book.bid, book.ask) else {
         return Ok(None);
     };

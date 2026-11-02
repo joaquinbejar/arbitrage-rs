@@ -20,7 +20,6 @@ const LIMBS: usize = 6;
 pub(crate) struct U384([u64; LIMBS]);
 
 impl U384 {
-    #[cfg(test)]
     pub(crate) const ZERO: Self = Self([0; LIMBS]);
 
     pub(crate) fn from_u128(x: u128) -> Self {
@@ -74,6 +73,62 @@ impl U384 {
             r = r.checked_mul(&ten)?;
         }
         Some(r)
+    }
+
+    /// `self << bits`, or `None` if bits are lost.
+    fn checked_shl(&self, bits: u32) -> Option<Self> {
+        if bits >= 64 * LIMBS as u32 {
+            return if self.is_zero() { Some(*self) } else { None };
+        }
+        let (words, rest) = ((bits / 64) as usize, bits % 64);
+        let mut out = [0u64; LIMBS];
+        for i in (0..LIMBS).rev() {
+            if i < words {
+                continue;
+            }
+            let src = i - words;
+            let mut v = self.0[src] << rest;
+            if rest > 0 && src > 0 {
+                v |= self.0[src - 1] >> (64 - rest);
+            }
+            out[i] = v;
+        }
+        let back = Self(out).shr(bits);
+        if back == *self { Some(Self(out)) } else { None }
+    }
+
+    /// `self >> bits`.
+    fn shr(&self, bits: u32) -> Self {
+        if bits >= 64 * LIMBS as u32 {
+            return Self::ZERO;
+        }
+        let (words, rest) = ((bits / 64) as usize, bits % 64);
+        let mut out = [0u64; LIMBS];
+        for (i, slot) in out.iter_mut().enumerate() {
+            let src = i + words;
+            if src >= LIMBS {
+                break;
+            }
+            let mut v = self.0[src] >> rest;
+            if rest > 0 && src + 1 < LIMBS {
+                v |= self.0[src + 1] << (64 - rest);
+            }
+            *slot = v;
+        }
+        Self(out)
+    }
+
+    /// `self - other`, for `self >= other`.
+    fn wrapping_sub(&self, other: &Self) -> Self {
+        let mut out = [0u64; LIMBS];
+        let mut borrow = 0u64;
+        for (i, slot) in out.iter_mut().enumerate() {
+            let (a, b1) = self.0[i].overflowing_sub(other.0[i]);
+            let (a, b2) = a.overflowing_sub(borrow);
+            *slot = a;
+            borrow = u64::from(b1 || b2);
+        }
+        Self(out)
     }
 
     /// `self + 1`, or `None` on overflow.
@@ -238,6 +293,77 @@ pub(crate) fn to_decimal(m: U384, scale: u32, negative: bool, op: &'static str) 
             }
         }
     }
+}
+
+/// The exact value of a finite, non-negative `f64`, rounded **once**, half
+/// to even, to `dp` decimal places. Returns the rounded `Decimal` and
+/// whether rounding changed the value.
+///
+/// The float is decomposed into its integer mantissa `m` and binary exponent
+/// `e` (`x = m * 2^e`), so no intermediate decimal approximation is made:
+/// `round(m * 10^dp / 2^-e)` is computed in 384-bit integers.
+///
+/// # Errors
+///
+/// [`ArbitrageError::InvalidInput`] if `x` is not finite, is negative, `dp`
+/// is above 28, or the value is outside `Decimal`'s range.
+pub(crate) fn f64_to_decimal_half_even(x: f64, dp: u32) -> Result<(Decimal, bool)> {
+    let unsupported = |reason| ArbitrageError::InvalidInput { reason };
+    if !x.is_finite() {
+        return Err(unsupported("action quantity is not finite"));
+    }
+    if x.is_sign_negative() {
+        return Err(unsupported("float is negative"));
+    }
+    if dp > MAX_SCALE {
+        return Err(unsupported("float_dp must be at most 28"));
+    }
+    let bits = x.to_bits();
+    let exp_bits = i64::try_from((bits >> 52) & 0x7ff).unwrap_or_default();
+    let frac = bits & ((1u64 << 52) - 1);
+    let (m, e) = if exp_bits == 0 {
+        (frac, -1074i64)
+    } else {
+        (frac | (1u64 << 52), exp_bits - 1075)
+    };
+    if m == 0 {
+        return Ok((Decimal::ZERO, false));
+    }
+    let out_of_range = || unsupported("action quantity is outside the supported Decimal range");
+    let m = U384::from_u128(u128::from(m));
+    if e >= 0 {
+        // An integer: exact at scale 0 if it fits.
+        let shift = u32::try_from(e).map_err(|_| out_of_range())?;
+        let n = m.checked_shl(shift).ok_or_else(out_of_range)?;
+        let d = to_decimal(n, 0, false, "float").map_err(|_| out_of_range())?;
+        return Ok((d, false));
+    }
+    let k = u32::try_from(-e).map_err(|_| out_of_range())?;
+    // numerator = m * 10^dp < 2^53 * 2^94; a quotient by 2^k with k above
+    // 300 is below one half, so it rounds to zero.
+    let numerator = m.checked_mul_pow10(dp).ok_or_else(out_of_range)?;
+    if k > 300 {
+        return Ok((Decimal::ZERO, true));
+    }
+    let q = numerator.shr(k);
+    let back = q.checked_shl(k).ok_or_else(out_of_range)?;
+    let r = numerator.wrapping_sub(&back);
+    let half = U384::from_u128(1)
+        .checked_shl(k - 1)
+        .ok_or_else(out_of_range)?;
+    let inexact = !r.is_zero();
+    let up = match r.cmp(&half) {
+        Ordering::Greater => true,
+        Ordering::Equal => q.0[0] & 1 == 1,
+        Ordering::Less => false,
+    };
+    let n = if up {
+        q.checked_add_one().ok_or_else(out_of_range)?
+    } else {
+        q
+    };
+    let d = to_decimal(n, dp, false, "float").map_err(|_| out_of_range())?;
+    Ok((d, inexact))
 }
 
 #[cfg(test)]
