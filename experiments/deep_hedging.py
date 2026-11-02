@@ -33,6 +33,7 @@ import subprocess
 import sys
 import time
 from decimal import ROUND_FLOOR, ROUND_HALF_EVEN, Decimal, getcontext
+from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
@@ -189,7 +190,9 @@ def simulate(policy, mkt, eps, cfg, p_reject=None, unlimited=False):
     year = cfg["days_per_year"]
     holding = np.zeros(n, dtype=np.int64)
     cash = np.zeros(n)
-    stats = {k: np.zeros(n) for k in ("spread", "fee", "turnover", "trades", "rejected", "residual")}
+    # Turnover and trades count the rebalances only; spread and fee also
+    # include the terminal close.
+    stats = {k: np.zeros(n) for k in ("spread", "fee", "rebalance_turnover", "rebalance_trades", "rejected", "residual")}
     max_holding = np.zeros(n)
     for t in range(steps):
         tau = (steps - t) / year
@@ -201,8 +204,8 @@ def simulate(policy, mkt, eps, cfg, p_reject=None, unlimited=False):
         cash += c
         stats["spread"] += sp
         stats["fee"] += fe
-        stats["turnover"] += filled * cfg["lot"]
-        stats["trades"] += (filled > 0)
+        stats["rebalance_turnover"] += filled * cfg["lot"]
+        stats["rebalance_trades"] += (filled > 0)
         stats["rejected"] += rej
         stats["residual"] += np.abs(target - holding * cfg["lot"])
         max_holding = np.maximum(max_holding, np.abs(holding * cfg["lot"]))
@@ -311,8 +314,10 @@ def learned_policy(net: Net, cfg):
 
 def cvar(loss: np.ndarray, alpha: float) -> float:
     """Empirical CVaR: the mean of the ceil((1 - alpha) N) largest losses
-    (an empirical approximation, not exact fractional weighting)."""
-    k = math.ceil((1.0 - alpha) * loss.size)
+    (an empirical approximation, not exact fractional weighting). The count
+    is computed in exact fractions from the decimal alpha, so no float
+    rounding moves it across an integer."""
+    k = math.ceil((1 - Fraction(str(alpha))) * loss.size)
     return float(np.mean(np.partition(loss, loss.size - k)[loss.size - k :]))
 
 
@@ -340,8 +345,8 @@ def summary(pnl, stats, cfg):
         "cvar50": cvar(loss, 0.50),
         "spread_cost": float(np.mean(stats["spread"])),
         "fee_cost": float(np.mean(stats["fee"])),
-        "turnover": float(np.mean(stats["turnover"])),
-        "trades": float(np.mean(stats["trades"])),
+        "rebalance_turnover": float(np.mean(stats["rebalance_turnover"])),
+        "rebalance_trades": float(np.mean(stats["rebalance_trades"])),
         "rejected_orders": float(np.mean(stats["rejected"])),
         "mean_residual": float(np.mean(stats["residual"]) / cfg["steps"]),
         "max_holding_mean": float(np.mean(stats["max_holding"])),

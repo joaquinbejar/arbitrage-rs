@@ -72,8 +72,9 @@ payoff; the loss is −PnL.
 
 ### Tail convention and criterion (declared before the run)
 
-CVaR_α is the mean of the ⌈(1 − α) N⌉ largest losses (an empirical
-approximation, not exact fractional weighting): CVaR95 averages the worst
+CVaR_α is the mean of the ⌈(1 − α) N⌉ largest losses, the count computed
+in exact fractions (an empirical approximation, not exact fractional
+weighting): CVaR95 averages the worst
 5 %, CVaR50 the worst 50 %. Intervals are 95 % percentile intervals of a
 paired bootstrap over whole paths (1000 resamples, seeded) of
 ΔCVaR95 = CVaR95(learned) − CVaR95(band).
@@ -84,13 +85,15 @@ model (lower bound above zero). The best seed is never chosen.
 
 ## Results
 
-Learned rows give the range over the five seeds. "CVaR95 − ideal execution"
+Learned rows give the range over the five seeds. "Rebalances" counts the
+filled orders before expiry; the terminal close is not counted there but its
+spread and fee are in "spread + fee". "CVaR95 − ideal execution"
 is the same control on the same paths with no rejection and unlimited size,
 a counterfactual reported separately, not added to the costs.
 
 ### In model (GBM, σ = 0.2)
 
-| half spread | control | mean PnL | std | CVaR95 | CVaR50 | spread + fee | trades | rejected | CVaR95 − ideal execution |
+| half spread | control | mean PnL | std | CVaR95 | CVaR50 | spread + fee | rebalances | rejected | CVaR95 − ideal execution |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | 0 | delta | -0.048 | 0.609 | 1.577 | 0.501 | 0.049 | 28.6 | 0.58 | 0.676 |
 | 0 | band (w = 0.005) | -0.048 | 0.609 | 1.577 | 0.501 | 0.049 | 25.8 | 0.52 | 0.676 |
@@ -104,7 +107,7 @@ a counterfactual reported separately, not added to the costs.
 
 ### Out of model (Heston, no retraining)
 
-| half spread | control | mean PnL | std | CVaR95 | CVaR50 | spread + fee | trades | rejected | CVaR95 − ideal execution |
+| half spread | control | mean PnL | std | CVaR95 | CVaR50 | spread + fee | rebalances | rejected | CVaR95 − ideal execution |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | 0 | delta | 0.004 | 0.686 | 1.710 | 0.510 | 0.049 | 28.6 | 0.59 | 0.387 |
 | 0 | band (w = 0.005) | 0.004 | 0.686 | 1.710 | 0.510 | 0.049 | 25.8 | 0.53 | 0.387 |

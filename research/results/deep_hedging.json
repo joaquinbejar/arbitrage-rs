@@ -23,11 +23,11 @@
           "mean_pnl": 0.0037152667684848,
           "mean_pnl_vs_ideal_execution": 0.004850632619523904,
           "mean_residual": 0.02713552076750884,
+          "rebalance_trades": 25.76165771484375,
+          "rebalance_turnover": 1.8751774139404298,
           "rejected_orders": 0.529083251953125,
           "spread_cost": 0.0,
-          "std_pnl": 0.6859350636604179,
-          "trades": 25.76165771484375,
-          "turnover": 1.8751774139404298
+          "std_pnl": 0.6859350636604179
         },
         "delta": {
           "cvar50": 0.5104903564194606,
@@ -39,11 +39,11 @@
           "mean_pnl": 0.0035873596387286906,
           "mean_pnl_vs_ideal_execution": 0.004858247120846283,
           "mean_residual": 0.027146394754627358,
+          "rebalance_trades": 28.616455078125,
+          "rebalance_turnover": 1.8801242767333985,
           "rejected_orders": 0.589263916015625,
           "spread_cost": 0.0,
-          "std_pnl": 0.6859046515184469,
-          "trades": 28.616455078125,
-          "turnover": 1.8801242767333985
+          "std_pnl": 0.6859046515184469
         },
         "learned": [
           {
@@ -66,12 +66,12 @@
             "mean_pnl": 0.007514846861637316,
             "mean_pnl_vs_ideal_execution": 0.004043178800969072,
             "mean_residual": 0.02343601305180581,
+            "rebalance_trades": 29.338623046875,
+            "rebalance_turnover": 1.7437993591308594,
             "rejected_orders": 0.60443115234375,
             "seed": 11,
             "spread_cost": 0.0,
-            "std_pnl": 0.7264324683358232,
-            "trades": 29.338623046875,
-            "turnover": 1.7437993591308594
+            "std_pnl": 0.7264324683358232
           },
           {
             "cvar50": 0.5707165450984732,
@@ -93,12 +93,12 @@
             "mean_pnl": 0.007770034722046443,
             "mean_pnl_vs_ideal_execution": 0.004108890002016518,
             "mean_residual": 0.022322000115880924,
+            "rebalance_trades": 29.349151611328125,
+            "rebalance_turnover": 1.7340504486083985,
             "rejected_orders": 0.6043701171875,
             "seed": 12,
             "spread_cost": 0.0,
-            "std_pnl": 0.7466784581732869,
-            "trades": 29.349151611328125,
-            "turnover": 1.7340504486083985
+            "std_pnl": 0.7466784581732869
           },
           {
             "cvar50": 0.5521668051385744,
@@ -120,12 +120,12 @@
             "mean_pnl": 0.00877234133686998,
             "mean_pnl_vs_ideal_execution": 0.004616459731136889,
             "mean_residual": 0.02285885461767041,
+            "rebalance_trades": 29.344970703125,
+            "rebalance_turnover": 1.7361905303955079,
             "rejected_orders": 0.604583740234375,
             "seed": 13,
             "spread_cost": 0.0,
-            "std_pnl": 0.7258581331137797,
-            "trades": 29.344970703125,
-            "turnover": 1.7361905303955079
+            "std_pnl": 0.7258581331137797
           },
           {
             "cvar50": 0.560622302718699,
@@ -147,12 +147,12 @@
             "mean_pnl": 0.007689705882772114,
             "mean_pnl_vs_ideal_execution": 0.004747909952056,
             "mean_residual": 0.022653648263878914,
+            "rebalance_trades": 29.353729248046875,
+            "rebalance_turnover": 1.7525826263427735,
             "rejected_orders": 0.60455322265625,
             "seed": 14,
             "spread_cost": 0.0,
-            "std_pnl": 0.7355720339093121,
-            "trades": 29.353729248046875,
-            "turnover": 1.7525826263427735
+            "std_pnl": 0.7355720339093121
           },
           {
             "cvar50": 0.5671973876117866,
@@ -174,12 +174,12 @@
             "mean_pnl": 0.008582747744365552,
             "mean_pnl_vs_ideal_execution": 0.004054330636509805,
             "mean_residual": 0.022560572657851226,
+            "rebalance_trades": 29.351715087890625,
+            "rebalance_turnover": 1.7166645141601564,
             "rejected_orders": 0.604644775390625,
             "seed": 15,
             "spread_cost": 0.0,
-            "std_pnl": 0.7424269840640474,
-            "trades": 29.351715087890625,
-            "turnover": 1.7166645141601564
+            "std_pnl": 0.7424269840640474
           }
         ]
       },
@@ -194,11 +194,11 @@
           "mean_pnl": -0.04807539718279094,
           "mean_pnl_vs_ideal_execution": 0.005246188542212225,
           "mean_residual": 0.027634623806480085,
+          "rebalance_trades": 25.77001953125,
+          "rebalance_turnover": 1.9130122558593752,
           "rejected_orders": 0.524383544921875,
           "spread_cost": 0.0,
-          "std_pnl": 0.6087971188438419,
-          "trades": 25.77001953125,
-          "turnover": 1.9130122558593752
+          "std_pnl": 0.6087971188438419
         },
         "delta": {
           "cvar50": 0.5010261590836144,
@@ -210,11 +210,11 @@
           "mean_pnl": -0.04816859624078573,
           "mean_pnl_vs_ideal_execution": 0.005269587423812739,
           "mean_residual": 0.027645035316324246,
+          "rebalance_trades": 28.579833984375,
+          "rebalance_turnover": 1.9178877838134767,
           "rejected_orders": 0.583038330078125,
           "spread_cost": 0.0,
-          "std_pnl": 0.6087874517062499,
-          "trades": 28.579833984375,
-          "turnover": 1.9178877838134767
+          "std_pnl": 0.6087874517062499
         },
         "learned": [
           {
@@ -237,12 +237,12 @@
             "mean_pnl": -0.04645684873855846,
             "mean_pnl_vs_ideal_execution": 0.003048038824302383,
             "mean_residual": 0.02377217470868486,
+            "rebalance_trades": 29.35211181640625,
+            "rebalance_turnover": 1.7880022216796876,
             "rejected_orders": 0.5968017578125,
             "seed": 11,
             "spread_cost": 0.0,
-            "std_pnl": 0.6564074368211864,
-            "trades": 29.35211181640625,
-            "turnover": 1.7880022216796876
+            "std_pnl": 0.6564074368211864
           },
           {
             "cvar50": 0.5623665631519904,
@@ -264,12 +264,12 @@
             "mean_pnl": -0.04615233492834935,
             "mean_pnl_vs_ideal_execution": 0.0033304520980706443,
             "mean_residual": 0.022309835907522998,
+            "rebalance_trades": 29.363739013671875,
+            "rebalance_turnover": 1.7532882263183596,
             "rejected_orders": 0.597442626953125,
             "seed": 12,
             "spread_cost": 0.0,
-            "std_pnl": 0.6742352947686361,
-            "trades": 29.363739013671875,
-            "turnover": 1.7532882263183596
+            "std_pnl": 0.6742352947686361
           },
           {
             "cvar50": 0.5476561729556967,
@@ -291,12 +291,12 @@
             "mean_pnl": -0.04633128775189292,
             "mean_pnl_vs_ideal_execution": 0.0036241543780376278,
             "mean_residual": 0.02314546552884996,
+            "rebalance_trades": 29.35504150390625,
+            "rebalance_turnover": 1.7789437805175783,
             "rejected_orders": 0.597137451171875,
             "seed": 13,
             "spread_cost": 0.0,
-            "std_pnl": 0.6586708779945303,
-            "trades": 29.35504150390625,
-            "turnover": 1.7789437805175783
+            "std_pnl": 0.6586708779945303
           },
           {
             "cvar50": 0.5467418658211339,
@@ -318,12 +318,12 @@
             "mean_pnl": -0.04609367289518225,
             "mean_pnl_vs_ideal_execution": 0.0038187268721369075,
             "mean_residual": 0.022813626387027035,
+            "rebalance_trades": 29.365753173828125,
+            "rebalance_turnover": 1.7829957061767578,
             "rejected_orders": 0.597503662109375,
             "seed": 14,
             "spread_cost": 0.0,
-            "std_pnl": 0.658607875120001,
-            "trades": 29.365753173828125,
-            "turnover": 1.7829957061767578
+            "std_pnl": 0.658607875120001
           },
           {
             "cvar50": 0.5562815714103853,
@@ -345,12 +345,12 @@
             "mean_pnl": -0.04535462510046874,
             "mean_pnl_vs_ideal_execution": 0.003211925597861726,
             "mean_residual": 0.02275606016678992,
+            "rebalance_trades": 29.360443115234375,
+            "rebalance_turnover": 1.7465939544677735,
             "rejected_orders": 0.597320556640625,
             "seed": 15,
             "spread_cost": 0.0,
-            "std_pnl": 0.6694187140574193,
-            "trades": 29.360443115234375,
-            "turnover": 1.7465939544677735
+            "std_pnl": 0.6694187140574193
           }
         ]
       },
@@ -379,11 +379,11 @@
           "mean_pnl": -0.11694842044986187,
           "mean_pnl_vs_ideal_execution": 0.01934639448427899,
           "mean_residual": 0.027124291075561566,
+          "rebalance_trades": 24.05230712890625,
+          "rebalance_turnover": 1.86419948425293,
           "rejected_orders": 0.49114990234375,
           "spread_cost": 0.12092109023778501,
-          "std_pnl": 0.6924297460447537,
-          "trades": 24.05230712890625,
-          "turnover": 1.86419948425293
+          "std_pnl": 0.6924297460447537
         },
         "delta": {
           "cvar50": 0.6358726821124281,
@@ -395,11 +395,11 @@
           "mean_pnl": -0.1181495132715596,
           "mean_pnl_vs_ideal_execution": 0.019529826168816926,
           "mean_residual": 0.027146394754627358,
+          "rebalance_trades": 28.616455078125,
+          "rebalance_turnover": 1.8801242767333985,
           "rejected_orders": 0.589263916015625,
           "spread_cost": 0.12173687122657123,
-          "std_pnl": 0.692248067763275,
-          "trades": 28.616455078125,
-          "turnover": 1.8801242767333985
+          "std_pnl": 0.692248067763275
         },
         "learned": [
           {
@@ -422,12 +422,12 @@
             "mean_pnl": -0.10062511861083458,
             "mean_pnl_vs_ideal_execution": 0.013142098274228731,
             "mean_residual": 0.02261697263860322,
+            "rebalance_trades": 29.3387451171875,
+            "rebalance_turnover": 1.6700828247070314,
             "rejected_orders": 0.60400390625,
             "seed": 11,
             "spread_cost": 0.11012415524030839,
-            "std_pnl": 0.7429201384208534,
-            "trades": 29.3387451171875,
-            "turnover": 1.6700828247070314
+            "std_pnl": 0.7429201384208534
           },
           {
             "cvar50": 0.6779337967039432,
@@ -449,12 +449,12 @@
             "mean_pnl": -0.1005769947048028,
             "mean_pnl_vs_ideal_execution": 0.013621269362650325,
             "mean_residual": 0.02189458548822021,
+            "rebalance_trades": 29.3507080078125,
+            "rebalance_turnover": 1.6603144165039063,
             "rejected_orders": 0.6046142578125,
             "seed": 12,
             "spread_cost": 0.11020234778378973,
-            "std_pnl": 0.7455626190341094,
-            "trades": 29.3507080078125,
-            "turnover": 1.6603144165039063
+            "std_pnl": 0.7455626190341094
           },
           {
             "cvar50": 0.6714569970364935,
@@ -476,12 +476,12 @@
             "mean_pnl": -0.09981399741726421,
             "mean_pnl_vs_ideal_execution": 0.013602289277355139,
             "mean_residual": 0.022283259381686127,
+            "rebalance_trades": 29.334686279296875,
+            "rebalance_turnover": 1.6643825012207032,
             "rejected_orders": 0.604217529296875,
             "seed": 13,
             "spread_cost": 0.11010134559879627,
-            "std_pnl": 0.7382565330773214,
-            "trades": 29.334686279296875,
-            "turnover": 1.6643825012207032
+            "std_pnl": 0.7382565330773214
           },
           {
             "cvar50": 0.6794188519829214,
@@ -503,12 +503,12 @@
             "mean_pnl": -0.1023730701311712,
             "mean_pnl_vs_ideal_execution": 0.015320639136042931,
             "mean_residual": 0.021481350760467168,
+            "rebalance_trades": 29.35107421875,
+            "rebalance_turnover": 1.6776673919677736,
             "rejected_orders": 0.6041259765625,
             "seed": 14,
             "spread_cost": 0.11172859290212675,
-            "std_pnl": 0.7455477940432863,
-            "trades": 29.35107421875,
-            "turnover": 1.6776673919677736
+            "std_pnl": 0.7455477940432863
           },
           {
             "cvar50": 0.6860346389229341,
@@ -530,12 +530,12 @@
             "mean_pnl": -0.09949867941438023,
             "mean_pnl_vs_ideal_execution": 0.01276472256459836,
             "mean_residual": 0.02168845738311979,
+            "rebalance_trades": 29.341461181640625,
+            "rebalance_turnover": 1.6392544952392578,
             "rejected_orders": 0.603851318359375,
             "seed": 15,
             "spread_cost": 0.10939957214382424,
-            "std_pnl": 0.7550122196525171,
-            "trades": 29.341461181640625,
-            "turnover": 1.6392544952392578
+            "std_pnl": 0.7550122196525171
           }
         ]
       },
@@ -550,11 +550,11 @@
           "mean_pnl": -0.16885290672269299,
           "mean_pnl_vs_ideal_execution": 0.020176007946427727,
           "mean_residual": 0.027624909917825395,
+          "rebalance_trades": 24.148223876953125,
+          "rebalance_turnover": 1.902308920288086,
           "rejected_orders": 0.491241455078125,
           "spread_cost": 0.12091251483390555,
-          "std_pnl": 0.618081735962901,
-          "trades": 24.148223876953125,
-          "turnover": 1.902308920288086
+          "std_pnl": 0.618081735962901
         },
         "delta": {
           "cvar50": 0.6305621416083107,
@@ -566,11 +566,11 @@
           "mean_pnl": -0.169863759219274,
           "mean_pnl_vs_ideal_execution": 0.020434197723231844,
           "mean_residual": 0.027645035316324246,
+          "rebalance_trades": 28.579833984375,
+          "rebalance_turnover": 1.9178877838134767,
           "rejected_orders": 0.583038330078125,
           "spread_cost": 0.12169516545663273,
-          "std_pnl": 0.6178756828360187,
-          "trades": 28.579833984375,
-          "turnover": 1.9178877838134767
+          "std_pnl": 0.6178756828360187
         },
         "learned": [
           {
@@ -593,12 +593,12 @@
             "mean_pnl": -0.15668965578037516,
             "mean_pnl_vs_ideal_execution": 0.01229246954550011,
             "mean_residual": 0.02292100201774761,
+            "rebalance_trades": 29.3504638671875,
+            "rebalance_turnover": 1.720235073852539,
             "rejected_orders": 0.597412109375,
             "seed": 11,
             "spread_cost": 0.111457984176897,
-            "std_pnl": 0.6756354938415007,
-            "trades": 29.3504638671875,
-            "turnover": 1.720235073852539
+            "std_pnl": 0.6756354938415007
           },
           {
             "cvar50": 0.670753528449404,
@@ -620,12 +620,12 @@
             "mean_pnl": -0.15544202294555662,
             "mean_pnl_vs_ideal_execution": 0.012427011517430621,
             "mean_residual": 0.022073732037719607,
+            "rebalance_trades": 29.3607177734375,
+            "rebalance_turnover": 1.6941483947753906,
             "rejected_orders": 0.597381591796875,
             "seed": 12,
             "spread_cost": 0.11053901786302422,
-            "std_pnl": 0.6752963180867982,
-            "trades": 29.3607177734375,
-            "turnover": 1.6941483947753906
+            "std_pnl": 0.6752963180867982
           },
           {
             "cvar50": 0.6672771440687075,
@@ -647,12 +647,12 @@
             "mean_pnl": -0.1556175958218446,
             "mean_pnl_vs_ideal_execution": 0.012622988910727578,
             "mean_residual": 0.022549487699076838,
+            "rebalance_trades": 29.345916748046875,
+            "rebalance_turnover": 1.7064778686523439,
             "rejected_orders": 0.597198486328125,
             "seed": 13,
             "spread_cost": 0.11072791212699873,
-            "std_pnl": 0.6709809651312443,
-            "trades": 29.345916748046875,
-            "turnover": 1.7064778686523439
+            "std_pnl": 0.6709809651312443
           },
           {
             "cvar50": 0.6673106567298777,
@@ -674,12 +674,12 @@
             "mean_pnl": -0.15626906919752123,
             "mean_pnl_vs_ideal_execution": 0.01451804173371838,
             "mean_residual": 0.02164316161297281,
+            "rebalance_trades": 29.35906982421875,
+            "rebalance_turnover": 1.7082266815185547,
             "rejected_orders": 0.597320556640625,
             "seed": 14,
             "spread_cost": 0.11173569315454487,
-            "std_pnl": 0.6705674847229393,
-            "trades": 29.35906982421875,
-            "turnover": 1.7082266815185547
+            "std_pnl": 0.6705674847229393
           },
           {
             "cvar50": 0.6753190942857814,
@@ -701,12 +701,12 @@
             "mean_pnl": -0.1531066200488892,
             "mean_pnl_vs_ideal_execution": 0.01154750981251694,
             "mean_residual": 0.021785778838925244,
+            "rebalance_trades": 29.3525390625,
+            "rebalance_turnover": 1.6620284637451173,
             "rejected_orders": 0.59735107421875,
             "seed": 15,
             "spread_cost": 0.10909608909345711,
-            "std_pnl": 0.6821236236770772,
-            "trades": 29.3525390625,
-            "turnover": 1.6620284637451173
+            "std_pnl": 0.6821236236770772
           }
         ]
       },
@@ -735,11 +735,11 @@
           "mean_pnl": -0.8522156818476703,
           "mean_pnl_vs_ideal_execution": 0.09142193800980272,
           "mean_residual": 0.02638978616286508,
+          "rebalance_trades": 6.96417236328125,
+          "rebalance_turnover": 1.1963026672363282,
           "rejected_orders": 0.1400146484375,
           "spread_cost": 0.8715319867840322,
-          "std_pnl": 0.9040403669676188,
-          "trades": 6.96417236328125,
-          "turnover": 1.1963026672363282
+          "std_pnl": 0.9040403669676188
         },
         "delta": {
           "cvar50": 1.8260828066525945,
@@ -751,11 +751,11 @@
           "mean_pnl": -1.2137813694642563,
           "mean_pnl_vs_ideal_execution": 0.15157403760050103,
           "mean_residual": 0.027146394754627358,
+          "rebalance_trades": 28.616455078125,
+          "rebalance_turnover": 1.8801242767333985,
           "rejected_orders": 0.589263916015625,
           "spread_cost": 1.2173687122657122,
-          "std_pnl": 0.8118531260915093,
-          "trades": 28.616455078125,
-          "turnover": 1.8801242767333985
+          "std_pnl": 0.8118531260915093
         },
         "learned": [
           {
@@ -778,12 +778,12 @@
             "mean_pnl": -0.8680565740176189,
             "mean_pnl_vs_ideal_execution": 0.037955562672848935,
             "mean_residual": 0.016832836610240716,
+            "rebalance_trades": 29.09014892578125,
+            "rebalance_turnover": 1.2563129364013672,
             "rejected_orders": 0.599029541015625,
             "seed": 11,
             "spread_cost": 0.887978822761903,
-            "std_pnl": 0.850419381379703,
-            "trades": 29.09014892578125,
-            "turnover": 1.2563129364013672
+            "std_pnl": 0.850419381379703
           },
           {
             "cvar50": 1.5250574001501722,
@@ -805,12 +805,12 @@
             "mean_pnl": -0.8687911743617847,
             "mean_pnl_vs_ideal_execution": 0.04102224557872475,
             "mean_residual": 0.01687499876077355,
+            "rebalance_trades": 28.58367919921875,
+            "rebalance_turnover": 1.2569375793457032,
             "rejected_orders": 0.58795166015625,
             "seed": 12,
             "spread_cost": 0.8886736054559949,
-            "std_pnl": 0.8506399452586078,
-            "trades": 28.58367919921875,
-            "turnover": 1.2569375793457032
+            "std_pnl": 0.8506399452586078
           },
           {
             "cvar50": 1.5111324759414524,
@@ -832,12 +832,12 @@
             "mean_pnl": -0.8585938584946562,
             "mean_pnl_vs_ideal_execution": 0.0422886584715187,
             "mean_residual": 0.016762636866168086,
+            "rebalance_trades": 28.980255126953125,
+            "rebalance_turnover": 1.2546307037353515,
             "rejected_orders": 0.59637451171875,
             "seed": 13,
             "spread_cost": 0.8790544539370917,
-            "std_pnl": 0.8432347348808428,
-            "trades": 28.980255126953125,
-            "turnover": 1.2546307037353515
+            "std_pnl": 0.8432347348808428
           },
           {
             "cvar50": 1.5069145832151174,
@@ -859,12 +859,12 @@
             "mean_pnl": -0.846923241446392,
             "mean_pnl_vs_ideal_execution": 0.04313213708756446,
             "mean_residual": 0.016048422056627928,
+            "rebalance_trades": 28.8541259765625,
+            "rebalance_turnover": 1.227003158569336,
             "rejected_orders": 0.59417724609375,
             "seed": 14,
             "spread_cost": 0.8675777269747547,
-            "std_pnl": 0.8574185260844861,
-            "trades": 28.8541259765625,
-            "turnover": 1.227003158569336
+            "std_pnl": 0.8574185260844861
           },
           {
             "cvar50": 1.5163954791905074,
@@ -886,12 +886,12 @@
             "mean_pnl": -0.8499898943823107,
             "mean_pnl_vs_ideal_execution": 0.04175077191098407,
             "mean_residual": 0.01619685198597385,
+            "rebalance_trades": 29.125,
+            "rebalance_turnover": 1.2124762939453124,
             "rejected_orders": 0.59942626953125,
             "seed": 15,
             "spread_cost": 0.8706478736608553,
-            "std_pnl": 0.8626079848753585,
-            "trades": 29.125,
-            "turnover": 1.2124762939453124
+            "std_pnl": 0.8626079848753585
           }
         ]
       },
@@ -906,11 +906,11 @@
           "mean_pnl": -0.9041866631844808,
           "mean_pnl_vs_ideal_execution": 0.09780785594704376,
           "mean_residual": 0.026859860925793434,
+          "rebalance_trades": 7.10504150390625,
+          "rebalance_turnover": 1.216487322998047,
           "rejected_orders": 0.14544677734375,
           "spread_cost": 0.8653074461760364,
-          "std_pnl": 0.8782098453558199,
-          "trades": 7.10504150390625,
-          "turnover": 1.216487322998047
+          "std_pnl": 0.8782098453558199
         },
         "delta": {
           "cvar50": 1.8608099768167579,
@@ -922,11 +922,11 @@
           "mean_pnl": -1.2651202260257701,
           "mean_pnl_vs_ideal_execution": 0.1569156904179535,
           "mean_residual": 0.027645035316324246,
+          "rebalance_trades": 28.579833984375,
+          "rebalance_turnover": 1.9178877838134767,
           "rejected_orders": 0.583038330078125,
           "spread_cost": 1.2169516545663273,
-          "std_pnl": 0.769479703042545,
-          "trades": 28.579833984375,
-          "turnover": 1.9178877838134767
+          "std_pnl": 0.769479703042545
         },
         "learned": [
           {
@@ -949,12 +949,12 @@
             "mean_pnl": -0.9193826110788128,
             "mean_pnl_vs_ideal_execution": 0.03695328026211171,
             "mean_residual": 0.016941320693629917,
+            "rebalance_trades": 29.03497314453125,
+            "rebalance_turnover": 1.2763084899902344,
             "rejected_orders": 0.591583251953125,
             "seed": 11,
             "spread_cost": 0.8824784193161674,
-            "std_pnl": 0.7892281048545807,
-            "trades": 29.03497314453125,
-            "turnover": 1.2763084899902344
+            "std_pnl": 0.7892281048545807
           },
           {
             "cvar50": 1.5245645022330807,
@@ -976,12 +976,12 @@
             "mean_pnl": -0.9205132803798267,
             "mean_pnl_vs_ideal_execution": 0.03987436971527258,
             "mean_residual": 0.01698739735825575,
+            "rebalance_trades": 28.57763671875,
+            "rebalance_turnover": 1.276631265258789,
             "rejected_orders": 0.582427978515625,
             "seed": 12,
             "spread_cost": 0.8831886499376758,
-            "std_pnl": 0.7895967090041869,
-            "trades": 28.57763671875,
-            "turnover": 1.276631265258789
+            "std_pnl": 0.7895967090041869
           },
           {
             "cvar50": 1.5147601425064956,
@@ -1003,12 +1003,12 @@
             "mean_pnl": -0.910811951253196,
             "mean_pnl_vs_ideal_execution": 0.04059475923249141,
             "mean_residual": 0.01687471023113596,
+            "rebalance_trades": 28.936065673828125,
+            "rebalance_turnover": 1.276323550415039,
             "rejected_orders": 0.59014892578125,
             "seed": 13,
             "spread_cost": 0.8743168657195806,
-            "std_pnl": 0.7876132259884797,
-            "trades": 28.936065673828125,
-            "turnover": 1.276323550415039
+            "std_pnl": 0.7876132259884797
           },
           {
             "cvar50": 1.51714825554579,
@@ -1030,12 +1030,12 @@
             "mean_pnl": -0.8984211047932724,
             "mean_pnl_vs_ideal_execution": 0.041763921885315025,
             "mean_residual": 0.016121187342704554,
+            "rebalance_trades": 28.786956787109375,
+            "rebalance_turnover": 1.2445564880371094,
             "rejected_orders": 0.586273193359375,
             "seed": 14,
             "spread_cost": 0.8612780411727043,
-            "std_pnl": 0.8059747212008184,
-            "trades": 28.786956787109375,
-            "turnover": 1.2445564880371094
+            "std_pnl": 0.8059747212008184
           },
           {
             "cvar50": 1.523807904961672,
@@ -1057,12 +1057,12 @@
             "mean_pnl": -0.8999387061909756,
             "mean_pnl_vs_ideal_execution": 0.04040160167784713,
             "mean_residual": 0.016272260727140796,
+            "rebalance_trades": 29.045806884765625,
+            "rebalance_turnover": 1.2277156280517578,
             "rejected_orders": 0.5916748046875,
             "seed": 15,
             "spread_cost": 0.8632043637071471,
-            "std_pnl": 0.8117063622996367,
-            "trades": 29.045806884765625,
-            "turnover": 1.2277156280517578
+            "std_pnl": 0.8117063622996367
           }
         ]
       },
@@ -1132,11 +1132,11 @@
   },
   "run": {
     "fixture_rows": 608,
-    "git_commit": "263b844f608c23d49e1c611b29d6e01e4b64ce37",
+    "git_commit": "cd26d8d63de7191341776465a0c4725c45e753df",
     "machine": "arm64",
     "numpy": "2.5.4",
     "python": "3.12.16",
-    "seconds": 379.9,
+    "seconds": 380.7,
     "torch": "2.15.0"
   }
 }
