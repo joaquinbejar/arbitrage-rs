@@ -427,3 +427,89 @@ fn the_exposure_limit_clips_the_quantity() {
     assert_eq!(p.feasible, q(dec!(3)));
     assert_eq!(p.plan.expected_exposure_after, dec!(13));
 }
+
+#[test]
+fn above_the_cap_only_reductions_are_accepted() {
+    // Codex M404-C3 with the coordinator's contract: cap 10.
+    let mut l = limits(ExcessPolicy::Clip);
+    l.max_abs_exposure_after = Some(q(dec!(10)));
+    let at = |exposure: Decimal| {
+        let mut m = market();
+        m.exposure = exposure;
+        m
+    };
+    // Long 100: selling 1 is a partial reduction above the cap, tagged.
+    let p = plan(
+        &action(Side::Sell, ActionQuantity::Exact(dec!(1))),
+        &l,
+        &at(dec!(100)),
+    );
+    assert_eq!(p.plan.expected_exposure_after, dec!(99));
+    assert_eq!(p.adjustments, vec![Adjustment::ExposureAboveCap]);
+    // Short 100: buying 1 likewise.
+    let p = plan(
+        &action(Side::Buy, ActionQuantity::Exact(dec!(1))),
+        &l,
+        &at(dec!(-100)),
+    );
+    assert_eq!(p.plan.expected_exposure_after, dec!(-99));
+    assert_eq!(p.adjustments, vec![Adjustment::ExposureAboveCap]);
+    // Increasing |exposure| above the cap: no plan, both signs.
+    for (side, exposure) in [(Side::Buy, dec!(100)), (Side::Sell, dec!(-100))] {
+        assert!(matches!(
+            hedge_plan_from_action(
+                &action(side, ActionQuantity::Exact(dec!(1))),
+                &l,
+                &at(exposure)
+            )
+            .unwrap(),
+            ActionOutcome::NoPlan {
+                reason: NoPlanReason::ExposureLimit,
+                ..
+            }
+        ));
+    }
+    // Crossing zero from +15 never goes beyond -10. With max 20 a sell of
+    // 30 is clipped to 20 (to -5); with max 100 it is clipped to 25 (-10).
+    let p = plan(
+        &action(Side::Sell, ActionQuantity::Exact(dec!(30))),
+        &l,
+        &at(dec!(15)),
+    );
+    assert_eq!(p.feasible, q(dec!(20)));
+    assert_eq!(p.plan.expected_exposure_after, dec!(-5));
+    let mut wide_max = l;
+    wide_max.max_quantity = q(dec!(100));
+    let p = plan(
+        &action(Side::Sell, ActionQuantity::Exact(dec!(30))),
+        &wide_max,
+        &at(dec!(15)),
+    );
+    assert_eq!(p.feasible, q(dec!(25)));
+    assert_eq!(p.adjustments, vec![Adjustment::ExposureLimit]);
+    assert_eq!(p.plan.expected_exposure_after, dec!(-10));
+    // From -100 a buy of 150 is clipped to 100 by max_quantity, which is
+    // within the cap's room of 110 (up to +10): it ends flat.
+    let p = plan(
+        &action(Side::Buy, ActionQuantity::Exact(dec!(150))),
+        &wide_max,
+        &at(dec!(-100)),
+    );
+    assert_eq!(p.feasible, q(dec!(100)));
+    assert_eq!(p.adjustments, vec![Adjustment::MaxQuantity]);
+    assert_eq!(p.plan.expected_exposure_after, dec!(0));
+    // Thin liquidity above the cap: from +100 a sell of 1 limited to 0.5 by
+    // the book is still an accepted partial reduction.
+    let mut thin = at(dec!(100));
+    thin.book.bid = lvl(dec!(99.5), dec!(0.5));
+    let p = plan(
+        &action(Side::Sell, ActionQuantity::Exact(dec!(1))),
+        &l,
+        &thin,
+    );
+    assert_eq!(p.plan.expected_exposure_after, dec!(99.5));
+    assert_eq!(
+        p.adjustments,
+        vec![Adjustment::QuotedSize, Adjustment::ExposureAboveCap]
+    );
+}

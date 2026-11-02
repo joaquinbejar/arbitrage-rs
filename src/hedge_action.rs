@@ -81,9 +81,20 @@ pub struct HedgeLimits {
     /// Only reduce the absolute exposure: the side must point toward zero,
     /// and the quantity is clipped so the position never flips.
     pub reduce_only: bool,
-    /// Largest absolute exposure the plan may leave; the quantity is clipped
-    /// to stay within it. An exposure already beyond it may only be
-    /// reduced.
+    /// Absolute exposure cap, with a risk-reduction exception:
+    ///
+    /// - if `|exposure before| <= cap`, the plan keeps `|exposure after| <=
+    ///   cap` (the quantity is clipped to it);
+    /// - if `|exposure before| > cap`, only a reduction is accepted:
+    ///   `|exposure after| < |exposure before|`, and crossing zero never goes
+    ///   beyond `cap` on the other side. A partial reduction that stays above
+    ///   the cap is valid and is tagged [`Adjustment::ExposureAboveCap`];
+    /// - an action that would increase `|exposure|` while above the cap, or
+    ///   that has no room at all, plans nothing
+    ///   ([`NoPlanReason::ExposureLimit`]).
+    ///
+    /// The final quantity, after every bound, is validated against these
+    /// rules.
     pub max_abs_exposure_after: Option<Quantity>,
 }
 
@@ -114,6 +125,9 @@ pub enum Adjustment {
     /// Clipped to keep the absolute exposure within
     /// `max_abs_exposure_after`.
     ExposureLimit,
+    /// The exposure was above `max_abs_exposure_after` and the plan reduces
+    /// it without bringing it within the cap (a partial reduction).
+    ExposureAboveCap,
     /// Capped at the size quoted on the side the hedge trades.
     QuotedSize,
     /// Rounded down to whole lots.
@@ -290,6 +304,31 @@ pub fn hedge_plan_from_action(
         }
     }
 
+    let expected_exposure_after = match action.side {
+        Side::Buy => exact::add(exposure, quantity.value())?,
+        Side::Sell => exact::sub(exposure, quantity.value())?,
+    };
+    // Final validation of the exposure cap, after every bound.
+    if let Some(cap) = limits.max_abs_exposure_after {
+        let (before, after) = (exposure.abs(), expected_exposure_after.abs());
+        let within = after <= cap.value();
+        let reduces_above = before > cap.value() && after < before && {
+            // Crossing zero never goes beyond the cap on the other side.
+            let crossed = exposure.is_sign_positive() != expected_exposure_after.is_sign_positive()
+                && !expected_exposure_after.is_zero();
+            !crossed || within
+        };
+        if before <= cap.value() && !within || before > cap.value() && !reduces_above {
+            return Ok(ActionOutcome::NoPlan {
+                requested,
+                reason: NoPlanReason::ExposureLimit,
+            });
+        }
+        if !within {
+            adjustments.push(Adjustment::ExposureAboveCap);
+        }
+    }
+
     let ccy = market.quote_currency;
     let notional = level.price.notional(quantity, ccy)?;
     let expected_fee = market.fee.fee_on(notional)?;
@@ -297,10 +336,6 @@ pub fn hedge_plan_from_action(
     let expected_cost = match expected_spread_cost {
         Some(s) => expected_fee.checked_add(s)?,
         None => expected_fee,
-    };
-    let expected_exposure_after = match action.side {
-        Side::Buy => exact::add(exposure, quantity.value())?,
-        Side::Sell => exact::sub(exposure, quantity.value())?,
     };
     Ok(ActionOutcome::Plan(Box::new(ActionPlan {
         requested,
