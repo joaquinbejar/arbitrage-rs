@@ -71,17 +71,17 @@
 //! ## Dependency direction
 //!
 //! arbitrage-rs depends only on `rust_decimal` and `thiserror`. It does not
-//! depend on market-maker-rs, margin-rs, tessera-rl or any simulator or
+//! depend on market-maker-rs, margin-rs or any simulator, learning environment or
 //! backtest engine. Integration goes the other way: those crates, or adapters
 //! next to them, depend on arbitrage-rs and translate their prices,
 //! inventory and ledgers into its types.
 //!
 //! ## Versioning
 //!
-//! The crate is pre-release (`0.1.0`, `publish = false`); the public API may
-//! change in any commit until a release is scoped separately. [`Decimal`] is
-//! re-exported and appears in the public API, so `rust_decimal` 1.x is part
-//! of it. The minimum
+//! The crate follows semantic versioning. Below `1.0.0`, a minor version bump
+//! (`0.x.0`) may carry breaking changes; a patch release does not. Changes
+//! are listed in `CHANGELOG.md`. [`Decimal`] is re-exported and appears in
+//! the public API, so `rust_decimal` 1.x is part of it. The minimum
 //! supported Rust version is 1.85 (edition 2024) and is checked in CI.
 //!
 //! ## Example
