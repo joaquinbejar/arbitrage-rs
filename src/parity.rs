@@ -13,14 +13,27 @@
 //!
 //! A package is a quantity of underlying (for example 1 XYZ), the same on
 //! all three legs. Each leg trades `package / contract_size` contracts, which
-//! must be a whole multiple of its lot. The fee of each leg is computed on
-//! the package and rounded once to the fee quantum with the caller's mode,
-//! and the net edge is the gross edge minus the three fees.
+//! must be a whole multiple of its lot.
 //!
 //! Option fees follow one of two bases ([`OptionFee`]): basis points of the
 //! underlying notional at the index, capped at a fraction of the premium
 //! (the usual exchange rule), or basis points of the premium. The future
-//! pays basis points of its notional.
+//! pays basis points of its notional; a negative future rate is a rebate
+//! and gives a negative fee.
+//!
+//! ## Rounding
+//!
+//! Every figure is formed exactly in wide integers and converted once, so
+//! an intermediate never fails when the result is representable:
+//!
+//! - the gross edge `package * (D * F - D * K - C + P)` (negated for a
+//!   conversion) is one exact sum of products, rounded **once** to
+//!   [`ParityInput::edge_dp`] with [`ParityInput::edge_rounding`];
+//! - each leg's fee is an exact product (the two candidates of the capped
+//!   basis are compared exactly), rounded **once** to
+//!   [`ParityInput::fee_dp`] with [`ParityInput::fee_rounding`];
+//! - the fee total and the net edge (`gross - fees`, from the rounded
+//!   figures) are exact sums, converted once without rounding.
 //!
 //! Everything is an estimate at the top of book. An edge is an intent to
 //! trade, not an executed or guaranteed profit: the three legs are not
@@ -32,6 +45,7 @@ use crate::exact;
 use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
 use crate::money::{Currency, Money, Rounding};
 use crate::units::{Price, Quantity};
+use crate::wide;
 use rust_decimal::Decimal;
 
 /// How an option leg's fee is computed.
@@ -112,6 +126,11 @@ pub struct ParityInput {
     pub fee_dp: u32,
     /// How each leg's fee is rounded to the quantum, once.
     pub fee_rounding: Rounding,
+    /// Decimal places the gross edge is rounded to, once, from its exact
+    /// value (6 for USDC).
+    pub edge_dp: u32,
+    /// How the gross edge is rounded.
+    pub edge_rounding: Rounding,
 }
 
 /// Which way the package trades.
@@ -263,7 +282,9 @@ impl ParityEvaluation {
 ///   positive, an option fee rate is negative, or a cap is outside `[0, 1]`.
 /// - [`ArbitrageError::Expired`] if the legs have expired at `as_of`.
 /// - Arithmetic errors ([`ArbitrageError::Overflow`],
-///   [`ArbitrageError::Inexact`]); nothing is rounded except each fee, once.
+///   [`ArbitrageError::Inexact`]) only when a figure itself does not fit in
+///   a [`Decimal`] (or `edge_dp` or `fee_dp` is above 28); see the module
+///   rounding rules.
 pub fn evaluate_parity(input: &ParityInput) -> Result<ParityEvaluation> {
     validate(input)?;
     let contracts = Contracts {
@@ -318,31 +339,42 @@ fn direction(
         Err(u) => return Ok(DirectionEvaluation::Unavailable(u)),
     };
 
-    // Per unit of underlying: D * (F - K) - (C - P) for a reversal, the
-    // negative for a conversion.
-    let carry = exact::mul(
-        input.discount,
-        exact::sub(future.value(), input.strike.value())?,
-    )?;
-    let options = exact::sub(call.value(), put.value())?;
-    let per_unit = match dir {
-        ParityDirection::Reversal => exact::sub(carry, options)?,
-        ParityDirection::Conversion => exact::sub(options, carry)?,
+    // Q * (D * F - D * K - C + P) for a reversal, the negative for a
+    // conversion: one exact sum of products, rounded once.
+    let (q, d, k) = (input.package.value(), input.discount, input.strike.value());
+    let (f, c, p) = (future.value(), call.value(), put.value());
+    let sign = match dir {
+        ParityDirection::Reversal => Decimal::ONE,
+        ParityDirection::Conversion => Decimal::NEGATIVE_ONE,
     };
-    let ccy = input.quote_currency;
-    let gross = Money::new(exact::mul(per_unit, input.package.value())?, ccy);
+    let neg = exact::neg(sign);
+    let gross = wide::sum_products_round(
+        &[
+            &[sign, q, d, f],
+            &[neg, q, d, k],
+            &[neg, q, c],
+            &[sign, q, p],
+        ],
+        input.edge_dp,
+        input.edge_rounding,
+        "parity gross",
+    )?;
 
     let call_fee = option_fee(input, &input.call.fee, call)?;
     let put_fee = option_fee(input, &input.put.fee, put)?;
-    let future_fee = round(
-        input,
-        input
-            .future
-            .fee
-            .fee_on(future.notional(input.package, ccy)?)?,
+    let future_fee = rounded_fee(input, &[input.future.fee.bps(), BPS, f, q])?;
+    let total = wide::sum_products_exact(&[&[call_fee], &[put_fee], &[future_fee]], "parity fees")?;
+    let net = wide::sum_products_exact(
+        &[
+            &[gross],
+            &[Decimal::NEGATIVE_ONE, call_fee],
+            &[Decimal::NEGATIVE_ONE, put_fee],
+            &[Decimal::NEGATIVE_ONE, future_fee],
+        ],
+        "parity net",
     )?;
-    let total = call_fee.checked_add(put_fee)?.checked_add(future_fee)?;
-    let net = total.net_of(gross)?;
+    let ccy = input.quote_currency;
+    let cost = |x| Cost::new(Money::new(x, ccy));
 
     let leg = |instrument: &Instrument, side, quantity, price| Leg {
         instrument: instrument.clone(),
@@ -363,14 +395,14 @@ fn direction(
                 future,
             ),
         },
-        expected_gross: gross,
+        expected_gross: Money::new(gross, ccy),
         expected_fees: ParityFees {
-            call: call_fee,
-            put: put_fee,
-            future: future_fee,
-            total,
+            call: cost(call_fee),
+            put: cost(put_fee),
+            future: cost(future_fee),
+            total: cost(total),
         },
-        expected_net: net,
+        expected_net: Money::new(net, ccy),
     })))
 }
 
@@ -398,28 +430,45 @@ fn level(
     Ok(l.price)
 }
 
-fn option_fee(input: &ParityInput, fee: &OptionFee, price: Price) -> Result<Cost> {
-    let ccy = input.quote_currency;
-    let premium = price.notional(input.package, ccy)?;
-    let exact_fee = match *fee {
+/// `1 / 10_000`: basis points to a fraction, as an exact factor.
+const BPS: Decimal = Decimal::from_parts(1, 0, 0, false, 4);
+
+/// An option leg's fee: the candidates are exact products, compared exactly,
+/// and the chosen one is rounded once.
+fn option_fee(input: &ParityInput, fee: &OptionFee, price: Price) -> Result<Decimal> {
+    let (q, premium_price) = (input.package.value(), price.value());
+    match *fee {
         OptionFee::UnderlyingCapped { rate, cap } => {
-            let on_underlying = rate.fee_on(input.index.notional(input.package, ccy)?)?;
-            let capped = premium.checked_scale(cap)?;
-            if capped.amount() < on_underlying.money().amount() {
-                Cost::new(capped)
+            let on_underlying = [rate.bps(), BPS, input.index.value(), q];
+            let capped = [cap, premium_price, q];
+            // on_underlying - capped, exactly: the cap applies when it is
+            // smaller.
+            let (_, _, cap_is_smaller) = wide::sum_products(
+                &[
+                    &capped,
+                    &[
+                        Decimal::NEGATIVE_ONE,
+                        rate.bps(),
+                        BPS,
+                        input.index.value(),
+                        q,
+                    ],
+                ],
+                "option fee",
+            )?;
+            if cap_is_smaller {
+                rounded_fee(input, &capped)
             } else {
-                on_underlying
+                rounded_fee(input, &on_underlying)
             }
         }
-        OptionFee::Premium { rate } => rate.fee_on(premium)?,
-    };
-    round(input, exact_fee)
+        OptionFee::Premium { rate } => rounded_fee(input, &[rate.bps(), BPS, premium_price, q]),
+    }
 }
 
-fn round(input: &ParityInput, fee: Cost) -> Result<Cost> {
-    Ok(Cost::new(
-        fee.money().round_dp(input.fee_dp, input.fee_rounding)?,
-    ))
+/// The exact product `factors`, rounded once to the fee quantum.
+fn rounded_fee(input: &ParityInput, factors: &[Decimal]) -> Result<Decimal> {
+    wide::sum_products_round(&[factors], input.fee_dp, input.fee_rounding, "fee")
 }
 
 /// `package / contract_size` contracts, which must be a whole multiple of

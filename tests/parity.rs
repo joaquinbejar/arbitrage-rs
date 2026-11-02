@@ -73,6 +73,8 @@ fn input(strike: Decimal, call: (Decimal, Decimal), put: (Decimal, Decimal)) -> 
         package: q(dec!(1)),
         fee_dp: 6,
         fee_rounding: Rounding::TowardZero,
+        edge_dp: 6,
+        edge_rounding: Rounding::HalfEven,
     }
 }
 
@@ -366,4 +368,103 @@ fn tie_returns_the_reversal() {
         ev.executable().unwrap().direction,
         ParityDirection::Reversal
     );
+}
+
+#[test]
+fn discount_factor_with_28_places() {
+    // A software exp gives D with 28 decimal places (ECON 2.3: D is not
+    // rounded when published).
+    let mut i = k100();
+    i.discount = dec!(0.9900498337491680535739059772);
+    let ev = evaluate_parity(&i).unwrap();
+    // Reversal gross: D * 1.5 - 1.2 = 0.2850747506237520803608589658,
+    // rounded once, half to even, to 0.285075.
+    let r = ev.reversal.edge().unwrap();
+    assert_eq!(r.expected_gross.amount(), dec!(0.285075));
+    assert_eq!(r.expected_net.amount(), dec!(0.173483));
+    // Conversion gross: 1 - D * 1.6 = -0.5840797339986688857182495635.
+    let c = ev.conversion.edge().unwrap();
+    assert_eq!(c.expected_gross.amount(), dec!(-0.58408));
+    assert_eq!(c.expected_net.amount(), dec!(-0.695722));
+
+    // The edge rounding is separate from the fee rounding.
+    i.edge_dp = 2;
+    i.edge_rounding = Rounding::Down;
+    let ev = evaluate_parity(&i).unwrap();
+    assert_eq!(
+        ev.reversal.edge().unwrap().expected_gross.amount(),
+        dec!(0.28)
+    );
+    assert_eq!(
+        ev.conversion.edge().unwrap().expected_gross.amount(),
+        dec!(-0.59)
+    );
+}
+
+#[test]
+fn tiny_fee_rounds_to_zero_instead_of_failing() {
+    // 1 bps of a 1e-28 premium is 1e-32 exactly: not a Decimal, but its
+    // rounding to 6 places is 0.
+    let mut i = k100();
+    let rate = FeeRate::from_bps(dec!(1)).unwrap();
+    i.call.fee = OptionFee::Premium { rate };
+    i.put.fee = OptionFee::Premium { rate };
+    i.put.book.bid = Some(Level::new(
+        Price::new(dec!(0.0000000000000000000000000001)).unwrap(),
+        q(dec!(50)),
+    ));
+    let ev = evaluate_parity(&i).unwrap();
+    let r = ev.reversal.edge().unwrap();
+    assert_eq!(r.expected_fees.put.money().amount(), dec!(0));
+    // The same with the capped basis, whose candidates are compared exactly.
+    let mut i = k100();
+    i.put.book.bid = Some(Level::new(
+        Price::new(dec!(0.0000000000000000000000000001)).unwrap(),
+        q(dec!(50)),
+    ));
+    let ev = evaluate_parity(&i).unwrap();
+    assert_eq!(
+        ev.reversal
+            .edge()
+            .unwrap()
+            .expected_fees
+            .put
+            .money()
+            .amount(),
+        dec!(0)
+    );
+}
+
+#[test]
+fn gross_is_exact_when_only_intermediates_overflow() {
+    // D * (F - K) and C - P each reach Decimal::MAX - 1; the gross of the
+    // reversal, MAX - 1, fits.
+    let max = Decimal::MAX;
+    let mut i = input(dec!(1), (max, max), (dec!(1), dec!(1)));
+    i.discount = dec!(2);
+    i.future.book = book(max, max, dec!(500));
+    i.future.fee = FeeRate::zero();
+    for o in [&mut i.call, &mut i.put] {
+        o.fee = OptionFee::Premium {
+            rate: FeeRate::zero(),
+        };
+    }
+    let ev = evaluate_parity(&i).unwrap();
+    // 2 * (MAX - 1) - (MAX - 1) = MAX - 1.
+    let r = ev.reversal.edge().unwrap();
+    assert_eq!(r.expected_gross.amount(), max - dec!(1));
+    assert_eq!(r.expected_net.amount(), max - dec!(1));
+    let c = ev.conversion.edge().unwrap();
+    assert_eq!(c.expected_gross.amount(), -(max - dec!(1)));
+}
+
+#[test]
+fn future_rebate_is_a_negative_fee() {
+    let mut i = k100();
+    i.future.fee = FeeRate::from_bps(dec!(-1)).unwrap();
+    let ev = evaluate_parity(&i).unwrap();
+    let r = ev.reversal.edge().unwrap();
+    assert_eq!(r.expected_fees.future.money().amount(), dec!(-0.01015));
+    // 0.285 - (0.030421 + 0.030421 - 0.01015).
+    assert_eq!(r.expected_net.amount(), dec!(0.234308));
 }
