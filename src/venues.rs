@@ -317,6 +317,10 @@ pub struct AdmittedLeg {
     /// The reservation the admission made for the leg. It is already held
     /// in the venue's budget: handing it over never reserves it again.
     pub reservation: Reservation,
+    /// How a sell that unwinds this leg on its venue is funded: used when
+    /// the leg is a buy, whose residual is offset by a sell. An unwind of a
+    /// sell leg is a buy and always needs cash.
+    pub unwind_funding: SellFunding,
 }
 
 /// Why a leg is not admitted.
@@ -335,6 +339,10 @@ pub enum AdmissionReject {
     PastDeadline,
     /// The side the leg trades is not quoted.
     NoQuote,
+    /// The venue is unreachable
+    /// ([`LegExecution::Disconnected`](crate::legs::LegExecution::Disconnected)):
+    /// an unwind is held until it reconnects.
+    Disconnected,
     /// The executable price is beyond the leg's limit.
     PriceBeyondLimit,
     /// Less size is quoted than the leg needs.
@@ -361,11 +369,32 @@ pub enum AdmissionReject {
     /// What the leg's fills use could not be computed exactly (a product
     /// that does not fit a `Decimal`), so the capital a resubmission needs
     /// is unknown and none is sent.
+    ///
+    /// It is permanent for that leg for the rest of the plan: every later
+    /// readmission of the leg holds, so its resubmission is never sent and
+    /// the leg falls back at its deadline (or stays held without one). No
+    /// recovery path is offered; the caller abandons the plan instead
+    /// ([`TwoLegPlan::release_reservations`](crate::legs::TwoLegPlan::release_reservations)).
+    /// An unwind is computed from its own new figures, so the leg's unknown
+    /// coverage never holds it; an unwind whose own requirement cannot be
+    /// computed exactly is held with this reason too.
     CoverageUnknown,
     /// The plan's reservations were released
     /// ([`TwoLegPlan::release_reservations`](crate::legs::TwoLegPlan::release_reservations)):
-    /// it reserves nothing more, so no resubmission is sent.
+    /// it reserves nothing more, so no resubmission or unwind is sent.
     Released,
+    /// The open residual needs the side opposite to a live unwind's (the
+    /// residual fell, reached zero or changed sign, for example after a late
+    /// leg fill or an unwind that filled beyond it). Each live unwind's side
+    /// is checked, not the sign of the total coverage, which ended unwinds
+    /// can outweigh. The plan never sends the opposite
+    /// side while an unwind is live: the caller adjusts the live unwinds,
+    /// and reports each one's end with
+    /// [`LegExecution::UnwindDone`](crate::legs::LegExecution::UnwindDone).
+    UnwindReversal {
+        /// The open residual, in the units of the residual.
+        open: Decimal,
+    },
 }
 
 /// Result of [`admit_two_legs`].

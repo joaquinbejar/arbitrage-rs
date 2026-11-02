@@ -113,11 +113,16 @@ fn rejected(leg: LegIndex, attempt: u32, at: i64) -> LegExecution {
     }
 }
 
+/// The plan's first unwind, on the legs' venue, unpriced (no budget
+/// gating).
 fn unwind(id: &str, side: Action, qty: Decimal) -> PlanAction {
     PlanAction::Unwind {
+        unwind: 0,
+        venue: VenueId::new("VB").unwrap(),
         instrument: inst(id),
         side,
         quantity: q(qty),
+        price: None,
     }
 }
 
