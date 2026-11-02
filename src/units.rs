@@ -111,12 +111,9 @@ impl Quantity {
         while n > Decimal::ZERO && !multiple_le(n, lot.0, self.0)? {
             n = exact::sub(n, Decimal::ONE)?;
         }
-        loop {
-            // n + 1 out of range means n is Decimal::MAX, and then the next
-            // multiple is above any representable quantity.
-            let Ok(next) = exact::add(n, Decimal::ONE) else {
-                break;
-            };
+        // n + 1 out of range means n is Decimal::MAX, and then the next
+        // multiple is above any representable quantity.
+        while let Ok(next) = exact::add(n, Decimal::ONE) {
             if !multiple_le(next, lot.0, self.0)? {
                 break;
             }
