@@ -12,8 +12,8 @@
 //!   at its ask and selling another at its bid, after fees and carry;
 //! - [`hedge::plan_band_hedge`] (M1-06): a one-leg hedge that brings an
 //!   exposure back inside a band;
-//! - [`funding`] (M3-06): linear perpetual funding cashflows, schedules and
-//!   estimated versus published rates;
+//! - [`funding`] (M3-06, M3-06b): linear and inverse perpetual funding
+//!   cashflows, schedules and estimated versus published rates;
 //! - [`basis::evaluate_spot_perp`] (M3-06): the net edge of a spot-perpetual
 //!   basis trade after fees, carry and funding;
 //! - [`legs::TwoLegPlan`] (M3-11A): a two-leg execution state machine that

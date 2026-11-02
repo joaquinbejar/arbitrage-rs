@@ -13,7 +13,8 @@ use arbitrage_rs::basis::{
     BasisDirection, BasisEvaluation, BasisInput, BasisRejectReason, evaluate_spot_perp,
 };
 use arbitrage_rs::funding::{
-    FundingEvent, FundingRate, FundingSchedule, PerpConvention, RateKind, SettlementRounding,
+    ContractValue, FundingEvent, FundingRate, FundingSchedule, PerpConvention, RateKind,
+    SettlementRounding,
 };
 use arbitrage_rs::opportunity::{Carry, CarryKind, LegQuote};
 use arbitrage_rs::{
@@ -503,4 +504,21 @@ fn an_unsupported_carry_action_is_an_error_before_any_rejection() {
             action: Action::Other
         })
     );
+}
+
+#[test]
+fn inverse_perpetual_is_refused_before_anything_is_computed() {
+    let mut input = base();
+    input.convention = PerpConvention::Inverse {
+        contract_value: ContractValue::new(dec!(100)).unwrap(),
+        base: Currency::new("BTC").unwrap(),
+    };
+    // Even with no quote on either leg, the convention is reported first.
+    input.spot.book = TopOfBook::default();
+    assert!(matches!(
+        evaluate_spot_perp(&input),
+        Err(ArbitrageError::InvalidInput {
+            reason: "evaluate_spot_perp supports linear perpetuals only"
+        })
+    ));
 }

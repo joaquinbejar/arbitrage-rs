@@ -20,6 +20,8 @@ code and to every new PR (adopted from margin-rs):
 | `wide::sum_products_round(terms, dp, mode)` | the same, rounded once |
 | `FeeRate::fee_on_factors(factors, ccy)` | `|product of factors| * bps / 10_000` as one product |
 | `Cost::total(costs, ccy)` | exact sum of costs in one currency |
+| `wide::quotient_exact(factors, divisor)` | exact quotient of a product by a divisor, converted once; `Inexact` if it does not terminate within 28 places |
+| `wide::quotient_round(factors, divisor, dp, mode)` | the same quotient, rounded once from its exact integer quotient and remainder |
 
 The wide integers have 768 bits: a product of three `Decimal` factors aligned
 to a common scale fits with room to spare, so a conversion fails only when the
@@ -61,6 +63,12 @@ Already under the rule when they were written:
   notional;
 - `funding`: the cashflow `position * mark * rate` is one wide product,
   rounded once.
+- `funding`, inverse (#32): `contracts * contract_value * rate / mark` is one
+  exact quotient (`quotient_exact`, or `quotient_round` to settle), with no
+  intermediate product converted; test
+  `funding::tests::funding_inverse_near_max_is_exact` (MAX contracts of 100
+  at a rate of 0.01, where `contracts * contract_value` alone is not a
+  `Decimal`, and the smallest mark).
 
 Two-term operations kept as they are, because each side is representable:
 
