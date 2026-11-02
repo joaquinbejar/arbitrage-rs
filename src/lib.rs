@@ -1,0 +1,90 @@
+//! # arbitrage-rs
+//!
+//! Arbitrage models for spot, futures, perpetuals and options: pricing
+//! relations, opportunity detection and hedge plans.
+//!
+//! This first version (ARB-00) is the crate boundary and its exact monetary
+//! types. Relations, opportunities and hedge plans build on them in later
+//! issues.
+//!
+//! ## Arithmetic
+//!
+//! - Every amount, price, size and rate is a [`Decimal`] (96-bit mantissa,
+//!   up to 28 decimal places). There is no floating point in the crate;
+//!   `clippy::float_arithmetic` is denied.
+//! - Arithmetic is exact or fails. `rust_decimal`'s `checked_*` operations
+//!   round silently when a result needs more precision than a `Decimal`
+//!   holds; the [`exact`] module detects that and returns
+//!   [`ArbitrageError::Inexact`]. Out-of-range results return
+//!   [`ArbitrageError::Overflow`].
+//! - Rounding happens only where a caller asks for it, with an explicit
+//!   [`Rounding`] mode (for example a fee rounded up to a venue's quantum).
+//! - Values are stored normalized, so equal amounts compare, hash and print
+//!   the same.
+//!
+//! ## Units and signs
+//!
+//! - [`Money`] is a signed amount tagged with its [`Currency`]. Adding or
+//!   subtracting different currencies is an error; the crate never converts.
+//! - [`Price`] is quote currency per unit of [`Quantity`]; both are strictly
+//!   positive. A quantity has no direction: legs and positions carry it.
+//!   Contract multipliers are applied by the caller before building a
+//!   quantity.
+//! - [`Cost`] is signed from the payer's side: positive is paid, negative is
+//!   received (a rebate). A net result is `gross - cost`.
+//! - [`FeeRate`] is in basis points of traded notional, within
+//!   `[-10_000, 10_000]`; negative rates are rebates. The fee does not depend
+//!   on the trade side.
+//!
+//! ## Dependency direction
+//!
+//! arbitrage-rs depends only on `rust_decimal` and `thiserror`. It does not
+//! depend on market-maker-rs, margin-rs, tessera-rl or any simulator or
+//! backtest engine. Integration goes the other way: those crates, or adapters
+//! next to them, depend on arbitrage-rs and translate their prices,
+//! inventory and ledgers into its types.
+//!
+//! ## Versioning
+//!
+//! The crate is pre-release (`0.1.0`, `publish = false`); the public API may
+//! change in any commit until a release is scoped separately. The minimum
+//! supported Rust version is 1.85 (edition 2024) and is checked in CI.
+//!
+//! ## Example
+//!
+//! A spread that is positive before fees and negative after them:
+//!
+//! ```
+//! use arbitrage_rs::{Currency, FeeRate, Price, Quantity};
+//! use rust_decimal_macros::dec;
+//!
+//! # fn main() -> Result<(), arbitrage_rs::ArbitrageError> {
+//! let usd = Currency::new("USD")?;
+//! let size = Quantity::new(dec!(10))?;
+//! let buy = Price::new(dec!(100.00))?.notional(size, usd)?;
+//! let sell = Price::new(dec!(100.05))?.notional(size, usd)?;
+//! let gross = sell.checked_sub(buy)?;
+//!
+//! let fee = FeeRate::from_bps(dec!(5))?;
+//! let cost = fee.fee_on(buy)?.checked_add(fee.fee_on(sell)?)?;
+//! let net = cost.net_of(gross)?;
+//!
+//! assert_eq!(gross.amount(), dec!(0.5));
+//! assert_eq!(cost.money().amount(), dec!(1.00025));
+//! assert_eq!(net.amount(), dec!(-0.50025));
+//! # Ok(())
+//! # }
+//! ```
+
+pub mod error;
+pub mod exact;
+
+mod cost;
+mod money;
+mod units;
+
+pub use cost::{BPS_PER_UNIT, Cost, FeeRate};
+pub use error::{ArbitrageError, Result};
+pub use money::{Currency, MAX_CURRENCY_LEN, Money, Rounding};
+pub use rust_decimal::Decimal;
+pub use units::{Price, Quantity};
