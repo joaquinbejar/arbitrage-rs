@@ -302,7 +302,7 @@ fn requested_of(x: f64, dp: u32) -> Result<Decimal, ArbitrageError> {
 
 #[test]
 fn negative_floats_are_rejected_even_when_tiny() {
-    // Codex M404-C1: checked on the float, before any rounding.
+    // Checked on the float, before any rounding.
     for x in [-1e-9, -1e-100, -5e-324, -1.0, -1e40] {
         assert!(
             matches!(requested_of(x, 8), Err(ArbitrageError::InvalidValue { .. })),
@@ -315,7 +315,7 @@ fn negative_floats_are_rejected_even_when_tiny() {
 
 #[test]
 fn floats_are_rounded_once_from_their_exact_binary_value() {
-    // Codex M404-C2: 1.4999999999999999e-27 is 1.4999999999999998780e-27 in
+    // 1.4999999999999999e-27 is 1.4999999999999998780e-27 in
     // binary, below the tie, so 27 places give 1e-27 (not 2e-27 as a double
     // rounding through 28 digits would).
     assert_eq!(
@@ -443,7 +443,7 @@ fn the_exposure_limit_clips_the_quantity() {
 
 #[test]
 fn above_the_cap_only_reductions_are_accepted() {
-    // Codex M404-C3 with the coordinator's contract: cap 10.
+    // The agreed contract: cap 10.
     let mut l = limits(ExcessPolicy::Clip);
     l.exposure_cap = Some(q(dec!(10)));
     let at = |exposure: Decimal| {

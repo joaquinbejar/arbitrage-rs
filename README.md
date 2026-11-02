@@ -75,7 +75,10 @@ Two principles hold everywhere:
   lot grid, and recovery acts on each leg's excess in whole lots.
 - **Per-venue budgets**: all-or-nothing admission of both legs without
   borrowing capital across venues, with inventory or margin funding for
-  sells.
+  sells. Every leg names its venue. With budget gating, every resubmission
+  is readmitted against its venue's current budget at a price bound that
+  never goes down, and is held when it does not fit; fills are always
+  recorded, and the plan releases exactly the reservations it holds.
 
 ### Modules
 
@@ -182,6 +185,7 @@ Executing it as a two-leg plan, when the second leg is rejected:
 #     TopOfBook,
 # };
 use arbitrage_rs::legs::{ExecId, FailurePolicy, LegExecution, LegIndex, PlanAction, PlanState, TwoLegPlan};
+use arbitrage_rs::venues::VenueId;
 use arbitrage_rs::{Action, Cost};
 use rust_decimal_macros::dec;
 
@@ -208,6 +212,8 @@ use rust_decimal_macros::dec;
 # let Evaluation::Accepted(opp) = evaluate(&input)? else { panic!("rejected") };
 let mut plan = TwoLegPlan::from_opportunity(
     &opp,
+    VenueId::new("VENUE-A")?,
+    VenueId::new("VENUE-B")?,
     Some(Timestamp::from_millis(5_000)),
     FailurePolicy::Unwind,
     usd,

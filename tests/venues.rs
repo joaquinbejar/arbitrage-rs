@@ -62,7 +62,7 @@ fn leg_on(v: &str, sym: &str, side: Action, price: Decimal) -> LegSpec {
             price: p(price),
         },
         deadline: None,
-        venue: Some(venue(v)),
+        venue: venue(v),
     }
 }
 
@@ -395,7 +395,7 @@ fn margin_rate_and_budget_are_validated() {
 
 #[test]
 fn a_view_from_another_venue_never_funds_the_leg() {
-    // MM-REVIEWER M311B-1: the sell leg is on B; a view from A (where cash
+    // The sell leg is on B; a view from A (where cash
     // is plentiful) must not admit it or reserve A's capital.
     let (buy, sell) = specs();
     let va = view("A", "BTC-A", 990);
@@ -413,25 +413,13 @@ fn a_view_from_another_venue_never_funds_the_leg() {
         Err(ArbitrageError::InvalidInput { .. })
     ));
     assert_eq!(b, before);
-    // A leg without a venue cannot be admitted.
-    let mut nowhere = sell.clone();
-    nowhere.venue = None;
-    let vb = view("B", "BTC-B", 990);
-    assert!(matches!(
-        admit_two_legs(
-            req(&buy, &va, MARGIN_20),
-            req(&nowhere, &vb, MARGIN_20),
-            &mut b,
-            t(1_000),
-            50
-        ),
-        Err(ArbitrageError::InvalidInput { .. })
-    ));
+    // A leg without a venue cannot be expressed: `LegSpec::venue` is
+    // required.
 }
 
 #[test]
 fn expired_or_past_deadline_legs_reserve_nothing() {
-    // Codex M311B-C1: the buy is a future expiring at 900; at 1000 it is
+    // The buy is a future expiring at 900; at 1000 it is
     // expired and nothing is reserved. A deadline at 1000 is past too.
     let (mut buy, sell) = specs();
     let (va, vb) = (view("A", "BTC-A", 990), view("B", "BTC-B", 990));
@@ -472,7 +460,7 @@ fn expired_or_past_deadline_legs_reserve_nothing() {
 
 #[test]
 fn a_sell_is_reserved_at_the_higher_of_its_limit_and_the_bid() {
-    // Codex M311B-C2: sell 2 with a limit of 101 while the bid is 1000.
+    // Sell 2 with a limit of 101 while the bid is 1000.
     // Margin 20%: 2000 * 0.2 = 400 + fee 2 = 402, not 40.4 + 0.202.
     let (buy, sell) = specs();
     let va = view("A", "BTC-A", 990);

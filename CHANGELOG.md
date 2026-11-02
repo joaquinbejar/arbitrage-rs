@@ -10,6 +10,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- `LegSpec::venue` is required: `VenueId` instead of `Option<VenueId>`, so
+  a leg without a venue cannot be expressed. The "leg has no venue" errors
+  of `check_view` and `TwoLegPlan::apply` are gone (#16).
+- `TwoLegPlan::from_opportunity` takes the venue of each leg
+  (`buy_venue`, `sell_venue`), and `PackagePlan::from_parity` the venue of
+  the package (#16).
+- `AdmissionReject` has new variants, `Released` and `CoverageUnknown`
+  (the enum is `#[non_exhaustive]`).
+
+### Added
+
+- Budget gating for two-leg plans (#16):
+  `TwoLegPlan::with_budget_gating` takes over the admission's
+  reservations (`AdmittedLeg`, `LegFunding`) after checking that each is
+  exactly its leg's requirement, and `TwoLegPlan::apply_with_budgets`
+  readmits every resubmission against its venue's current budget before
+  sending it: the leg's whole quantity at a price bound that never goes
+  down (the admission's bound, fill prices above it and, for a sell, the
+  bid at each readmission), released and reserved again all or nothing on
+  the leg's own venue. A resubmission that does not fit is held
+  (`LegState::hold`) and retried on later non-fill events (send a `Tick`
+  after changing a budget); past the deadline the fallback applies. Fills
+  are always recorded: what they use beyond the reservation (a price above
+  the covered bound, cumulative fees above the fee modelled at it, an
+  overfill, or an unknown coverage when it cannot be computed exactly) is
+  reported in `LegState::deficit` (`CoverageDeficit`), and the next
+  readmission covers the price and the fees, or holds
+  (`AdmissionReject::CoverageUnknown`).
+  `TwoLegPlan::release_reservations` releases the current reservations
+  once, idempotently. Gating is configured once, before any event.
+  `TwoLegPlan::apply` refuses a gated plan, and
+  `apply_with_budgets` and `release_reservations` refuse a plan without
+  gating. Unwind intents are not admitted.
+
 ## [0.2.0] - 2026-11-02
 
 ### Breaking

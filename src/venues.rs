@@ -16,11 +16,17 @@
 //!   fee). A sell limit is a lower bound on its price, so a sell's notional
 //!   uses the higher of its limit and the observed executable bid.
 //!
-//! The leg's venue is [`LegSpec::venue`]; a view or budget of another venue
-//! never applies to it. Inventory is keyed by instrument: the same asset
-//! must be recorded under one instrument per venue. Reservations are static
-//! amounts: the caller releases them ([`VenueBudget::release`]) when the leg
-//! ends or is resized.
+//! The leg's venue is [`LegSpec::venue`], which every leg must name; a view
+//! or budget of another venue never applies to it. Inventory is keyed by
+//! instrument: the same asset must be recorded under one instrument per
+//! venue. Reservations are static amounts: the caller releases them
+//! ([`VenueBudget::release`]) when the leg ends or is resized. A plan with
+//! budget gating
+//! ([`TwoLegPlan::with_budget_gating`](crate::legs::TwoLegPlan::with_budget_gating))
+//! takes the admission's reservations over, replaces them as it readmits
+//! resubmissions, and releases the ones it holds
+//! ([`TwoLegPlan::release_reservations`](crate::legs::TwoLegPlan::release_reservations));
+//! the caller then never releases the admission's reservations itself.
 //!
 //! Capital is never borrowed across venues: a leg only reserves from the
 //! budget of its own venue, a venue without a budget admits nothing, and
@@ -34,7 +40,7 @@ use crate::exact;
 use crate::instrument::{Action, Dir, Instrument, InstrumentId, Timestamp, TopOfBook};
 use crate::legs::{LegIndex, LegSpec};
 use crate::money::{Currency, Money};
-use crate::units::Quantity;
+use crate::units::{Price, Quantity};
 use crate::wide;
 use core::fmt;
 use rust_decimal::Decimal;
@@ -235,7 +241,9 @@ impl VenueBudget {
         Ok(())
     }
 
-    fn reserve(&mut self, need: &Reservation) -> Result<Option<AdmissionReject>> {
+    /// Reserves `need` if it fits, all or nothing; otherwise returns why not
+    /// and changes nothing.
+    pub(crate) fn reserve(&mut self, need: &Reservation) -> Result<Option<AdmissionReject>> {
         let available = self.available_cash()?;
         if need.cash.checked_sub(available)?.is_positive() {
             return Ok(Some(AdmissionReject::InsufficientCash {
@@ -288,6 +296,29 @@ pub struct LegRequest<'a> {
     pub sell_funding: SellFunding,
 }
 
+/// How a leg pays on its venue: its taker fee and, for a sell, its funding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LegFunding {
+    /// Taker fee on the leg's venue.
+    pub fee: FeeRate,
+    /// How a sell is funded (ignored for a buy).
+    pub sell_funding: SellFunding,
+}
+
+/// One admitted leg, as handed to
+/// [`TwoLegPlan::with_budget_gating`](crate::legs::TwoLegPlan::with_budget_gating):
+/// what [`admit_two_legs`] was given and what it reserved for the leg.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AdmittedLeg {
+    /// The leg's fee and funding, as given to the admission.
+    pub funding: LegFunding,
+    /// The view the leg was admitted on.
+    pub view: VenueView,
+    /// The reservation the admission made for the leg. It is already held
+    /// in the venue's budget: handing it over never reserves it again.
+    pub reservation: Reservation,
+}
+
 /// Why a leg is not admitted.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -327,6 +358,14 @@ pub enum AdmissionReject {
         /// Unreserved inventory on the venue.
         available: Decimal,
     },
+    /// What the leg's fills use could not be computed exactly (a product
+    /// that does not fit a `Decimal`), so the capital a resubmission needs
+    /// is unknown and none is sent.
+    CoverageUnknown,
+    /// The plan's reservations were released
+    /// ([`TwoLegPlan::release_reservations`](crate::legs::TwoLegPlan::release_reservations)):
+    /// it reserves nothing more, so no resubmission is sent.
+    Released,
 }
 
 /// Result of [`admit_two_legs`].
@@ -355,7 +394,7 @@ pub enum Admission {
 /// - [`ArbitrageError::UnsupportedAction`] if the leg's side is not buy or sell
 ///   (checked first).
 /// - [`ArbitrageError::InvalidInput`] if the view is for another instrument
-///   or another venue than the leg's, or the leg has no venue.
+///   or another venue than the leg's.
 /// - [`ArbitrageError::Expired`] if the leg's instrument has expired.
 /// - [`ArbitrageError::LookAhead`] if the view is observed after `as_of`.
 pub fn check_view(
@@ -370,18 +409,10 @@ pub fn check_view(
             reason: "venue view is for another instrument",
         });
     }
-    match &spec.venue {
-        None => {
-            return Err(ArbitrageError::InvalidInput {
-                reason: "leg has no venue",
-            });
-        }
-        Some(venue) if *venue != view.venue => {
-            return Err(ArbitrageError::InvalidInput {
-                reason: "venue view is from another venue than the leg's",
-            });
-        }
-        Some(_) => {}
+    if spec.venue != view.venue {
+        return Err(ArbitrageError::InvalidInput {
+            reason: "venue view is from another venue than the leg's",
+        });
     }
     spec.leg.instrument.ensure_live(as_of)?;
     if spec.effective_deadline().is_some_and(|d| d <= as_of) {
@@ -479,24 +510,60 @@ pub fn admit_two_legs(
 /// - [`ArbitrageError::InvalidValue`] for a margin rate outside `(0, 1]`.
 /// - Arithmetic errors.
 pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservation> {
-    let leg = &request.spec.leg;
-    // A buy limit bounds its price from above; a sell limit only from below,
-    // so a sell is valued at the higher of its limit and the observed bid.
-    let price = match (
-        Dir::try_from(leg.side)?,
-        request.view.book.executable(Action::Sell)?,
-    ) {
-        (Dir::Sell, Some(bid)) => leg.price.max(bid.price),
-        (Dir::Sell, None) | (Dir::Buy, _) => leg.price,
+    let price = price_bound(request.spec, request.view)?;
+    let funding = LegFunding {
+        fee: request.fee,
+        sell_funding: request.sell_funding,
     };
+    let mut need = requirement_at(request.spec, price, funding, ccy)?;
+    need.venue = request.view.venue.clone();
+    Ok(need)
+}
+
+/// The price a leg's requirement is valued at on `view`: the limit for a
+/// buy (an upper bound on its price); for a sell, whose limit is only a
+/// lower bound, the higher of its limit and the observed executable bid.
+///
+/// # Errors
+///
+/// [`ArbitrageError::UnsupportedAction`] if the leg's side is not buy or
+/// sell.
+pub(crate) fn price_bound(spec: &LegSpec, view: &VenueView) -> Result<Price> {
+    let leg = &spec.leg;
+    Ok(
+        match (
+            Dir::try_from(leg.side)?,
+            view.book.executable(Action::Sell)?,
+        ) {
+            (Dir::Sell, Some(bid)) => leg.price.max(bid.price),
+            (Dir::Sell, None) | (Dir::Buy, _) => leg.price,
+        },
+    )
+}
+
+/// The capital the whole leg needs on its own venue with its notional
+/// valued at `price`, in `ccy` (see [`requirement`]). It is non-decreasing
+/// in `price`: the notional, the margin and a non-negative fee grow with it,
+/// and a rebate is floored at zero.
+///
+/// # Errors
+///
+/// As [`requirement`].
+pub(crate) fn requirement_at(
+    spec: &LegSpec,
+    price: Price,
+    funding: LegFunding,
+    ccy: Currency,
+) -> Result<Reservation> {
+    let leg = &spec.leg;
     let (px, q) = (price.value(), leg.quantity.value());
-    let fee = request.fee.fee_on_factors(&[px, q], ccy)?.money();
+    let fee = funding.fee.fee_on_factors(&[px, q], ccy)?.money();
     let fee = if fee.is_negative() {
         Money::zero(ccy)
     } else {
         fee
     };
-    let (cash, inventory) = match (Dir::try_from(leg.side)?, request.sell_funding) {
+    let (cash, inventory) = match (Dir::try_from(leg.side)?, funding.sell_funding) {
         (Dir::Buy, _) => (
             Money::new(
                 wide::sum_products_exact(&[&[px, q][..], &[fee.amount()]], "requirement")?,
@@ -530,7 +597,7 @@ pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservatio
         }
     };
     Ok(Reservation {
-        venue: request.view.venue.clone(),
+        venue: spec.venue.clone(),
         cash,
         inventory,
     })
