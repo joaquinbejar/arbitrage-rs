@@ -13,11 +13,11 @@
 use arbitrage_rs::legs::{LegIndex, LegSpec};
 use arbitrage_rs::venues::{
     Admission, AdmissionReject, LegRequest, Reservation, SellFunding, VenueBudget, VenueId,
-    VenueView, admit_two_legs,
+    VenueView, admit_two_legs, check_view, requirement,
 };
 use arbitrage_rs::{
-    ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Leg, Level, Money, Price,
-    Quantity, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Leg, Level,
+    Money, Price, Quantity, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 use std::collections::BTreeMap;
@@ -48,12 +48,12 @@ fn id(s: &str) -> InstrumentId {
 /// of 101. Views at 990 quote 100 / 101 with size 5.
 fn specs() -> (LegSpec, LegSpec) {
     (
-        leg_on("A", "BTC-A", Side::Buy, dec!(100)),
-        leg_on("B", "BTC-B", Side::Sell, dec!(101)),
+        leg_on("A", "BTC-A", Action::Buy, dec!(100)),
+        leg_on("B", "BTC-B", Action::Sell, dec!(101)),
     )
 }
 
-fn leg_on(v: &str, sym: &str, side: Side, price: Decimal) -> LegSpec {
+fn leg_on(v: &str, sym: &str, side: Action, price: Decimal) -> LegSpec {
     LegSpec {
         leg: Leg {
             instrument: Instrument::undated(id(sym)),
@@ -209,8 +209,8 @@ fn a_second_leg_rejection_releases_nothing_because_nothing_was_kept() {
 #[test]
 fn two_legs_on_one_venue_share_its_budget() {
     // Both legs on A: 200.2 + 40.602 = 240.802 needed. 240 is not enough.
-    let buy = leg_on("A", "BTC-A", Side::Buy, dec!(100));
-    let sell = leg_on("A", "BTC-B", Side::Sell, dec!(101));
+    let buy = leg_on("A", "BTC-A", Action::Buy, dec!(100));
+    let sell = leg_on("A", "BTC-B", Action::Sell, dec!(101));
     let va = view("A", "BTC-A", 990);
     let vb_on_a = view("A", "BTC-B", 990);
     let mut b = budgets(dec!(240), dec!(0));
@@ -528,7 +528,7 @@ fn margin_requirement_is_exact_when_the_notional_passes_max() {
     // A sell of 2 at 0.6 * Decimal::MAX: the notional passes Decimal::MAX,
     // the 50 % margin (0.6 * MAX) fits.
     let big = dec!(47536897508558602556126370201);
-    let spec = leg_on("B", "BTC-B", Side::Sell, big);
+    let spec = leg_on("B", "BTC-B", Action::Sell, big);
     let v = view("B", "BTC-B", 990);
     let request = LegRequest {
         spec: &spec,
@@ -538,4 +538,34 @@ fn margin_requirement_is_exact_when_the_notional_passes_max() {
     };
     let need = arbitrage_rs::venues::requirement(&request, usd()).unwrap();
     assert_eq!(need.cash.amount(), big);
+}
+
+#[test]
+fn an_unsupported_action_is_never_admitted_and_reserves_nothing() {
+    let (buy, _) = specs();
+    let other = leg_on("B", "BTC-B", Action::Other, dec!(101));
+    let (va, vb) = (view("A", "BTC-A", 990), view("B", "BTC-B", 990));
+    let unsupported = ArbitrageError::UnsupportedAction {
+        action: Action::Other,
+    };
+    assert_eq!(
+        check_view(&other, &vb, t(1_000), 50).unwrap_err(),
+        unsupported
+    );
+    assert_eq!(
+        requirement(&req(&other, &vb, MARGIN_20), usd()).unwrap_err(),
+        unsupported
+    );
+    // The first leg would be admitted; the budgets stay untouched.
+    let mut b = budgets(dec!(500), dec!(100));
+    let before = b.clone();
+    let result = admit_two_legs(
+        req(&buy, &va, MARGIN_20),
+        req(&other, &vb, MARGIN_20),
+        &mut b,
+        t(1_000),
+        50,
+    );
+    assert_eq!(result.unwrap_err(), unsupported);
+    assert_eq!(b, before);
 }

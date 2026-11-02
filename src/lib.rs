@@ -70,8 +70,9 @@
 //!
 //! ## Dependency direction
 //!
-//! arbitrage-rs depends only on `rust_decimal` and `thiserror`. It does not
-//! depend on market-maker-rs, margin-rs or any simulator, learning environment or
+//! arbitrage-rs depends only on `rust_decimal`, `thiserror` and
+//! `financial_types` (the shared [`Action`] enum; it brings `serde`, which
+//! arbitrage-rs does not use). It does not depend on market-maker-rs, margin-rs or any simulator, learning environment or
 //! backtest engine. Integration goes the other way: those crates, or adapters
 //! next to them, depend on arbitrage-rs and translate their prices,
 //! inventory and ledgers into its types.
@@ -82,7 +83,7 @@
 //! (`0.x.0`) may carry breaking changes; a patch release does not. Changes
 //! are listed in `CHANGELOG.md`. [`Decimal`] is re-exported and appears in
 //! the public API, so `rust_decimal` 1.x is part of it. The minimum
-//! supported Rust version is 1.85 (edition 2024) and is checked in CI.
+//! supported Rust version is 1.88 (edition 2024) and is checked in CI.
 //!
 //! ## Example
 //!
@@ -131,7 +132,7 @@ mod wide;
 pub use cost::{BPS_PER_UNIT, Cost, FeeRate};
 pub use error::{ArbitrageError, Result};
 pub use instrument::{
-    Instrument, InstrumentId, Leg, Level, MAX_INSTRUMENT_ID_LEN, Side, Timestamp, TopOfBook,
+    Action, Instrument, InstrumentId, Leg, Level, MAX_INSTRUMENT_ID_LEN, Timestamp, TopOfBook,
 };
 pub use money::{Currency, MAX_CURRENCY_LEN, Money, Rounding};
 pub use rust_decimal::Decimal;

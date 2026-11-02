@@ -111,32 +111,43 @@ impl Instrument {
     }
 }
 
-/// Trade direction.
+/// The trade direction of the public API: `financial_types::Action`,
+/// shared with the other crates. Only [`Action::Buy`] (executed at the ask)
+/// and [`Action::Sell`] (executed at the bid) are supported; any other
+/// action is [`ArbitrageError::UnsupportedAction`].
+pub use financial_types::Action;
+
+/// The supported directions, internally. `Action` is a foreign
+/// `#[non_exhaustive]` enum with an `Other` variant, so every input is
+/// converted here once, the only place that needs a wildcard arm; all other
+/// matches are exhaustive on `Dir`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Side {
+pub(crate) enum Dir {
     /// Buy, executed at the ask.
     Buy,
     /// Sell, executed at the bid.
     Sell,
 }
 
-impl Side {
-    /// The opposite side.
-    #[must_use]
-    pub fn opposite(self) -> Self {
-        match self {
-            Self::Buy => Self::Sell,
-            Self::Sell => Self::Buy,
+impl TryFrom<Action> for Dir {
+    type Error = ArbitrageError;
+
+    fn try_from(action: Action) -> Result<Self> {
+        match action {
+            Action::Buy => Ok(Self::Buy),
+            Action::Sell => Ok(Self::Sell),
+            // `Other`, or a variant added in a later financial_types.
+            action => Err(ArbitrageError::UnsupportedAction { action }),
         }
     }
 }
 
-impl fmt::Display for Side {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Buy => "buy",
-            Self::Sell => "sell",
-        })
+impl From<Dir> for Action {
+    fn from(dir: Dir) -> Self {
+        match dir {
+            Dir::Buy => Self::Buy,
+            Dir::Sell => Self::Sell,
+        }
     }
 }
 
@@ -168,13 +179,17 @@ pub struct TopOfBook {
 
 impl TopOfBook {
     /// The level a trade on `side` executes against: the ask for a buy, the
-    /// bid for a sell.
-    #[must_use]
-    pub fn executable(&self, side: Side) -> Option<Level> {
-        match side {
-            Side::Buy => self.ask,
-            Side::Sell => self.bid,
-        }
+    /// bid for a sell; `None` if that side of the book is empty.
+    ///
+    /// # Errors
+    ///
+    /// [`ArbitrageError::UnsupportedAction`] for an action other than buy
+    /// or sell (never confused with an empty book).
+    pub fn executable(&self, side: Action) -> Result<Option<Level>> {
+        Ok(match Dir::try_from(side)? {
+            Dir::Buy => self.ask,
+            Dir::Sell => self.bid,
+        })
     }
 }
 
@@ -186,7 +201,7 @@ pub struct Leg {
     /// Instrument to trade.
     pub instrument: Instrument,
     /// Direction.
-    pub side: Side,
+    pub side: Action,
     /// Size to trade.
     pub quantity: Quantity,
     /// Executable price the estimate uses (the ask for a buy, the bid for a
@@ -257,10 +272,20 @@ mod tests {
             bid: Some(bid),
             ask: Some(ask),
         };
-        assert_eq!(book.executable(Side::Buy), Some(ask));
-        assert_eq!(book.executable(Side::Sell), Some(bid));
-        assert_eq!(TopOfBook::default().executable(Side::Buy), None);
-        assert_eq!(Side::Buy.opposite(), Side::Sell);
-        assert_eq!(Side::Sell.to_string(), "sell");
+        assert_eq!(book.executable(Action::Buy).unwrap(), Some(ask));
+        assert_eq!(book.executable(Action::Sell).unwrap(), Some(bid));
+        assert_eq!(TopOfBook::default().executable(Action::Buy).unwrap(), None);
+        // Other is an error, never an empty side of the book.
+        assert_eq!(
+            book.executable(Action::Other),
+            Err(ArbitrageError::UnsupportedAction {
+                action: Action::Other
+            })
+        );
+        assert_eq!(Action::Buy.opposite(), Action::Sell);
+        assert_eq!(Action::Sell.to_string(), "Sell");
+        for action in [Action::Buy, Action::Sell] {
+            assert_eq!(Action::from(Dir::try_from(action).unwrap()), action);
+        }
     }
 }

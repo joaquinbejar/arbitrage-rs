@@ -13,8 +13,8 @@ use arbitrage_rs::opportunity::{
     Carry, CarryKind, Evaluation, LegQuote, OpportunityInput, RejectReason, evaluate,
 };
 use arbitrage_rs::{
-    ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Money, Price,
-    Quantity, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Money,
+    Price, Quantity, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 
@@ -72,7 +72,7 @@ fn accepted_at_top_of_book_size() {
     // Fees 300 * 0.0005 = 0.15 and 300.9 * 0.0005 = 0.15045; net 0.59955.
     let eval = evaluate(&base()).unwrap();
     let o = eval.accepted().expect("accepted");
-    assert_eq!(o.buy.side, Side::Buy);
+    assert_eq!(o.buy.side, Action::Buy);
     assert_eq!(o.buy.price.value(), dec!(100));
     assert_eq!(o.sell.price.value(), dec!(100.3));
     assert_eq!(o.buy.quantity, q(dec!(3)));
@@ -116,7 +116,7 @@ fn zero_net_is_rejected_even_with_zero_threshold() {
     input.sell.fee = FeeRate::zero();
     input.carry = vec![Carry {
         kind: CarryKind::Financing,
-        leg: Side::Buy,
+        leg: Action::Buy,
         rate: bps(dec!(5)),
     }];
     match evaluate(&input).unwrap() {
@@ -136,12 +136,12 @@ fn carry_is_itemized_and_subtracted() {
     input.carry = vec![
         Carry {
             kind: CarryKind::Borrow,
-            leg: Side::Sell,
+            leg: Action::Sell,
             rate: bps(dec!(10)),
         },
         Carry {
             kind: CarryKind::Financing,
-            leg: Side::Buy,
+            leg: Action::Buy,
             rate: bps(dec!(2)),
         },
     ];
@@ -150,7 +150,7 @@ fn carry_is_itemized_and_subtracted() {
     assert_eq!(o.expected_costs.carry.len(), 2);
     assert_eq!(o.expected_costs.carry[0].kind, CarryKind::Borrow);
     assert_eq!(o.expected_costs.carry[0].cost.money(), m(dec!(0.3009)));
-    assert_eq!(o.expected_costs.carry[1].leg, Side::Buy);
+    assert_eq!(o.expected_costs.carry[1].leg, Action::Buy);
     assert_eq!(o.expected_costs.carry[1].cost.money(), m(dec!(0.06)));
     assert_eq!(o.expected_costs.total.money(), m(dec!(0.66135)));
     assert_eq!(o.expected_net, m(dec!(0.23865)));
@@ -186,7 +186,7 @@ fn missing_quotes_are_explicit() {
         evaluate(&input).unwrap(),
         Evaluation::Rejected(RejectReason::MissingQuote {
             instrument: inst("A"),
-            side: Side::Buy
+            side: Action::Buy
         })
     );
     let mut input = base();
@@ -195,7 +195,7 @@ fn missing_quotes_are_explicit() {
         evaluate(&input).unwrap(),
         Evaluation::Rejected(RejectReason::MissingQuote {
             instrument: inst("B"),
-            side: Side::Sell
+            side: Action::Sell
         })
     );
 }
@@ -330,7 +330,7 @@ fn cost_total_is_one_exact_sum() {
     i.target_quantity = q(dec!(1));
     i.carry = vec![Carry {
         kind: CarryKind::Other,
-        leg: Side::Buy,
+        leg: Action::Buy,
         rate: bps(dec!(-10000)),
     }];
     match evaluate(&i).unwrap() {
@@ -340,4 +340,22 @@ fn cost_total_is_one_exact_sum() {
         }
         other => panic!("unexpected {other:?}"),
     }
+}
+
+#[test]
+fn an_unsupported_carry_action_is_an_error_before_any_rejection() {
+    // Without the carry item, the missing ask would be a rejection.
+    let mut input = base();
+    input.buy.book.ask = None;
+    input.carry = vec![Carry {
+        kind: CarryKind::Financing,
+        leg: Action::Other,
+        rate: bps(dec!(5)),
+    }];
+    assert_eq!(
+        evaluate(&input),
+        Err(ArbitrageError::UnsupportedAction {
+            action: Action::Other
+        })
+    );
 }

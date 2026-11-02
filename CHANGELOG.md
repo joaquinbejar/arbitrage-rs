@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- The trade direction is `financial_types::Action`, re-exported at the
+  crate root; the local `Side` is removed, with no alias (`financial_types`
+  also has a `Side`, the position side `Long`/`Short`). Migrate `Side::Buy`
+  and `Side::Sell` to `Action::Buy` and `Action::Sell` (#28).
+- `Action` is a foreign `#[non_exhaustive]` enum with an `Other` variant,
+  so the issue's "no `_ =>` arm" cannot hold literally: the crate converts
+  an action once, at its entry points, into a private two-variant
+  direction, the only conversion with a wildcard arm; every other match is
+  exhaustive. Any action other than buy or sell is the new error
+  `ArbitrageError::UnsupportedAction { action }`, checked before any
+  rejection or plan mutation (#28).
+- `TopOfBook::executable` returns `Result<Option<Level>>`: `None` still
+  means an empty side of the book, and an unsupported action is an error,
+  never confused with missing liquidity (#28).
+- `Display` of a direction is `Buy` / `Sell` (was `buy` / `sell`) (#28).
+- The minimum supported Rust version is 1.88, required by `financial_types`
+  (#28).
+
+### Added
+
+- Dependency on `financial_types` 0.3 (default features). It brings `serde`
+  and its derive macros transitively; arbitrage-rs serializes nothing (#28).
+
 ### Changed
 
 - The library is checked with `clippy::pedantic`, `unwrap_used`,

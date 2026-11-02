@@ -36,7 +36,7 @@ use crate::funding::{
     FundingEvent, FundingSchedule, PerpConvention, RateKind, SettlementRounding, funding_cashflow,
     funding_cashflow_rounded,
 };
-use crate::instrument::{Instrument, Leg, Side, Timestamp};
+use crate::instrument::{Action, Dir, Instrument, Leg, Timestamp};
 use crate::money::{Currency, Money};
 use crate::opportunity::{Carry, CarryCost, LegQuote};
 use crate::units::{Price, Quantity};
@@ -55,16 +55,16 @@ pub enum BasisDirection {
 impl BasisDirection {
     /// The side the spot leg trades at entry.
     #[must_use]
-    pub fn spot_side(self) -> Side {
+    pub fn spot_side(self) -> Action {
         match self {
-            Self::LongSpotShortPerp => Side::Buy,
-            Self::ShortSpotLongPerp => Side::Sell,
+            Self::LongSpotShortPerp => Action::Buy,
+            Self::ShortSpotLongPerp => Action::Sell,
         }
     }
 
     /// The side the perpetual leg trades at entry.
     #[must_use]
-    pub fn perp_side(self) -> Side {
+    pub fn perp_side(self) -> Action {
         self.spot_side().opposite()
     }
 }
@@ -108,7 +108,7 @@ pub struct BasisInput {
     /// Assumed executable basis (`perp - spot`, per unit) when the position
     /// is closed.
     pub expected_exit_basis: Decimal,
-    /// Carry items; `Side::Buy` is the leg bought at entry and `Side::Sell`
+    /// Carry items; `Action::Buy` is the leg bought at entry and `Action::Sell`
     /// the leg sold.
     pub carry: Vec<Carry>,
     /// Smallest net edge to accept, in `quote_currency`; zero or positive.
@@ -185,7 +185,7 @@ pub enum BasisRejectReason {
         /// The instrument without the needed side.
         instrument: Instrument,
         /// The side the leg trades.
-        side: Side,
+        side: Action,
     },
     /// Less size is executable on both legs than `min_quantity`.
     InsufficientLiquidity {
@@ -357,13 +357,13 @@ pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
     let ccy = input.quote_currency;
     let dir = input.direction;
 
-    let Some(spot_level) = input.spot.book.executable(dir.spot_side()) else {
+    let Some(spot_level) = input.spot.book.executable(dir.spot_side())? else {
         return Ok(BasisEvaluation::Rejected(BasisRejectReason::MissingQuote {
             instrument: input.spot.instrument.clone(),
             side: dir.spot_side(),
         }));
     };
-    let Some(perp_level) = input.perp.book.executable(dir.perp_side()) else {
+    let Some(perp_level) = input.perp.book.executable(dir.perp_side())? else {
         return Ok(BasisEvaluation::Rejected(BasisRejectReason::MissingQuote {
             instrument: input.perp.instrument.clone(),
             side: dir.perp_side(),
@@ -450,6 +450,11 @@ pub fn evaluate_spot_perp(input: &BasisInput) -> Result<BasisEvaluation> {
 }
 
 fn validate(input: &BasisInput) -> Result<()> {
+    // Directions first: an unsupported action is never reported as a
+    // rejection for another reason.
+    for item in &input.carry {
+        Dir::try_from(item.leg)?;
+    }
     if input.spot.instrument.id == input.perp.instrument.id {
         return Err(ArbitrageError::InvalidInput {
             reason: "spot and perpetual legs are the same instrument",

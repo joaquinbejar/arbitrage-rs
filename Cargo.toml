@@ -2,7 +2,7 @@
 name = "arbitrage-rs"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 authors = ["Joaquin Bejar <jb@taunais.com>"]
 description = "Arbitrage models for spot, futures, perpetuals and options: pricing relations, opportunity detection and multi-leg execution"
 license = "MIT"
@@ -27,6 +27,7 @@ name = "arbitrage_rs"
 path = "src/lib.rs"
 
 [dependencies]
+financial_types = "0.3"
 rust_decimal = { version = "1.43", default-features = false, features = ["std"] }
 thiserror = "2.0"
 

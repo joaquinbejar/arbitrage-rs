@@ -42,7 +42,7 @@
 use crate::cost::{Cost, FeeRate};
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
-use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
+use crate::instrument::{Action, Instrument, Leg, Timestamp, TopOfBook};
 use crate::money::{Currency, Money, Rounding};
 use crate::units::{Price, Quantity};
 use crate::wide;
@@ -145,10 +145,10 @@ pub enum ParityDirection {
 impl ParityDirection {
     /// The side of the call leg; the put and the future take the opposite.
     #[must_use]
-    pub fn call_side(self) -> Side {
+    pub fn call_side(self) -> Action {
         match self {
-            Self::Reversal => Side::Buy,
-            Self::Conversion => Side::Sell,
+            Self::Reversal => Action::Buy,
+            Self::Conversion => Action::Sell,
         }
     }
 }
@@ -206,7 +206,7 @@ pub enum ParityUnavailable {
         /// The instrument without the needed side.
         instrument: Instrument,
         /// The side the leg trades.
-        side: Side,
+        side: Action,
     },
     /// The top of book holds fewer contracts than one package needs.
     InsufficientLiquidity {
@@ -316,7 +316,7 @@ fn direction(
         &input.call.book,
         call_side,
         contracts.call,
-    ) {
+    )? {
         Ok(p) => p,
         Err(u) => return Ok(DirectionEvaluation::Unavailable(u)),
     };
@@ -325,7 +325,7 @@ fn direction(
         &input.put.book,
         other_side,
         contracts.put,
-    ) {
+    )? {
         Ok(p) => p,
         Err(u) => return Ok(DirectionEvaluation::Unavailable(u)),
     };
@@ -334,7 +334,7 @@ fn direction(
         &input.future.book,
         other_side,
         contracts.future,
-    ) {
+    )? {
         Ok(p) => p,
         Err(u) => return Ok(DirectionEvaluation::Unavailable(u)),
     };
@@ -407,27 +407,27 @@ fn direction(
 }
 
 /// The executable price of `side`, if quoted with at least `required`
-/// contracts.
+/// contracts; the inner error says why it is unavailable.
 fn level(
     instrument: &Instrument,
     book: &TopOfBook,
-    side: Side,
+    side: Action,
     required: Quantity,
-) -> core::result::Result<Price, ParityUnavailable> {
-    let Some(l) = book.executable(side) else {
-        return Err(ParityUnavailable::MissingQuote {
+) -> Result<core::result::Result<Price, ParityUnavailable>> {
+    let Some(l) = book.executable(side)? else {
+        return Ok(Err(ParityUnavailable::MissingQuote {
             instrument: instrument.clone(),
             side,
-        });
+        }));
     };
     if l.size < required {
-        return Err(ParityUnavailable::InsufficientLiquidity {
+        return Ok(Err(ParityUnavailable::InsufficientLiquidity {
             instrument: instrument.clone(),
             available: l.size,
             required,
-        });
+        }));
     }
-    Ok(l.price)
+    Ok(Ok(l.price))
 }
 
 /// `1 / 10_000`: basis points to a fraction, as an exact factor.
@@ -536,14 +536,14 @@ fn validate(input: &ParityInput) -> Result<()> {
                 reason: "must not be negative",
             });
         }
-        if let Some(cap) = cap {
-            if cap < Decimal::ZERO || cap > Decimal::ONE {
-                return Err(ArbitrageError::InvalidValue {
-                    field: "option fee cap",
-                    value: cap,
-                    reason: "must be within [0, 1]",
-                });
-            }
+        if let Some(cap) = cap
+            && (cap < Decimal::ZERO || cap > Decimal::ONE)
+        {
+            return Err(ArbitrageError::InvalidValue {
+                field: "option fee cap",
+                value: cap,
+                reason: "must be within [0, 1]",
+            });
         }
     }
     f.ensure_live(input.as_of)

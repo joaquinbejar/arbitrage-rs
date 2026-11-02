@@ -13,7 +13,7 @@
 use crate::cost::{Cost, FeeRate};
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
-use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
+use crate::instrument::{Action, Dir, Instrument, Leg, Timestamp, TopOfBook};
 use crate::money::{Currency, Money};
 use crate::units::Quantity;
 use crate::wide;
@@ -160,7 +160,7 @@ pub enum NoHedgeReason {
     /// The side the hedge needs is not quoted.
     NoLiquidity {
         /// The side the hedge would trade.
-        side: Side,
+        side: Action,
     },
     /// The executable size is below one lot.
     BelowLotSize {
@@ -220,14 +220,14 @@ pub fn plan_band_hedge(view: &PositionView) -> Result<HedgeDecision> {
         return no_hedge(NoHedgeReason::InsideBand);
     }
     let side = if exposure > view.band.upper() {
-        Side::Sell
+        Action::Sell
     } else {
-        Side::Buy
+        Action::Buy
     };
     // Outside the band and target inside it, so the distance is positive.
     let required = Quantity::new(exact::sub(exposure, view.band.target())?.abs())?;
 
-    let Some(level) = view.book.executable(side) else {
+    let Some(level) = view.book.executable(side)? else {
         return no_hedge(NoHedgeReason::NoLiquidity { side });
     };
     let mut executable = required.min(level.size);
@@ -256,9 +256,9 @@ pub fn plan_band_hedge(view: &PositionView) -> Result<HedgeDecision> {
         Some(s) => expected_fee.checked_add(s)?,
         None => expected_fee,
     };
-    let expected_exposure_after = match side {
-        Side::Sell => exact::sub(exposure, quantity.value())?,
-        Side::Buy => exact::add(exposure, quantity.value())?,
+    let expected_exposure_after = match Dir::try_from(side)? {
+        Dir::Sell => exact::sub(exposure, quantity.value())?,
+        Dir::Buy => exact::add(exposure, quantity.value())?,
     };
 
     Ok(HedgeDecision::Hedge(HedgePlan {

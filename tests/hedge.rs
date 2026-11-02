@@ -11,8 +11,8 @@
 
 use arbitrage_rs::hedge::{Band, HedgeDecision, NoHedgeReason, PositionView, plan_band_hedge};
 use arbitrage_rs::{
-    ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level, Money,
-    Price, Quantity, Side, Timestamp, TopOfBook,
+    Action, ArbitrageError, Cost, Currency, Decimal, FeeRate, Instrument, InstrumentId, Level,
+    Money, Price, Quantity, Timestamp, TopOfBook,
 };
 use rust_decimal_macros::dec;
 
@@ -74,7 +74,7 @@ fn above_the_band_sells_back_to_target() {
     // Sell 12.5 at 99.5: notional 1243.75, fee 0.621875.
     // Mid 100, spread cost 0.5 * 12.5 = 6.25; total 6.871875.
     let p = plan(&view(dec!(12.5)));
-    assert_eq!(p.leg.side, Side::Sell);
+    assert_eq!(p.leg.side, Action::Sell);
     assert_eq!(p.leg.quantity, q(dec!(12.5)));
     assert_eq!(p.leg.price.value(), dec!(99.5));
     assert_eq!(
@@ -96,7 +96,7 @@ fn below_the_band_buys_whole_lots_without_overshooting() {
     let mut v = view(dec!(-12.34));
     v.lot_size = Some(q(dec!(0.1)));
     let p = plan(&v);
-    assert_eq!(p.leg.side, Side::Buy);
+    assert_eq!(p.leg.side, Action::Buy);
     assert_eq!(p.leg.price.value(), dec!(100.5));
     assert_eq!(p.required_quantity, q(dec!(12.34)));
     assert_eq!(p.leg.quantity, q(dec!(12.3)));
@@ -110,7 +110,7 @@ fn asymmetric_band_hedges_to_its_target() {
     let mut v = view(dec!(9));
     v.band = Band::new(dec!(-5), dec!(2), dec!(8)).unwrap();
     let p = plan(&v);
-    assert_eq!(p.leg.side, Side::Sell);
+    assert_eq!(p.leg.side, Action::Sell);
     assert_eq!(p.leg.quantity, q(dec!(7)));
     assert_eq!(p.expected_exposure_after, dec!(2));
 }
@@ -137,7 +137,7 @@ fn no_liquidity_keeps_the_exposure() {
     assert_eq!(
         plan_band_hedge(&v).unwrap(),
         HedgeDecision::NoHedge {
-            reason: NoHedgeReason::NoLiquidity { side: Side::Sell },
+            reason: NoHedgeReason::NoLiquidity { side: Action::Sell },
             exposure: dec!(12.5)
         }
     );
@@ -235,7 +235,7 @@ fn band_hedge_against_no_hedge_baseline() {
     assert_eq!(hedged_max, dec!(8));
     assert_eq!(
         hedge_plans,
-        vec![(Side::Sell, q(dec!(12))), (Side::Buy, q(dec!(12)))]
+        vec![(Action::Sell, q(dec!(12))), (Action::Buy, q(dec!(12)))]
     );
     assert_eq!(total_cost.money(), m(dec!(13.2)));
 }
@@ -253,7 +253,7 @@ fn spread_cost_and_fee_are_exact_near_max() {
     v.fee = FeeRate::from_bps(dec!(1)).unwrap();
     v.max_quantity = Some(q(dec!(10)));
     let h = plan(&v);
-    assert_eq!(h.leg.side, Side::Sell);
+    assert_eq!(h.leg.side, Action::Sell);
     assert_eq!(h.expected_spread_cost, Some(Cost::new(m(dec!(10)))));
     assert_eq!(
         h.expected_fee.money().amount(),
