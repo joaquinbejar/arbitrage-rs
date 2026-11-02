@@ -32,13 +32,16 @@
 //!   `g = 0.1` XYZ. The package must be a multiple of `g`.
 //! - The **matched** package is the smallest executed exposure
 //!   (`executed * contract_size`) over the legs, rounded down to a multiple
-//!   of `g`. It is always a whole number of lots on every leg.
+//!   of `g`, and at most the package: anything executed beyond the package
+//!   is excess, even when every leg is overfilled alike. It is always a
+//!   whole number of lots on every leg.
 //! - The **excess** of a leg is its executed contracts minus the matched
 //!   package in its contracts. It is what the fallback acts on: abort keeps
 //!   it visible, unwind offsets it with a [`PackageAction::Unwind`] on that
 //!   leg's instrument, in whole lots.
 //!
-//! Fills must be whole multiples of their leg's lot, so the excess is too.
+//! Lots may be decimal (for example 0.1 of a spot unit). Fills must be whole
+//! multiples of their leg's lot, so the excess is too.
 
 /// Position of the call in a plan built by [`PackagePlan::from_parity`].
 pub const CALL_LEG: usize = 0;
@@ -312,6 +315,7 @@ pub struct PackagePlan {
     policy: FailurePolicy,
     package: Quantity,
     grid: Quantity,
+    package_grids: Decimal,
     legs: Vec<PackageLegState>,
     state: PlanState,
     clock: Timestamp,
@@ -374,7 +378,9 @@ impl PackagePlan {
             {
                 return invalid("a leg does not hold the package of underlying");
             }
-            let grid_contracts = whole_quotient(grid.value(), l.contract_size.value())?;
+            // The leg's contracts per grid: a whole number of its lots,
+            // decimal if the lot is.
+            let grid_contracts = exact_quotient(grid.value(), l.contract_size.value())?;
             states.push(PackageLegState {
                 attempts: vec![AttemptState::new(l.spec.leg.quantity)],
                 spec: l,
@@ -391,6 +397,7 @@ impl PackagePlan {
             policy,
             package,
             grid,
+            package_grids: whole_quotient(package.value(), grid.value())?,
             legs: states,
             state: PlanState::Working,
             clock: created_at,
@@ -619,9 +626,10 @@ impl PackagePlan {
     }
 
     /// Whole grids matched: the smallest, over the legs, of the executed
-    /// contracts divided by the leg's contracts per grid, rounded down.
+    /// contracts divided by the leg's contracts per grid, rounded down, and
+    /// at most the package's grids.
     fn matched_grids(&self) -> Result<Decimal> {
-        let mut n: Option<Decimal> = None;
+        let mut n = self.package_grids;
         for l in &self.legs {
             let executed = l.executed()?;
             let grids = if executed <= Decimal::ZERO {
@@ -633,9 +641,9 @@ impl PackagePlan {
                     None => Decimal::ZERO,
                 }
             };
-            n = Some(n.map_or(grids, |m| m.min(grids)));
+            n = n.min(grids);
         }
-        Ok(n.unwrap_or(Decimal::ZERO))
+        Ok(n)
     }
 
     fn report(&self, actions: Vec<PackageAction>, duplicate: bool) -> Result<PackageReport> {
@@ -949,6 +957,21 @@ fn sum<T: AsRef<[Decimal]>>(terms: &[T], op: &'static str) -> Result<Decimal> {
 /// True if `q` is a whole multiple of `unit`.
 fn is_multiple(q: Quantity, unit: Quantity) -> Result<bool> {
     Ok(q.floor_to_lot(unit)? == Some(q))
+}
+
+/// `a / b` when the quotient is exact (a `Decimal` whose product with `b`
+/// is `a`), or `InvalidInput`.
+fn exact_quotient(a: Decimal, b: Decimal) -> Result<Decimal> {
+    let q = a
+        .checked_div(b)
+        .ok_or(ArbitrageError::Overflow { op: "div" })?
+        .normalize();
+    match exact::mul(q, b) {
+        Ok(back) if back == a => Ok(q),
+        _ => Err(ArbitrageError::InvalidInput {
+            reason: "a quantity is not an exact multiple of its unit",
+        }),
+    }
 }
 
 /// `a / b` when it is a whole number, or `InvalidInput`.

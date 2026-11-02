@@ -26,7 +26,7 @@
 //! - [`parity::evaluate_parity`] (#18): the executable edge of
 //!   put-call parity against a same-expiry future, in both directions, after
 //!   the fees of all three legs;
-//! - [`package::PackagePlan`] (XM2-17a-2): a multi-leg package execution
+//! - [`package::PackagePlan`] (#19): a multi-leg package execution
 //!   state machine with legs of different contract sizes, a matched package
 //!   on a common lot grid, a residual per leg and recovery.
 //!

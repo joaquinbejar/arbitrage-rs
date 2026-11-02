@@ -1,7 +1,7 @@
-//! Multi-leg package plan (XM2-17a-2).
+//! Multi-leg package plan (#19).
 //!
-//! Fixture P of the Xynthex X-M2 plan (section 3.6): a reversal of one
-//! package of 1 XYZ at K = 100 from fixture E (buy 10 calls, sell 10 puts,
+//! Fixture P: a reversal of one package of 1 XYZ at K = 100 from the
+//! parity fixture E of #18 (buy 10 calls, sell 10 puts,
 //! sell 100 futures; options of 0.1 XYZ, futures of 0.01 XYZ, lots of one
 //! contract, so the grid is 0.1 XYZ).
 
@@ -508,4 +508,135 @@ fn net_cash_is_one_exact_sum() {
     }
     assert_eq!(plan.state(), PlanState::Completed);
     assert_eq!(plan.net_cash().unwrap().amount(), dec!(-1));
+}
+
+#[test]
+fn overfill_on_every_leg_alike_is_excess() {
+    // 20, 20, 200 on a package of 1 XYZ: the matched package is capped at 1
+    // and the rest is excess, as in P3.
+    for (policy, state) in [
+        (FailurePolicy::Unwind, PlanState::UnwindRequested),
+        (FailurePolicy::Abort, PlanState::Aborted),
+    ] {
+        let mut plan = reversal(policy);
+        plan.apply(&fill(CALL_LEG, 0, "c1", dec!(20), dec!(20), 10))
+            .unwrap();
+        plan.apply(&fill(PUT_LEG, 0, "p1", dec!(20), dec!(20), 11))
+            .unwrap();
+        let r = plan
+            .apply(&fill(FUTURE_LEG, 0, "f1", dec!(200), dec!(200), 12))
+            .unwrap();
+        assert_eq!(r.state, state);
+        assert_eq!(r.matched, dec!(1));
+        assert_eq!(r.excess, vec![dec!(10), dec!(10), dec!(100)]);
+        if policy == FailurePolicy::Unwind {
+            assert_eq!(
+                r.actions,
+                vec![
+                    unwind(CALL_LEG, Side::Sell, dec!(10)),
+                    unwind(PUT_LEG, Side::Buy, dec!(10)),
+                    unwind(FUTURE_LEG, Side::Buy, dec!(100)),
+                ]
+            );
+        } else {
+            assert!(r.actions.is_empty());
+        }
+    }
+}
+
+fn lot_leg(id: &str, side: Side, qty: Decimal, size: Decimal, lot: Decimal) -> PackageLegSpec {
+    let mut l = manual_leg(id, side, qty, size);
+    l.lot = q(lot);
+    l
+}
+
+#[test]
+fn decimal_lots_are_supported() {
+    // Spot-like legs of 1 unit per contract with a lot of 0.1.
+    let mut plan = PackagePlan::new(
+        vec![
+            lot_leg("A", Side::Buy, dec!(0.1), dec!(1), dec!(0.1)),
+            lot_leg("B", Side::Sell, dec!(0.1), dec!(1), dec!(0.1)),
+        ],
+        q(dec!(0.1)),
+        FailurePolicy::Abort,
+        usdc(),
+        ts(0),
+    )
+    .unwrap();
+    assert_eq!(plan.grid().value(), dec!(0.1));
+    plan.apply(&PackageEvent::Fill {
+        leg: 0,
+        attempt: 0,
+        exec_id: ExecId("a".to_owned()),
+        quantity: q(dec!(0.1)),
+        cum_qty: q(dec!(0.1)),
+        price: px(dec!(1)),
+        fee: Cost::new(Money::zero(usdc())),
+        at: ts(1),
+    })
+    .unwrap();
+    assert_eq!(plan.matched().unwrap(), dec!(0));
+    assert_eq!(plan.excess().unwrap(), vec![dec!(0.1), dec!(0)]);
+
+    // Mixed lots: A has 0.25 units per contract and a lot of 2 contracts
+    // (0.5 units), B has 1 unit per contract and a lot of 0.2 (0.2 units).
+    // The grid is 1 unit: 4 contracts of A (2 lots), 1 contract of B
+    // (5 lots).
+    let mut plan = PackagePlan::new(
+        vec![
+            lot_leg("A", Side::Buy, dec!(8), dec!(0.25), dec!(2)),
+            lot_leg("B", Side::Sell, dec!(2), dec!(1), dec!(0.2)),
+        ],
+        q(dec!(2)),
+        FailurePolicy::Unwind,
+        usdc(),
+        ts(0),
+    )
+    .unwrap();
+    assert_eq!(plan.grid().value(), dec!(1));
+    plan.apply(&PackageEvent::Fill {
+        leg: 0,
+        attempt: 0,
+        exec_id: ExecId("a".to_owned()),
+        quantity: q(dec!(8)),
+        cum_qty: q(dec!(8)),
+        price: px(dec!(1)),
+        fee: Cost::new(Money::zero(usdc())),
+        at: ts(1),
+    })
+    .unwrap();
+    plan.apply(&PackageEvent::Fill {
+        leg: 1,
+        attempt: 0,
+        exec_id: ExecId("b".to_owned()),
+        quantity: q(dec!(1.4)),
+        cum_qty: q(dec!(1.4)),
+        price: px(dec!(1)),
+        fee: Cost::new(Money::zero(usdc())),
+        at: ts(2),
+    })
+    .unwrap();
+    let r = plan.apply(&ack(1, 0, dec!(1.4), 3)).unwrap();
+    // B holds 1.4 units: one grid matched; excess 4 contracts of A (1 unit)
+    // and 0.4 of B.
+    assert_eq!(r.matched, dec!(1));
+    assert_eq!(r.excess, vec![dec!(4), dec!(0.4)]);
+    assert_eq!(
+        r.actions,
+        vec![
+            PackageAction::Unwind {
+                leg: 0,
+                instrument: dated("A"),
+                side: Side::Sell,
+                quantity: q(dec!(4)),
+            },
+            PackageAction::Unwind {
+                leg: 1,
+                instrument: dated("B"),
+                side: Side::Buy,
+                quantity: q(dec!(0.4)),
+            },
+        ]
+    );
 }

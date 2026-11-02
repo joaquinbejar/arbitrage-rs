@@ -68,6 +68,10 @@ Two principles hold everywhere:
   cancel acknowledgements, connection changes and venue views. Per-attempt
   cumulative quantities, idempotent events, recorded overfills, deadlines
   and expiries, and the failure policies abort, unwind and complete.
+- **Multi-leg packages**: the same execution semantics for any number of
+  legs with different contract sizes and lots (for example the call, put
+  and future of a parity trade). The matched package is kept on a common
+  lot grid, and recovery acts on each leg's excess in whole lots.
 - **Per-venue budgets**: all-or-nothing admission of both legs without
   borrowing capital across venues, with inventory or margin funding for
   sells.
@@ -85,6 +89,7 @@ Two principles hold everywhere:
 | `legs` | `TwoLegPlan`: two-leg execution state machine |
 | `venues` | venue views, budgets and two-leg admission |
 | `parity` | `evaluate_parity`: put-call parity edge against a future |
+| `package` | `PackagePlan`: multi-leg package execution on a common lot grid |
 | `error` | `ArbitrageError`, the crate's typed error |
 
 The monetary types are at the crate root: `Currency`, `Money`, `Cost`,
