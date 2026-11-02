@@ -67,7 +67,7 @@ pub struct OpportunityInput {
     pub buy: LegQuote,
     /// Instrument to sell, at its bid.
     pub sell: LegQuote,
-    /// Size wanted on each leg.
+    /// Size wanted on each leg, on both legs' lot grids (not rounded here).
     pub target_quantity: Quantity,
     /// Smallest size worth trading; less executable size is a rejection.
     pub min_quantity: Quantity,
@@ -194,6 +194,11 @@ impl Evaluation {
 /// The size is `min(target_quantity, ask size, bid size)`: only the top level
 /// of each book is used, so the estimate never assumes depth that was not
 /// quoted.
+///
+/// Lot sizes are a caller precondition: the kernel does not round the size
+/// to either venue's lot. Pass a `target_quantity` that both legs can trade;
+/// if a quoted size is below it and is not on both lot grids, the resulting
+/// leg size may not be placeable as is.
 ///
 /// # Errors
 ///

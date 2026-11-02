@@ -3,6 +3,7 @@
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
 use crate::money::{Currency, Money};
+use crate::wide::{U384, to_decimal};
 use core::fmt;
 use rust_decimal::Decimal;
 
@@ -95,68 +96,53 @@ impl Quantity {
     ///
     /// # Errors
     ///
-    /// - [`ArbitrageError::Overflow`] if `self / lot` is out of range.
-    /// - [`ArbitrageError::Inexact`] if the result is not representable at
-    ///   `lot`'s scale (see [`exact::mul`]), or, near the top of the range, a
-    ///   multiple within one unit in the last place of `self` cannot be
-    ///   compared with it exactly.
+    /// - [`ArbitrageError::Overflow`] if the number of lots, `self / lot`,
+    ///   is above [`Decimal::MAX`].
+    /// - [`ArbitrageError::Inexact`] if the result is not representable as a
+    ///   `Decimal` (more than 28 decimal places or 96 bits of mantissa at its
+    ///   shortest scale).
     pub fn floor_to_lot(&self, lot: Quantity) -> Result<Option<Quantity>> {
-        // The quotient may be rounded in its last place, so the floor is
-        // corrected with exact products: n * lot <= self < (n + 1) * lot.
-        let mut n = self
-            .0
-            .checked_div(lot.0)
+        let (q, l) = (self.0.normalize(), lot.0.normalize());
+        // Both values as integers at a common scale: Q = q * 10^s and
+        // L = lot * 10^s, compared exactly in 384 bits.
+        let s = q.scale().max(l.scale());
+        let overflow = || ArbitrageError::Overflow { op: "floor_to_lot" };
+        let big_q = U384::from_mantissa(q)
+            .checked_mul_pow10(s - q.scale())
+            .ok_or_else(overflow)?;
+        let big_l = U384::from_mantissa(l)
+            .checked_mul_pow10(s - l.scale())
+            .ok_or_else(overflow)?;
+        let lots_le_q = |n: u128| -> Result<bool> {
+            let product = U384::from_u128(n)
+                .checked_mul(&big_l)
+                .ok_or_else(overflow)?;
+            Ok(product <= big_q)
+        };
+
+        // The rounded Decimal quotient is within one of the floor; the exact
+        // comparisons correct it until n * L <= Q < (n + 1) * L.
+        let estimate = q
+            .checked_div(l)
             .ok_or(ArbitrageError::Overflow { op: "div" })?
-            .floor();
-        while n > Decimal::ZERO && !multiple_le(n, lot.0, self.0)? {
-            n = exact::sub(n, Decimal::ONE)?;
+            .floor()
+            .normalize();
+        let mut n = estimate.mantissa().unsigned_abs();
+        while n > 0 && !lots_le_q(n)? {
+            n -= 1;
         }
-        // n + 1 out of range means n is Decimal::MAX, and then the next
-        // multiple is above any representable quantity.
-        while let Ok(next) = exact::add(n, Decimal::ONE) {
-            if !multiple_le(next, lot.0, self.0)? {
-                break;
-            }
-            n = next;
+        // n < 2^96, so n + 1 cannot overflow u128.
+        while lots_le_q(n + 1)? {
+            n += 1;
         }
-        if n.is_zero() {
+        if n == 0 {
             return Ok(None);
         }
-        Ok(Some(Self(exact::mul(n, lot.0)?)))
-    }
-}
-
-/// `n * lot <= q` for `n, lot > 0` and `q > 0`, decided exactly.
-///
-/// - A product out of range is above every representable `q`.
-/// - A product that does not fit at `lot`'s scale (`n` is an integer, so
-///   that is the product's exact scale) is above `q` when `q` has at least
-///   `lot`'s scale, because `q` itself fits at that scale.
-/// - Otherwise such a product is compared through
-///   `rust_decimal`'s rounded product, which is within half a unit of its
-///   last place of the exact one: if it is more than one unit away from `q`
-///   the order is certain. Otherwise the comparison is undecided and
-///   reported as [`ArbitrageError::Inexact`].
-fn multiple_le(n: Decimal, lot: Decimal, q: Decimal) -> Result<bool> {
-    match exact::mul(n, lot) {
-        Ok(product) => Ok(product <= q),
-        Err(ArbitrageError::Overflow { .. }) => Ok(false),
-        Err(ArbitrageError::Inexact { .. }) if lot.normalize().scale() <= q.normalize().scale() => {
-            Ok(false)
-        }
-        Err(ArbitrageError::Inexact { .. }) => {
-            let undecided = ArbitrageError::Inexact { op: "mul" };
-            let rounded = n
-                .checked_mul(lot)
-                .ok_or(ArbitrageError::Overflow { op: "mul" })?;
-            let ulp = Decimal::new(1, rounded.scale());
-            match exact::sub(rounded, q) {
-                Ok(d) if d > ulp => Ok(false),
-                Ok(d) if -d > ulp => Ok(true),
-                _ => Err(undecided),
-            }
-        }
-        Err(e) => Err(e),
+        let product = U384::from_u128(n)
+            .checked_mul(&U384::from_mantissa(l))
+            .ok_or_else(overflow)?;
+        let value = to_decimal(product, l.scale(), false, "floor_to_lot")?;
+        Ok(Some(Self(value)))
     }
 }
 
@@ -240,12 +226,11 @@ mod tests {
         let max_minus_one = Decimal::MAX - dec!(1);
         assert_eq!(floor(max_minus_one, dec!(2)), Some(max_minus_one));
         assert_eq!(floor(Decimal::MAX, dec!(3)), Some(Decimal::MAX));
-        // Half of MAX as the lot: one lot fits, two do not.
+        // Half of MAX (rounded down) as the lot: one lot fits, two do not.
         let half = dec!(39614081257132168796771975167);
         assert_eq!(floor(Decimal::MAX, half), Some(Decimal::MAX - dec!(1)));
-        // Next multiple in range but wider than 96 bits at the shared scale:
-        // q = 7922816251426433759354395033.5, lot 0.2, floor ...033.4 and
-        // the next multiple ...033.6 does not fit, so it is above q.
+        // Next multiple wider than 96 bits at the shared scale: lot 0.2 on
+        // ...033.5 floors to ...033.4; ...033.6 does not fit.
         assert_eq!(
             floor(dec!(7922816251426433759354395033.5), dec!(0.2)),
             Some(dec!(7922816251426433759354395033.4))
@@ -256,11 +241,40 @@ mod tests {
             floor(dec!(7922816251426433759354395033), dec!(0.3)),
             Some(dec!(7922816251426433759354395032.9))
         );
-        // Documented undecided case: the lot has more decimal places than
-        // q and the multiples near MAX need more than 96 bits at scale 1.
+        // MAX / 1.5 = 52818775009509558395695966890 lots exactly; the product
+        // is MAX at scale 1 (97 bits) and MAX after stripping the zero.
+        assert_eq!(floor(Decimal::MAX, dec!(1.5)), Some(Decimal::MAX));
+    }
+
+    #[test]
+    fn floor_to_lot_when_a_product_needs_more_than_96_bits() {
+        let q = |x| Quantity::new(x).unwrap();
+        let third = dec!(0.3333333333333333333333333333);
+        // 10 / third = 30.000...03, floor 30. 30 * third =
+        // 9.9999999999999999999999999990 does not fit at scale 28 but is
+        // 9.999999999999999999999999999 at scale 27.
+        let r = q(dec!(10)).floor_to_lot(q(third)).unwrap().unwrap();
+        assert_eq!(r.value(), dec!(9.999999999999999999999999999));
+        assert_eq!(r.value().scale(), 27);
+        // 7 * third = 2.3333333333333333333333333331 fits at scale 28.
+        let r = q(dec!(2.5)).floor_to_lot(q(third)).unwrap().unwrap();
+        assert_eq!(r.value(), dec!(2.3333333333333333333333333331));
+        // A floor that no Decimal equals is reported. The lot has the
+        // largest mantissa at scale 28; 2 lots end in 0 and fit at scale 27,
+        // 3 lots (23.7684487542793012780631851005) need 97 bits at scale 28.
+        let lot = dec!(7.9228162514264337593543950335);
         assert_eq!(
-            q(Decimal::MAX).floor_to_lot(q(dec!(1.5))),
-            Err(ArbitrageError::Inexact { op: "mul" })
+            q(dec!(16)).floor_to_lot(q(lot)).unwrap().unwrap().value(),
+            dec!(15.845632502852867518708790067)
+        );
+        assert_eq!(
+            q(dec!(24)).floor_to_lot(q(lot)),
+            Err(ArbitrageError::Inexact { op: "floor_to_lot" })
+        );
+        // Lots above Decimal::MAX are still the documented division overflow.
+        assert_eq!(
+            q(Decimal::MAX).floor_to_lot(q(dec!(0.5))),
+            Err(ArbitrageError::Overflow { op: "div" })
         );
     }
 

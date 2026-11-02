@@ -97,6 +97,7 @@ mod cost;
 mod instrument;
 mod money;
 mod units;
+mod wide;
 
 pub use cost::{BPS_PER_UNIT, Cost, FeeRate};
 pub use error::{ArbitrageError, Result};
