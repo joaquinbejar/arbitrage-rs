@@ -41,7 +41,7 @@ fn limits(on_excess: ExcessPolicy) -> HedgeLimits {
         float_dp: 8,
         on_excess,
         reduce_only: false,
-        max_abs_exposure_after: None,
+        exposure_cap: None,
     }
 }
 
@@ -273,7 +273,7 @@ fn requested_of(x: f64, dp: u32) -> Result<Decimal, ArbitrageError> {
         float_dp: dp,
         on_excess: ExcessPolicy::Clip,
         reduce_only: false,
-        max_abs_exposure_after: None,
+        exposure_cap: None,
     };
     let mut m = market();
     m.book.ask = lvl(dec!(1), Decimal::MAX);
@@ -387,7 +387,7 @@ fn the_exposure_limit_clips_the_quantity() {
     // |exposure after| <= 15. From +12.5 a buy has room 2.5 and a sell 27.5
     // (clipped by max_quantity 20 first).
     let mut l = limits(ExcessPolicy::Clip);
-    l.max_abs_exposure_after = Some(q(dec!(15)));
+    l.exposure_cap = Some(q(dec!(15)));
     let p = plan(
         &action(Side::Buy, ActionQuantity::Exact(dec!(10))),
         &l,
@@ -432,7 +432,7 @@ fn the_exposure_limit_clips_the_quantity() {
 fn above_the_cap_only_reductions_are_accepted() {
     // Codex M404-C3 with the coordinator's contract: cap 10.
     let mut l = limits(ExcessPolicy::Clip);
-    l.max_abs_exposure_after = Some(q(dec!(10)));
+    l.exposure_cap = Some(q(dec!(10)));
     let at = |exposure: Decimal| {
         let mut m = market();
         m.exposure = exposure;

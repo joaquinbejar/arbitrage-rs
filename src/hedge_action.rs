@@ -95,7 +95,7 @@ pub struct HedgeLimits {
     ///
     /// The final quantity, after every bound, is validated against these
     /// rules.
-    pub max_abs_exposure_after: Option<Quantity>,
+    pub exposure_cap: Option<Quantity>,
 }
 
 /// The market and position the action is priced against.
@@ -123,9 +123,9 @@ pub enum Adjustment {
     /// Clipped so a reduce-only hedge does not flip the position.
     ReduceOnly,
     /// Clipped to keep the absolute exposure within
-    /// `max_abs_exposure_after`.
+    /// `exposure_cap`.
     ExposureLimit,
-    /// The exposure was above `max_abs_exposure_after` and the plan reduces
+    /// The exposure was above `exposure_cap` and the plan reduces
     /// it without bringing it within the cap (a partial reduction).
     ExposureAboveCap,
     /// Capped at the size quoted on the side the hedge trades.
@@ -258,7 +258,7 @@ pub fn hedge_plan_from_action(
             adjustments.push(Adjustment::ReduceOnly);
         }
     }
-    if let Some(cap) = limits.max_abs_exposure_after {
+    if let Some(cap) = limits.exposure_cap {
         // Buy: exposure + q <= cap. Sell: exposure - q >= -cap.
         let room = match action.side {
             Side::Buy => exact::sub(cap.value(), exposure)?,
@@ -309,7 +309,7 @@ pub fn hedge_plan_from_action(
         Side::Sell => exact::sub(exposure, quantity.value())?,
     };
     // Final validation of the exposure cap, after every bound.
-    if let Some(cap) = limits.max_abs_exposure_after {
+    if let Some(cap) = limits.exposure_cap {
         let (before, after) = (exposure.abs(), expected_exposure_after.abs());
         let within = after <= cap.value();
         let reduces_above = before > cap.value() && after < before && {
