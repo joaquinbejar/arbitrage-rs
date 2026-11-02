@@ -1,5 +1,6 @@
 //! Typed errors of the crate.
 
+use crate::instrument::Timestamp;
 use crate::money::Currency;
 use rust_decimal::Decimal;
 
@@ -55,6 +56,32 @@ pub enum ArbitrageError {
     InvalidCurrency {
         /// The rejected code.
         code: String,
+    },
+
+    /// An instrument identifier is empty, too long or not printable ASCII.
+    #[error("invalid instrument id {id:?}: expected 1 to 64 printable ASCII characters")]
+    InvalidInstrument {
+        /// The rejected identifier.
+        id: String,
+    },
+
+    /// An instrument is used at or after its expiry.
+    #[error("instrument {instrument} expired at {expiry}, evaluated at {as_of}")]
+    Expired {
+        /// Identifier of the expired instrument.
+        instrument: String,
+        /// Its expiry.
+        expiry: Timestamp,
+        /// The evaluation time.
+        as_of: Timestamp,
+    },
+
+    /// An input is inconsistent as a whole (for example both legs of an
+    /// opportunity on the same instrument).
+    #[error("invalid input: {reason}")]
+    InvalidInput {
+        /// What is inconsistent.
+        reason: &'static str,
     },
 
     /// A numeric input breaks the invariant of its type.

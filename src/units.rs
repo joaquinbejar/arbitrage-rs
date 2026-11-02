@@ -78,6 +78,44 @@ impl Quantity {
     pub fn value(&self) -> Decimal {
         self.0
     }
+
+    /// The largest whole multiple of `lot` that is not above `self`, or
+    /// `None` if `self` is below one lot. Exact: the result never exceeds
+    /// `self`.
+    ///
+    /// ```
+    /// use arbitrage_rs::Quantity;
+    /// use rust_decimal_macros::dec;
+    ///
+    /// let q = Quantity::new(dec!(2.37)).unwrap();
+    /// let lot = Quantity::new(dec!(0.1)).unwrap();
+    /// assert_eq!(q.floor_to_lot(lot).unwrap().unwrap().value(), dec!(2.3));
+    /// assert_eq!(lot.floor_to_lot(q).unwrap(), None);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`ArbitrageError::Overflow`] if `self / lot` is out of range, and the
+    /// errors of [`exact::mul`].
+    pub fn floor_to_lot(&self, lot: Quantity) -> Result<Option<Quantity>> {
+        // The quotient may be rounded in its last place, so the floor is
+        // corrected with exact products: n * lot <= self < (n + 1) * lot.
+        let mut n = self
+            .0
+            .checked_div(lot.0)
+            .ok_or(ArbitrageError::Overflow { op: "div" })?
+            .floor();
+        while n > Decimal::ZERO && exact::mul(n, lot.0)? > self.0 {
+            n = exact::sub(n, Decimal::ONE)?;
+        }
+        while exact::mul(exact::add(n, Decimal::ONE)?, lot.0)? <= self.0 {
+            n = exact::add(n, Decimal::ONE)?;
+        }
+        if n.is_zero() {
+            return Ok(None);
+        }
+        Ok(Some(Self(exact::mul(n, lot.0)?)))
+    }
 }
 
 impl fmt::Display for Quantity {
@@ -125,6 +163,26 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn floor_to_lot_never_exceeds_the_quantity() {
+        let q = |x| Quantity::new(x).unwrap();
+        let floor = |a, lot| q(a).floor_to_lot(q(lot)).unwrap().map(|r| r.value());
+        assert_eq!(floor(dec!(1), dec!(0.3)), Some(dec!(0.9)));
+        assert_eq!(floor(dec!(0.9), dec!(0.3)), Some(dec!(0.9)));
+        assert_eq!(floor(dec!(12.34), dec!(0.1)), Some(dec!(12.3)));
+        assert_eq!(floor(dec!(5), dec!(5)), Some(dec!(5)));
+        assert_eq!(floor(dec!(4.999), dec!(5)), None);
+        // 1/3 rounds up in its last place; the correction keeps 0.9999...9.
+        let third = dec!(0.3333333333333333333333333333);
+        let r = floor(dec!(1), third).unwrap();
+        assert_eq!(r, dec!(0.9999999999999999999999999999));
+        assert!(r <= dec!(1));
+        assert_eq!(
+            q(Decimal::MAX).floor_to_lot(q(dec!(0.0000000000000000000000000001))),
+            Err(ArbitrageError::Overflow { op: "div" })
+        );
     }
 
     #[test]
