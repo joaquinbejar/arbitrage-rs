@@ -95,8 +95,11 @@ impl Quantity {
     ///
     /// # Errors
     ///
-    /// [`ArbitrageError::Overflow`] if `self / lot` is out of range, and the
-    /// errors of [`exact::mul`].
+    /// - [`ArbitrageError::Overflow`] if `self / lot` is out of range.
+    /// - [`ArbitrageError::Inexact`] if the result is not representable at
+    ///   `lot`'s scale (see [`exact::mul`]), or, near the top of the range, a
+    ///   multiple within one unit in the last place of `self` cannot be
+    ///   compared with it exactly.
     pub fn floor_to_lot(&self, lot: Quantity) -> Result<Option<Quantity>> {
         // The quotient may be rounded in its last place, so the floor is
         // corrected with exact products: n * lot <= self < (n + 1) * lot.
@@ -105,16 +108,58 @@ impl Quantity {
             .checked_div(lot.0)
             .ok_or(ArbitrageError::Overflow { op: "div" })?
             .floor();
-        while n > Decimal::ZERO && exact::mul(n, lot.0)? > self.0 {
+        while n > Decimal::ZERO && !multiple_le(n, lot.0, self.0)? {
             n = exact::sub(n, Decimal::ONE)?;
         }
-        while exact::mul(exact::add(n, Decimal::ONE)?, lot.0)? <= self.0 {
-            n = exact::add(n, Decimal::ONE)?;
+        loop {
+            // n + 1 out of range means n is Decimal::MAX, and then the next
+            // multiple is above any representable quantity.
+            let Ok(next) = exact::add(n, Decimal::ONE) else {
+                break;
+            };
+            if !multiple_le(next, lot.0, self.0)? {
+                break;
+            }
+            n = next;
         }
         if n.is_zero() {
             return Ok(None);
         }
         Ok(Some(Self(exact::mul(n, lot.0)?)))
+    }
+}
+
+/// `n * lot <= q` for `n, lot > 0` and `q > 0`, decided exactly.
+///
+/// - A product out of range is above every representable `q`.
+/// - A product that does not fit at `lot`'s scale (`n` is an integer, so
+///   that is the product's exact scale) is above `q` when `q` has at least
+///   `lot`'s scale, because `q` itself fits at that scale.
+/// - Otherwise such a product is compared through
+///   `rust_decimal`'s rounded product, which is within half a unit of its
+///   last place of the exact one: if it is more than one unit away from `q`
+///   the order is certain. Otherwise the comparison is undecided and
+///   reported as [`ArbitrageError::Inexact`].
+fn multiple_le(n: Decimal, lot: Decimal, q: Decimal) -> Result<bool> {
+    match exact::mul(n, lot) {
+        Ok(product) => Ok(product <= q),
+        Err(ArbitrageError::Overflow { .. }) => Ok(false),
+        Err(ArbitrageError::Inexact { .. }) if lot.normalize().scale() <= q.normalize().scale() => {
+            Ok(false)
+        }
+        Err(ArbitrageError::Inexact { .. }) => {
+            let undecided = ArbitrageError::Inexact { op: "mul" };
+            let rounded = n
+                .checked_mul(lot)
+                .ok_or(ArbitrageError::Overflow { op: "mul" })?;
+            let ulp = Decimal::new(1, rounded.scale());
+            match exact::sub(rounded, q) {
+                Ok(d) if d > ulp => Ok(false),
+                Ok(d) if -d > ulp => Ok(true),
+                _ => Err(undecided),
+            }
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -182,6 +227,43 @@ mod tests {
         assert_eq!(
             q(Decimal::MAX).floor_to_lot(q(dec!(0.0000000000000000000000000001))),
             Err(ArbitrageError::Overflow { op: "div" })
+        );
+    }
+
+    #[test]
+    fn floor_to_lot_at_the_top_of_the_range() {
+        let q = |x| Quantity::new(x).unwrap();
+        let floor = |a, lot| q(a).floor_to_lot(q(lot)).unwrap().map(|r| r.value());
+        // Exact at MAX: the next multiple is out of range, not an error.
+        assert_eq!(floor(Decimal::MAX, Decimal::MAX), Some(Decimal::MAX));
+        assert_eq!(floor(Decimal::MAX, dec!(1)), Some(Decimal::MAX));
+        // Not exact: MAX = 2 * 39614081257132168796771975167 + 1, and the
+        // next multiple, MAX + 1, is out of range.
+        assert_eq!(floor(Decimal::MAX, dec!(2)), Some(Decimal::MAX - dec!(1)));
+        let max_minus_one = Decimal::MAX - dec!(1);
+        assert_eq!(floor(max_minus_one, dec!(2)), Some(max_minus_one));
+        assert_eq!(floor(Decimal::MAX, dec!(3)), Some(Decimal::MAX));
+        // Half of MAX as the lot: one lot fits, two do not.
+        let half = dec!(39614081257132168796771975167);
+        assert_eq!(floor(Decimal::MAX, half), Some(Decimal::MAX - dec!(1)));
+        // Next multiple in range but wider than 96 bits at the shared scale:
+        // q = 7922816251426433759354395033.5, lot 0.2, floor ...033.4 and
+        // the next multiple ...033.6 does not fit, so it is above q.
+        assert_eq!(
+            floor(dec!(7922816251426433759354395033.5), dec!(0.2)),
+            Some(dec!(7922816251426433759354395033.4))
+        );
+        // Not a whole number of lots near the top: ...033 / 0.3 floors to
+        // 26409387504754779197847983443 lots, ...032.9.
+        assert_eq!(
+            floor(dec!(7922816251426433759354395033), dec!(0.3)),
+            Some(dec!(7922816251426433759354395032.9))
+        );
+        // Documented undecided case: the lot has more decimal places than
+        // q and the multiples near MAX need more than 96 bits at scale 1.
+        assert_eq!(
+            q(Decimal::MAX).floor_to_lot(q(dec!(1.5))),
+            Err(ArbitrageError::Inexact { op: "mul" })
         );
     }
 
