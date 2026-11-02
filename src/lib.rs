@@ -3,9 +3,19 @@
 //! Arbitrage models for spot, futures, perpetuals and options: pricing
 //! relations, opportunity detection and hedge plans.
 //!
-//! This first version (ARB-00) is the crate boundary and its exact monetary
-//! types. Relations, opportunities and hedge plans build on them in later
-//! issues.
+//! The crate is a set of pure decision kernels: no connector, matching
+//! engine or live trading. It contains:
+//!
+//! - exact monetary types (ARB-00): [`Money`], [`Cost`], [`FeeRate`],
+//!   [`Price`], [`Quantity`] and the [`exact`] arithmetic;
+//! - [`opportunity::evaluate`] (M1-06): the net edge of buying one instrument
+//!   at its ask and selling another at its bid, after fees and carry;
+//! - [`hedge::plan_band_hedge`] (M1-06): a one-leg hedge that brings an
+//!   exposure back inside a band.
+//!
+//! Opportunities and hedge plans are intents with expected numbers. They are
+//! never reported as executed or guaranteed profit, and execution is not
+//! assumed to be atomic.
 //!
 //! ## Arithmetic
 //!
@@ -47,7 +57,9 @@
 //! ## Versioning
 //!
 //! The crate is pre-release (`0.1.0`, `publish = false`); the public API may
-//! change in any commit until a release is scoped separately. The minimum
+//! change in any commit until a release is scoped separately. [`Decimal`] is
+//! re-exported and appears in the public API, so `rust_decimal` 1.x is part
+//! of it. The minimum
 //! supported Rust version is 1.85 (edition 2024) and is checked in CI.
 //!
 //! ## Example
@@ -78,13 +90,20 @@
 
 pub mod error;
 pub mod exact;
+pub mod hedge;
+pub mod opportunity;
 
 mod cost;
+mod instrument;
 mod money;
 mod units;
+mod wide;
 
 pub use cost::{BPS_PER_UNIT, Cost, FeeRate};
 pub use error::{ArbitrageError, Result};
+pub use instrument::{
+    Instrument, InstrumentId, Leg, Level, MAX_INSTRUMENT_ID_LEN, Side, Timestamp, TopOfBook,
+};
 pub use money::{Currency, MAX_CURRENCY_LEN, Money, Rounding};
 pub use rust_decimal::Decimal;
 pub use units::{Price, Quantity};
