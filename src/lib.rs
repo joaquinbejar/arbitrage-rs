@@ -15,7 +15,10 @@
 //! - [`funding`] (M3-06): linear perpetual funding cashflows, schedules and
 //!   estimated versus published rates;
 //! - [`basis::evaluate_spot_perp`] (M3-06): the net edge of a spot-perpetual
-//!   basis trade after fees, carry and funding.
+//!   basis trade after fees, carry and funding;
+//! - [`legs::TwoLegPlan`] (M3-11A): a two-leg execution state machine that
+//!   applies observed fills, rejections and cancels without assuming atomic
+//!   execution, and emits recovery intents under an explicit policy.
 //!
 //! Opportunities and hedge plans are intents with expected numbers. They are
 //! never reported as executed or guaranteed profit, and execution is not
@@ -97,6 +100,7 @@ pub mod error;
 pub mod exact;
 pub mod funding;
 pub mod hedge;
+pub mod legs;
 pub mod opportunity;
 
 mod cost;
