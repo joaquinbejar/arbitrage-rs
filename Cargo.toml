@@ -11,8 +11,18 @@ repository = "https://github.com/joaquinbejar/arbitrage-rs"
 homepage = "https://github.com/joaquinbejar/arbitrage-rs"
 keywords = ["finance", "arbitrage", "hedging", "trading", "quantitative"]
 categories = ["finance", "mathematics"]
-# Pre-release: no publication without a separate release scope (ARB-00).
-publish = false
+publish = true
+include = [
+    "src/**/*",
+    "tests/**/*.rs",
+    "docs/exact-arithmetic.md",
+    "Cargo.toml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "Makefile",
+    "rust-toolchain.toml",
+]
 
 [lib]
 name = "arbitrage_rs"

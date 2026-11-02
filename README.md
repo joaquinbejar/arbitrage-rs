@@ -6,7 +6,8 @@
 [![PRs](https://img.shields.io/github/issues-pr/joaquinbejar/arbitrage-rs.svg)](https://github.com/joaquinbejar/arbitrage-rs/pulls)
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/joaquinbejar/arbitrage-rs/ci.yml?branch=main)](https://github.com/joaquinbejar/arbitrage-rs/actions)
-[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://docs.rs/arbitrage-rs)
+[![Documentation](https://docs.rs/arbitrage-rs/badge.svg)](https://docs.rs/arbitrage-rs)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://github.com/joaquinbejar/arbitrage-rs/blob/main/Cargo.toml)
 
 ## Arbitrage Library
 
@@ -310,8 +311,10 @@ and translates its prices, inventory and ledgers into these types.
 
 ### Status
 
-Pre-release: `0.1.0`, not yet published to crates.io. The public API may
-change until the first release. `Decimal` is re-exported and part of the
+`0.1.0` is the first release. The crate follows semantic versioning: below
+`1.0.0`, a minor version bump (`0.x.0`) may carry breaking changes, and a
+patch release does not. Changes are listed in
+[`CHANGELOG.md`](CHANGELOG.md). `Decimal` is re-exported and part of the
 public API, so `rust_decimal` 1.x is too.
 
 MSRV: Rust 1.85 (edition 2024), checked in CI.
