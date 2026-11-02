@@ -1,7 +1,6 @@
-//! Put-call parity edge against a same-expiry future (XM2-17a-1).
+//! Put-call parity edge against a same-expiry future (#18).
 //!
-//! Fixture E of the Xynthex X-M2 plan (section 3.6), with the ECON
-//! defaults: options trade 3 bps of the underlying notional at the index,
+//! Fixture E, with a venue's default fees and contracts: options trade 3 bps of the underlying notional at the index,
 //! capped at 12.5 % of the premium, with a 0.1 XYZ multiplier; the future
 //! trades 5 bps of its notional with a 0.01 XYZ multiplier. One package is
 //! 1 XYZ, so 10 option contracts and 100 future contracts. Fees are
@@ -372,8 +371,8 @@ fn tie_returns_the_reversal() {
 
 #[test]
 fn discount_factor_with_28_places() {
-    // A software exp gives D with 28 decimal places (ECON 2.3: D is not
-    // rounded when published).
+    // A software exp gives D with 28 decimal places, published by the venue
+    // without rounding.
     let mut i = k100();
     i.discount = dec!(0.9900498337491680535739059772);
     let ev = evaluate_parity(&i).unwrap();
