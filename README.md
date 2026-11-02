@@ -362,6 +362,6 @@ None: arbitrage-rs depends only on `rust_decimal` and `thiserror`.
 
 | Repository | Description |
 |------------|-------------|
-| [market-maker-rs](https://github.com/joaquinbejar/market-maker-rs) | Quantitative market making strategies, starting with the Avellaneda-Stoikov model. |
+| [market-maker-rs](https://github.com/joaquinbejar/market-maker-rs) | Quantitative market making strategies, starting with the Avellaneda-Stoikov model. Planned integration: it does not depend on arbitrage-rs yet. |
 
 <!-- related-projects:end -->
