@@ -352,6 +352,8 @@ pub enum Admission {
 ///
 /// # Errors
 ///
+/// - [`ArbitrageError::UnsupportedAction`] if the leg's side is not buy or sell
+///   (checked first).
 /// - [`ArbitrageError::InvalidInput`] if the view is for another instrument
 ///   or another venue than the leg's, or the leg has no venue.
 /// - [`ArbitrageError::Expired`] if the leg's instrument has expired.
@@ -415,6 +417,8 @@ pub fn check_view(
 ///
 /// # Errors
 ///
+/// - [`ArbitrageError::UnsupportedAction`] if either leg's side is not buy or
+///   sell, before any leg is rejected.
 /// - The errors of [`check_view`].
 /// - [`ArbitrageError::CurrencyMismatch`] if a requirement and the budget
 ///   are in different currencies.
@@ -470,8 +474,10 @@ pub fn admit_two_legs(
 ///
 /// # Errors
 ///
-/// [`ArbitrageError::InvalidValue`] for a margin rate outside `(0, 1]`;
-/// arithmetic errors.
+/// - [`ArbitrageError::UnsupportedAction`] if the leg's side is not buy or
+///   sell.
+/// - [`ArbitrageError::InvalidValue`] for a margin rate outside `(0, 1]`.
+/// - Arithmetic errors.
 pub fn requirement(request: &LegRequest<'_>, ccy: Currency) -> Result<Reservation> {
     let leg = &request.spec.leg;
     // A buy limit bounds its price from above; a sell limit only from below,

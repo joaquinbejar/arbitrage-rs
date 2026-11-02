@@ -339,6 +339,8 @@ impl PackagePlan {
     ///
     /// # Errors
     ///
+    /// - [`ArbitrageError::UnsupportedAction`] if a leg's side is not buy or
+    ///   sell (checked first).
     /// - [`ArbitrageError::InvalidInput`] if there are fewer than two legs,
     ///   two legs are the same instrument, a leg's quantity is not a whole
     ///   number of lots or does not hold `package` of underlying, the package

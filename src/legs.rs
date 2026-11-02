@@ -590,6 +590,8 @@ impl TwoLegPlan {
     ///
     /// # Errors
     ///
+    /// - [`ArbitrageError::UnsupportedAction`] if a leg's side is not buy or
+    ///   sell (checked first).
     /// - [`ArbitrageError::InvalidInput`] if the legs are on the same
     ///   instrument, on the same side, have different quantities, or have a
     ///   deadline at or before `created_at`.
