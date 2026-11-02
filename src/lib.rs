@@ -20,7 +20,9 @@
 //!   applies observed fills, rejections and cancels without assuming atomic
 //!   execution, and emits recovery intents under an explicit policy;
 //! - [`venues`] (M3-11B): per-venue views and budgets, and all-or-nothing
-//!   admission of both legs without borrowing capital across venues.
+//!   admission of both legs without borrowing capital across venues;
+//! - [`hedge_action::hedge_plan_from_action`] (M4-04): a bounded, audited
+//!   conversion of an external policy's hedge action into a hedge plan.
 //!
 //! Opportunities and hedge plans are intents with expected numbers. They are
 //! never reported as executed or guaranteed profit, and execution is not
@@ -102,6 +104,7 @@ pub mod error;
 pub mod exact;
 pub mod funding;
 pub mod hedge;
+pub mod hedge_action;
 pub mod legs;
 pub mod opportunity;
 
