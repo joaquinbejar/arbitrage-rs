@@ -1,27 +1,53 @@
 //! Two-leg plan execution state machine.
 //!
 //! A [`TwoLegPlan`] tracks two legs meant to offset each other one to one
-//! (for example the buy and sell legs of an
-//! [`Opportunity`]) as execution events are
-//! observed. It never assumes that both legs fill together:
+//! (for example the buy and sell legs of an [`Opportunity`]) as execution
+//! events are observed. It never assumes that both legs fill together:
 //!
 //! - every fill, rejection and cancel acknowledgement is applied as observed,
-//!   and the residual exposure (the signed sum of both legs' filled
-//!   positions) is always visible;
+//!   and the residual exposure (the signed sum of both legs' executed
+//!   positions) is reported after every event;
 //! - when a leg fails (rejected, or cancelled with quantity left), the
 //!   configured [`FailurePolicy`] decides the recovery intent: resubmit the
 //!   failed leg, abort (cancel the other leg and keep the residual), or
 //!   unwind (cancel the other leg, then offset the residual);
-//! - a leg deadline asks for a cancel; the leg stays working until the cancel
-//!   is acknowledged, and fills that arrive before or after the
-//!   acknowledgement are still applied;
+//! - a leg's effective deadline is the earlier of its own deadline and its
+//!   instrument's expiry; reaching it asks for a cancel, and the leg keeps
+//!   working until the cancel is acknowledged;
 //! - events are idempotent: a fill is identified by its execution id, and a
 //!   rejection or acknowledgement by its leg and attempt, so a repeated event
 //!   changes nothing.
 //!
 //! The plan only emits intents ([`PlanAction`]); sending orders is the
-//! caller's job. Observations are assumed to arrive in time order;
-//! per-venue clocks and delayed views are a later extension.
+//! caller's job.
+//!
+//! ## Cumulative quantities and late fills
+//!
+//! Every order attempt is tracked separately. As in FIX execution reports,
+//! a fill carries the attempt's cumulative executed quantity (`cum_qty`) and
+//! a cancel acknowledgement carries the attempt's final one:
+//!
+//! - a fill is accepted when its `cum_qty` equals the attempt's previous
+//!   cumulative plus the fill, does not exceed the attempt's quantity and,
+//!   once the attempt is acknowledged, does not exceed the acknowledged
+//!   final quantity. Its timestamp may be older than the last event: a fill
+//!   that was executed before a cancel but delivered after its
+//!   acknowledgement is consistent and is applied;
+//! - the **executed** quantity of an acknowledged attempt is the final
+//!   quantity from the acknowledgement, even while some of its fills are
+//!   still in flight; the residual exposure and every resubmission use it,
+//!   so a late fill never makes the plan resubmit or unwind too much;
+//! - fees and notional come from fills only, so they grow as late fills
+//!   arrive.
+//!
+//! Rejections, acknowledgements and ticks must arrive with non-decreasing
+//! timestamps; an older one is rejected.
+//!
+//! ## Units
+//!
+//! The two legs must have the same quantity and offset one to one in its
+//! units (for example the same underlying on two venues). Other hedge ratios
+//! must be converted by the caller.
 
 use crate::cost::Cost;
 use crate::error::{ArbitrageError, Result};
@@ -65,8 +91,20 @@ impl LegIndex {
 pub struct LegSpec {
     /// Instrument, side, quantity and limit price.
     pub leg: Leg,
-    /// When to stop working the leg; reaching it requests a cancel.
+    /// When to stop working the leg; reaching it requests a cancel. The
+    /// instrument's expiry, if earlier, applies instead.
     pub deadline: Option<Timestamp>,
+}
+
+impl LegSpec {
+    /// The earlier of `deadline` and the instrument's expiry.
+    #[must_use]
+    pub fn effective_deadline(&self) -> Option<Timestamp> {
+        match (self.deadline, self.leg.instrument.expiry) {
+            (Some(d), Some(e)) => Some(d.min(e)),
+            (d, e) => d.or(e),
+        }
+    }
 }
 
 /// What to do after a recovery by resubmission is exhausted.
@@ -89,7 +127,8 @@ pub enum FailurePolicy {
     /// residual exposure.
     Unwind,
     /// Resubmit the failed leg's remaining quantity, at most `max_resubmits`
-    /// times in total, then apply `then`.
+    /// times over the plan's life and never past the leg's effective
+    /// deadline, then apply `then`.
     Complete {
         /// Resubmissions allowed over the plan's life.
         max_resubmits: u32,
@@ -105,7 +144,7 @@ pub struct ExecId(pub String);
 /// An observed execution event for one leg, or the passage of time.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LegExecution {
-    /// A (partial) fill.
+    /// A (partial) fill of an attempt.
     Fill {
         /// The leg.
         leg: LegIndex,
@@ -115,11 +154,14 @@ pub enum LegExecution {
         exec_id: ExecId,
         /// Filled quantity.
         quantity: Quantity,
+        /// The attempt's cumulative executed quantity including this fill.
+        cum_qty: Quantity,
         /// Fill price.
         price: Price,
         /// Fee charged (negative for a rebate), in the plan currency.
         fee: Cost,
-        /// When it was observed.
+        /// When it was executed or observed; it may be older than the last
+        /// event if `cum_qty` is consistent.
         at: Timestamp,
     },
     /// The attempt was rejected without filling.
@@ -137,6 +179,8 @@ pub enum LegExecution {
         leg: LegIndex,
         /// The cancelled attempt.
         attempt: u32,
+        /// The attempt's final cumulative executed quantity (zero or more).
+        cum_qty: Decimal,
         /// When it was observed.
         at: Timestamp,
     },
@@ -145,17 +189,6 @@ pub enum LegExecution {
         /// The current time.
         at: Timestamp,
     },
-}
-
-impl LegExecution {
-    fn at(&self) -> Timestamp {
-        match self {
-            Self::Fill { at, .. }
-            | Self::Rejected { at, .. }
-            | Self::CancelAck { at, .. }
-            | Self::Tick { at } => *at,
-        }
-    }
 }
 
 /// An intent the plan asks the caller to carry out.
@@ -174,7 +207,7 @@ pub enum PlanAction {
         leg: LegIndex,
         /// The new attempt number.
         attempt: u32,
-        /// Quantity still to fill.
+        /// Quantity still to execute.
         quantity: Quantity,
         /// Limit price (the plan's price for the leg).
         price: Price,
@@ -182,13 +215,57 @@ pub enum PlanAction {
     /// Send an order that offsets residual exposure. It is an intent: the
     /// residual stays visible until fills are observed elsewhere.
     Unwind {
-        /// Instrument to trade (the leg that filled more).
+        /// Instrument to trade.
         instrument: Instrument,
         /// Side that reduces the residual.
         side: Side,
         /// Quantity to offset.
         quantity: Quantity,
     },
+}
+
+/// How an attempt ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AttemptOutcome {
+    /// Rejected without fills.
+    Rejected,
+    /// Cancelled with a final cumulative quantity.
+    Cancelled,
+}
+
+/// One order attempt of a leg.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AttemptState {
+    /// Quantity the attempt was sent for.
+    pub quantity: Quantity,
+    /// Cumulative quantity of the fills applied so far.
+    pub observed: Decimal,
+    /// Final cumulative quantity from the rejection (zero) or cancel
+    /// acknowledgement.
+    pub final_cum: Option<Decimal>,
+    /// How it ended, if it has.
+    pub outcome: Option<AttemptOutcome>,
+    /// True once a cancel was requested for it.
+    pub cancel_requested: bool,
+}
+
+impl AttemptState {
+    fn new(quantity: Quantity) -> Self {
+        Self {
+            quantity,
+            observed: Decimal::ZERO,
+            final_cum: None,
+            outcome: None,
+            cancel_requested: false,
+        }
+    }
+
+    /// Executed quantity: the acknowledged final cumulative if known, else
+    /// the fills observed so far.
+    #[must_use]
+    pub fn executed(&self) -> Decimal {
+        self.final_cum.unwrap_or(self.observed)
+    }
 }
 
 /// Where a leg stands.
@@ -204,7 +281,7 @@ pub enum LegStatus {
         /// Attempt being cancelled.
         attempt: u32,
     },
-    /// The whole quantity is filled.
+    /// The whole quantity is executed.
     Filled,
     /// The last attempt was rejected with quantity left.
     Rejected,
@@ -223,7 +300,7 @@ impl LegStatus {
 pub enum PlanState {
     /// Both legs are being worked (possibly after resubmissions).
     Working,
-    /// Both legs are filled.
+    /// Both legs are executed in full.
     Completed,
     /// A leg failed; the other leg is being cancelled before aborting.
     Aborting,
@@ -231,9 +308,8 @@ pub enum PlanState {
     Unwinding,
     /// Both legs are done and the residual is kept.
     Aborted,
-    /// Both legs are done under the unwind policy: every residual, including
-    /// one created by a late fill, is offset by an [`PlanAction::Unwind`]
-    /// intent (none when the legs ended flat).
+    /// Both legs are done under the unwind policy: every residual is offset
+    /// by a [`PlanAction::Unwind`] intent (none when the legs ended flat).
     UnwindRequested,
 }
 
@@ -242,45 +318,83 @@ pub enum PlanState {
 pub struct LegState {
     /// The leg as planned.
     pub spec: LegSpec,
-    /// Its status.
-    pub status: LegStatus,
-    /// Total filled quantity over all attempts.
-    pub filled: Decimal,
-    /// Sum of `price * quantity` over fills.
+    /// Its attempts; the index is the attempt number.
+    pub attempts: Vec<AttemptState>,
+    /// Sum of `price * quantity` over applied fills.
     pub filled_notional: Money,
-    /// Sum of fees over fills.
+    /// Sum of fees over applied fills.
     pub fees: Cost,
-    /// Number of resubmissions so far.
-    pub resubmits: u32,
     deadline_cancelled: bool,
 }
 
 impl LegState {
-    /// Quantity left to fill.
+    /// Executed quantity over all attempts (see [`AttemptState::executed`]).
+    ///
+    /// # Errors
+    ///
+    /// Arithmetic errors.
+    pub fn executed(&self) -> Result<Decimal> {
+        self.attempts
+            .iter()
+            .try_fold(Decimal::ZERO, |acc, a| exact::add(acc, a.executed()))
+    }
+
+    /// Quantity left to execute.
     ///
     /// # Errors
     ///
     /// Arithmetic errors.
     pub fn remaining(&self) -> Result<Decimal> {
-        exact::sub(self.spec.leg.quantity.value(), self.filled)
+        exact::sub(self.spec.leg.quantity.value(), self.executed()?)
     }
 
-    /// Signed filled position: positive for a buy leg, negative for a sell.
+    /// Signed executed position: positive for a buy leg, negative for a
+    /// sell.
+    ///
+    /// # Errors
+    ///
+    /// Arithmetic errors.
+    pub fn position(&self) -> Result<Decimal> {
+        let executed = self.executed()?;
+        Ok(match self.spec.leg.side {
+            Side::Buy => executed,
+            Side::Sell => exact::neg(executed),
+        })
+    }
+
+    /// Resubmissions so far.
     #[must_use]
-    pub fn position(&self) -> Decimal {
-        match self.spec.leg.side {
-            Side::Buy => self.filled,
-            Side::Sell => exact::neg(self.filled),
-        }
+    pub fn resubmits(&self) -> u32 {
+        u32::try_from(self.attempts.len().saturating_sub(1)).unwrap_or(u32::MAX)
     }
 
-    fn attempt(&self) -> Option<u32> {
-        match self.status {
-            LegStatus::Working { attempt } | LegStatus::CancelRequested { attempt } => {
-                Some(attempt)
-            }
-            _ => None,
+    /// The leg's status.
+    ///
+    /// # Errors
+    ///
+    /// Arithmetic errors.
+    pub fn status(&self) -> Result<LegStatus> {
+        if self.remaining()?.is_zero() {
+            return Ok(LegStatus::Filled);
         }
+        let attempt = self.resubmits();
+        let current = self.current();
+        Ok(match (current.outcome, current.cancel_requested) {
+            (Some(AttemptOutcome::Rejected), _) => LegStatus::Rejected,
+            (Some(AttemptOutcome::Cancelled), _) => LegStatus::Cancelled,
+            (None, true) => LegStatus::CancelRequested { attempt },
+            (None, false) => LegStatus::Working { attempt },
+        })
+    }
+
+    fn current(&self) -> &AttemptState {
+        // `attempts` is never empty: attempt 0 is created with the leg.
+        &self.attempts[self.attempts.len() - 1]
+    }
+
+    fn current_mut(&mut self) -> &mut AttemptState {
+        let last = self.attempts.len() - 1;
+        &mut self.attempts[last]
     }
 }
 
@@ -292,7 +406,7 @@ pub struct PlanActions {
     /// The plan state after the event.
     pub state: PlanState,
     /// Residual exposure after the event: the sum of both legs' signed
-    /// filled positions (zero when the legs offset each other).
+    /// executed positions (zero when the legs offset each other).
     pub residual: Decimal,
     /// True if the event was a repeat and changed nothing.
     pub duplicate: bool,
@@ -303,6 +417,7 @@ struct FillRecord {
     leg: LegIndex,
     attempt: u32,
     quantity: Quantity,
+    cum_qty: Quantity,
     price: Price,
     fee: Cost,
 }
@@ -316,7 +431,6 @@ pub struct TwoLegPlan {
     state: PlanState,
     last_at: Timestamp,
     fills: BTreeMap<ExecId, FillRecord>,
-    closed_attempts: BTreeMap<(LegIndex, u32), LegStatus>,
     unwind_requested: Decimal,
 }
 
@@ -326,9 +440,11 @@ impl TwoLegPlan {
     ///
     /// # Errors
     ///
-    /// [`ArbitrageError::InvalidInput`] if the legs are on the same
-    /// instrument, on the same side, or have a deadline at or before
-    /// `created_at`.
+    /// - [`ArbitrageError::InvalidInput`] if the legs are on the same
+    ///   instrument, on the same side, have different quantities, or have a
+    ///   deadline at or before `created_at`.
+    /// - [`ArbitrageError::Expired`] if a leg's instrument has expired at
+    ///   `created_at`.
     pub fn new(
         first: LegSpec,
         second: LegSpec,
@@ -346,7 +462,13 @@ impl TwoLegPlan {
                 reason: "the two legs must be on opposite sides to offset",
             });
         }
+        if first.leg.quantity != second.leg.quantity {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "the two legs must have the same quantity to offset one to one",
+            });
+        }
         for spec in [&first, &second] {
+            spec.leg.instrument.ensure_live(created_at)?;
             if spec.deadline.is_some_and(|d| d <= created_at) {
                 return Err(ArbitrageError::InvalidInput {
                     reason: "a leg deadline is not after the plan creation",
@@ -354,12 +476,10 @@ impl TwoLegPlan {
             }
         }
         let leg_state = |spec: LegSpec| LegState {
+            attempts: vec![AttemptState::new(spec.leg.quantity)],
             spec,
-            status: LegStatus::Working { attempt: 0 },
-            filled: Decimal::ZERO,
             filled_notional: Money::zero(currency),
             fees: Cost::new(Money::zero(currency)),
-            resubmits: 0,
             deadline_cancelled: false,
         };
         Ok(Self {
@@ -369,7 +489,6 @@ impl TwoLegPlan {
             state: PlanState::Working,
             last_at: created_at,
             fills: BTreeMap::new(),
-            closed_attempts: BTreeMap::new(),
             unwind_requested: Decimal::ZERO,
         })
     }
@@ -413,13 +532,13 @@ impl TwoLegPlan {
         &self.legs[leg.slot()]
     }
 
-    /// Residual exposure: the sum of both legs' signed filled positions.
+    /// Residual exposure: the sum of both legs' signed executed positions.
     ///
     /// # Errors
     ///
     /// Arithmetic errors.
     pub fn residual(&self) -> Result<Decimal> {
-        exact::add(self.legs[0].position(), self.legs[1].position())
+        exact::add(self.legs[0].position()?, self.legs[1].position()?)
     }
 
     /// Fees of both legs.
@@ -433,25 +552,38 @@ impl TwoLegPlan {
 
     /// Applies one observed event and returns the resulting intents.
     ///
+    /// The plan is unchanged when an error is returned.
+    ///
     /// # Errors
     ///
-    /// - [`ArbitrageError::InvalidInput`] for an event older than the last
-    ///   applied one, a fill that would exceed the leg quantity, an event for
-    ///   an attempt that was never sent, a reused execution id with
-    ///   different content, or a rejection after fills of the same attempt.
+    /// - [`ArbitrageError::InvalidInput`] for an attempt that was never sent,
+    ///   an inconsistent `cum_qty` (not the previous cumulative plus the
+    ///   fill, above the attempt quantity, or above or below what an
+    ///   acknowledgement or the applied fills say), a reused execution id
+    ///   with different content, a rejection of an attempt with fills, a
+    ///   fill on a rejected attempt, an attempt closed twice differently, or
+    ///   a non-fill event older than the last applied one.
     /// - [`ArbitrageError::CurrencyMismatch`] for a fee in another currency.
     /// - Arithmetic errors.
     pub fn apply(&mut self, event: &LegExecution) -> Result<PlanActions> {
         if self.is_duplicate(event)? {
             return self.report(Vec::new(), true);
         }
-        let at = event.at();
-        if at < self.last_at {
-            return Err(ArbitrageError::InvalidInput {
-                reason: "event is older than the last applied event",
-            });
-        }
-        // Work on a copy so that an error leaves the plan unchanged.
+        let at = match event {
+            LegExecution::Fill { at, .. } => (*at).max(self.last_at),
+            LegExecution::Rejected { at, .. }
+            | LegExecution::CancelAck { at, .. }
+            | LegExecution::Tick { at } => {
+                if *at < self.last_at {
+                    return Err(ArbitrageError::InvalidInput {
+                        reason: "event is older than the last applied event",
+                    });
+                }
+                *at
+            }
+        };
+        // Work on a copy and commit only if the whole step and its report
+        // succeed, so that an error leaves the plan unchanged.
         let mut next = self.clone();
         let mut actions = Vec::new();
         next.last_at = at;
@@ -461,21 +593,38 @@ impl TwoLegPlan {
                 attempt,
                 exec_id,
                 quantity,
+                cum_qty,
                 price,
                 fee,
                 ..
-            } => next.apply_fill(*leg, *attempt, exec_id, *quantity, *price, *fee)?,
+            } => next.apply_fill(
+                exec_id,
+                FillRecord {
+                    leg: *leg,
+                    attempt: *attempt,
+                    quantity: *quantity,
+                    cum_qty: *cum_qty,
+                    price: *price,
+                    fee: *fee,
+                },
+            )?,
             LegExecution::Rejected { leg, attempt, .. } => {
-                next.close_attempt(*leg, *attempt, LegStatus::Rejected)?;
+                next.close_attempt(*leg, *attempt, AttemptOutcome::Rejected, Decimal::ZERO)?;
             }
-            LegExecution::CancelAck { leg, attempt, .. } => {
-                next.close_attempt(*leg, *attempt, LegStatus::Cancelled)?;
+            LegExecution::CancelAck {
+                leg,
+                attempt,
+                cum_qty,
+                ..
+            } => {
+                next.close_attempt(*leg, *attempt, AttemptOutcome::Cancelled, *cum_qty)?;
             }
             LegExecution::Tick { .. } => {}
         }
         next.step(at, &mut actions)?;
+        let report = next.report(actions, false)?;
         *self = next;
-        self.report(actions, false)
+        Ok(report)
     }
 
     fn report(&self, actions: Vec<PlanAction>, duplicate: bool) -> Result<PlanActions> {
@@ -487,6 +636,13 @@ impl TwoLegPlan {
         })
     }
 
+    fn closed_as(&self, leg: LegIndex, attempt: u32) -> Option<(AttemptOutcome, Option<Decimal>)> {
+        self.legs[leg.slot()]
+            .attempts
+            .get(attempt as usize)
+            .and_then(|a| a.outcome.map(|o| (o, a.final_cum)))
+    }
+
     fn is_duplicate(&self, event: &LegExecution) -> Result<bool> {
         match event {
             LegExecution::Fill {
@@ -494,6 +650,7 @@ impl TwoLegPlan {
                 attempt,
                 exec_id,
                 quantity,
+                cum_qty,
                 price,
                 fee,
                 ..
@@ -504,6 +661,7 @@ impl TwoLegPlan {
                         leg: *leg,
                         attempt: *attempt,
                         quantity: *quantity,
+                        cum_qty: *cum_qty,
                         price: *price,
                         fee: *fee,
                     };
@@ -517,125 +675,108 @@ impl TwoLegPlan {
                 }
             },
             LegExecution::Rejected { leg, attempt, .. } => Ok(self
-                .closed_attempts
-                .get(&(*leg, *attempt))
-                .is_some_and(|s| *s == LegStatus::Rejected)),
-            LegExecution::CancelAck { leg, attempt, .. } => Ok(self
-                .closed_attempts
-                .get(&(*leg, *attempt))
-                .is_some_and(|s| *s == LegStatus::Cancelled)),
+                .closed_as(*leg, *attempt)
+                .is_some_and(|(o, _)| o == AttemptOutcome::Rejected)),
+            LegExecution::CancelAck {
+                leg,
+                attempt,
+                cum_qty,
+                ..
+            } => Ok(self.closed_as(*leg, *attempt).is_some_and(|(o, f)| {
+                o == AttemptOutcome::Cancelled && f == Some(cum_qty.normalize())
+            })),
             LegExecution::Tick { .. } => Ok(false),
         }
     }
 
-    fn check_attempt(&self, leg: LegIndex, attempt: u32) -> Result<()> {
-        if attempt > self.legs[leg.slot()].resubmits {
-            return Err(ArbitrageError::InvalidInput {
+    fn attempt_mut(&mut self, leg: LegIndex, attempt: u32) -> Result<&mut AttemptState> {
+        self.legs[leg.slot()]
+            .attempts
+            .get_mut(attempt as usize)
+            .ok_or(ArbitrageError::InvalidInput {
                 reason: "event for an attempt that was never sent",
+            })
+    }
+
+    fn apply_fill(&mut self, exec_id: &ExecId, fill: FillRecord) -> Result<()> {
+        if fill.fee.money().currency() != self.currency {
+            return Err(ArbitrageError::CurrencyMismatch {
+                left: self.currency,
+                right: fill.fee.money().currency(),
             });
         }
+        let invalid = |reason| Err(ArbitrageError::InvalidInput { reason });
+        let state = self.attempt_mut(fill.leg, fill.attempt)?;
+        if state.outcome == Some(AttemptOutcome::Rejected) {
+            return invalid("fill for a rejected attempt");
+        }
+        let cum = exact::add(state.observed, fill.quantity.value())?;
+        if cum != fill.cum_qty.value() {
+            return invalid("cum_qty is not the attempt's cumulative plus the fill");
+        }
+        if cum > state.quantity.value() {
+            return invalid("cum_qty exceeds the attempt quantity");
+        }
+        if state.final_cum.is_some_and(|f| cum > f) {
+            return invalid("cum_qty exceeds the acknowledged final quantity");
+        }
+        state.observed = cum;
+        let notional = fill.price.notional(fill.quantity, self.currency)?;
+        let leg_state = &mut self.legs[fill.leg.slot()];
+        leg_state.filled_notional = leg_state.filled_notional.checked_add(notional)?;
+        leg_state.fees = leg_state.fees.checked_add(fill.fee)?;
+        self.fills.insert(exec_id.clone(), fill);
         Ok(())
     }
 
-    fn apply_fill(
+    fn close_attempt(
         &mut self,
         leg: LegIndex,
         attempt: u32,
-        exec_id: &ExecId,
-        quantity: Quantity,
-        price: Price,
-        fee: Cost,
+        outcome: AttemptOutcome,
+        final_cum: Decimal,
     ) -> Result<()> {
-        self.check_attempt(leg, attempt)?;
-        if self.closed_attempts.get(&(leg, attempt)) == Some(&LegStatus::Rejected) {
-            return Err(ArbitrageError::InvalidInput {
-                reason: "fill for a rejected attempt",
-            });
+        let invalid = |reason| Err(ArbitrageError::InvalidInput { reason });
+        let state = self.attempt_mut(leg, attempt)?;
+        if state.outcome.is_some() {
+            return invalid("attempt already closed with a different outcome");
         }
-        if fee.money().currency() != self.currency {
-            return Err(ArbitrageError::CurrencyMismatch {
-                left: self.currency,
-                right: fee.money().currency(),
-            });
+        if outcome == AttemptOutcome::Rejected && !state.observed.is_zero() {
+            return invalid("rejection of an attempt that has fills");
         }
-        let state = &mut self.legs[leg.slot()];
-        let filled = exact::add(state.filled, quantity.value())?;
-        if filled > state.spec.leg.quantity.value() {
-            return Err(ArbitrageError::InvalidInput {
-                reason: "fill exceeds the leg quantity",
-            });
+        if final_cum < state.observed {
+            return invalid("acknowledged cum_qty is below the fills already applied");
         }
-        state.filled = filled;
-        state.filled_notional = state
-            .filled_notional
-            .checked_add(price.notional(quantity, self.currency)?)?;
-        state.fees = state.fees.checked_add(fee)?;
-        if state.remaining()?.is_zero() {
-            state.status = LegStatus::Filled;
+        if final_cum > state.quantity.value() {
+            return invalid("acknowledged cum_qty exceeds the attempt quantity");
         }
-        self.fills.insert(
-            exec_id.clone(),
-            FillRecord {
-                leg,
-                attempt,
-                quantity,
-                price,
-                fee,
-            },
-        );
-        Ok(())
-    }
-
-    fn close_attempt(&mut self, leg: LegIndex, attempt: u32, outcome: LegStatus) -> Result<()> {
-        self.check_attempt(leg, attempt)?;
-        if outcome == LegStatus::Rejected
-            && self
-                .fills
-                .values()
-                .any(|f| f.leg == leg && f.attempt == attempt)
-        {
-            return Err(ArbitrageError::InvalidInput {
-                reason: "rejection of an attempt that has fills",
-            });
-        }
-        if self.closed_attempts.contains_key(&(leg, attempt)) {
-            return Err(ArbitrageError::InvalidInput {
-                reason: "attempt already closed with a different outcome",
-            });
-        }
-        self.closed_attempts.insert((leg, attempt), outcome);
-        let state = &mut self.legs[leg.slot()];
-        // Only the current attempt moves the leg; a late acknowledgement of
-        // an older attempt is recorded and changes nothing else.
-        if state.attempt() == Some(attempt) {
-            state.status = if state.remaining()?.is_zero() {
-                LegStatus::Filled
-            } else {
-                outcome
-            };
-        }
+        state.outcome = Some(outcome);
+        state.final_cum = Some(final_cum.normalize());
         Ok(())
     }
 
     /// Re-evaluates deadlines, completion and the failure policy at `at`.
     fn step(&mut self, at: Timestamp, actions: &mut Vec<PlanAction>) -> Result<()> {
-        // Deadlines request a cancel once per leg.
+        // Effective deadlines (own deadline or instrument expiry) request a
+        // cancel once per leg.
         for i in [LegIndex::First, LegIndex::Second] {
+            let status = self.legs[i.slot()].status()?;
             let state = &mut self.legs[i.slot()];
-            if let LegStatus::Working { attempt } = state.status {
-                if !state.deadline_cancelled && state.spec.deadline.is_some_and(|d| d <= at) {
+            if let LegStatus::Working { attempt } = status {
+                if !state.deadline_cancelled
+                    && state.spec.effective_deadline().is_some_and(|d| d <= at)
+                {
                     state.deadline_cancelled = true;
-                    state.status = LegStatus::CancelRequested { attempt };
+                    state.current_mut().cancel_requested = true;
                     actions.push(PlanAction::Cancel { leg: i, attempt });
                 }
             }
         }
 
-        // Completion only from Working: once a recovery started, late fills
+        let statuses = [self.legs[0].status()?, self.legs[1].status()?];
+        // Completion only from Working: once a recovery started, executions
         // that complete both legs only change the residual.
-        if self.state == PlanState::Working
-            && self.legs.iter().all(|l| l.status == LegStatus::Filled)
-        {
+        if self.state == PlanState::Working && statuses.iter().all(|s| *s == LegStatus::Filled) {
             self.state = PlanState::Completed;
             return Ok(());
         }
@@ -643,7 +784,7 @@ impl TwoLegPlan {
         if self.state == PlanState::Working {
             let failed = [LegIndex::First, LegIndex::Second].into_iter().find(|i| {
                 matches!(
-                    self.legs[i.slot()].status,
+                    statuses[i.slot()],
                     LegStatus::Rejected | LegStatus::Cancelled
                 )
             });
@@ -652,15 +793,15 @@ impl TwoLegPlan {
             }
         }
 
-        let all_done = self.legs.iter().all(|l| l.status.is_terminal());
+        let all_done = self.legs[0].status()?.is_terminal() && self.legs[1].status()?.is_terminal();
         match self.state {
             PlanState::Aborting if all_done => self.state = PlanState::Aborted,
             PlanState::Unwinding if all_done => {
                 self.state = PlanState::UnwindRequested;
                 self.request_unwind(actions)?;
             }
-            // A late fill after the unwind was requested changes the
-            // residual; request the difference.
+            // Executions after the unwind was requested change the residual;
+            // request the difference.
             PlanState::UnwindRequested => self.request_unwind(actions)?,
             _ => {}
         }
@@ -675,18 +816,18 @@ impl TwoLegPlan {
                 max_resubmits,
                 then,
             } => {
-                let total: u32 = self.legs.iter().map(|l| l.resubmits).sum();
-                let state = &self.legs[leg.slot()];
-                let deadline_passed = state.deadline_cancelled;
-                if total < max_resubmits && !deadline_passed {
-                    let state = &mut self.legs[leg.slot()];
-                    state.resubmits += 1;
-                    let attempt = state.resubmits;
-                    state.status = LegStatus::Working { attempt };
+                let total: u32 = self.legs.iter().map(LegState::resubmits).sum();
+                let state = &mut self.legs[leg.slot()];
+                if total < max_resubmits && !state.deadline_cancelled {
+                    // The executed quantity includes fills that the
+                    // acknowledgement reported but that are still in flight,
+                    // so the resubmission never overlaps them.
+                    let quantity = Quantity::new(state.remaining()?)?;
+                    state.attempts.push(AttemptState::new(quantity));
                     actions.push(PlanAction::Resubmit {
                         leg,
-                        attempt,
-                        quantity: Quantity::new(state.remaining()?)?,
+                        attempt: state.resubmits(),
+                        quantity,
                         price: state.spec.leg.price,
                     });
                     return Ok(());
@@ -699,9 +840,8 @@ impl TwoLegPlan {
             Fallback::Unwind => PlanState::Unwinding,
         };
         let other = leg.other();
-        let state = &mut self.legs[other.slot()];
-        if let LegStatus::Working { attempt } = state.status {
-            state.status = LegStatus::CancelRequested { attempt };
+        if let LegStatus::Working { attempt } = self.legs[other.slot()].status()? {
+            self.legs[other.slot()].current_mut().cancel_requested = true;
             actions.push(PlanAction::Cancel {
                 leg: other,
                 attempt,
@@ -717,9 +857,8 @@ impl TwoLegPlan {
             return Ok(());
         }
         // Offset on the leg whose position has the sign of the open residual.
-        let source = if self.legs[0].position().is_sign_negative() == open.is_sign_negative()
-            && !self.legs[0].position().is_zero()
-        {
+        let first = self.legs[0].position()?;
+        let source = if !first.is_zero() && first.is_sign_negative() == open.is_sign_negative() {
             &self.legs[0]
         } else {
             &self.legs[1]
