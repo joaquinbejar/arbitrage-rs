@@ -5,14 +5,17 @@
 //! quantity. [`hedge_plan_from_action`] turns it into the same
 //! [`HedgePlan`] the band hedger produces, after validating and bounding it:
 //!
-//! - a quantity given as a float must be finite and within `Decimal`'s
-//!   range. Its exact binary value is rounded once, half to even, to
-//!   [`HedgeLimits::float_dp`] decimal places (so `12.34` stays `12.34`);
-//!   the conversion is deterministic and moves the value by at most half a
-//!   unit in that place, before any bound below;
+//! - a quantity given as a float must be finite, not negative (checked on
+//!   the float, so `-1e-9` is an error, while `-0.0` is zero) and within
+//!   `Decimal`'s range. Its exact binary value (`mantissa * 2^exponent`) is
+//!   rounded **once**, half to even, to [`HedgeLimits::float_dp`] decimal
+//!   places, in exact integer arithmetic (so `12.34` stays `12.34`); the
+//!   conversion is deterministic and moves the value by at most half a unit
+//!   in that place, before any bound below;
 //! - the quantity must not be negative, and zero plans nothing;
 //! - it is bounded by [`HedgeLimits::max_quantity`] (clipped or rejected, as
-//!   configured), by the size quoted on the side the hedge trades and by the
+//!   configured), by the reduce-only rule and the absolute exposure limit
+//!   when set, by the size quoted on the side the hedge trades and by the
 //!   lot size, so no action can produce an unbounded plan;
 //! - the requested and the feasible quantity, and every adjustment between
 //!   them, are kept for audit ([`ActionPlan`]).
@@ -28,7 +31,8 @@ use crate::hedge::{HedgePlan, spread_cost};
 use crate::instrument::{Instrument, Leg, Side, Timestamp, TopOfBook};
 use crate::money::Currency;
 use crate::units::Quantity;
-use rust_decimal::{Decimal, RoundingStrategy};
+use crate::wide;
+use rust_decimal::Decimal;
 
 /// The quantity a policy proposes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,6 +78,13 @@ pub struct HedgeLimits {
     pub float_dp: u32,
     /// What to do with a quantity above `max_quantity`.
     pub on_excess: ExcessPolicy,
+    /// Only reduce the absolute exposure: the side must point toward zero,
+    /// and the quantity is clipped so the position never flips.
+    pub reduce_only: bool,
+    /// Largest absolute exposure the plan may leave; the quantity is clipped
+    /// to stay within it. An exposure already beyond it may only be
+    /// reduced.
+    pub max_abs_exposure_after: Option<Quantity>,
 }
 
 /// The market and position the action is priced against.
@@ -98,6 +109,11 @@ pub enum Adjustment {
     FloatRounded,
     /// Clipped to `max_quantity`.
     MaxQuantity,
+    /// Clipped so a reduce-only hedge does not flip the position.
+    ReduceOnly,
+    /// Clipped to keep the absolute exposure within
+    /// `max_abs_exposure_after`.
+    ExposureLimit,
     /// Capped at the size quoted on the side the hedge trades.
     QuotedSize,
     /// Rounded down to whole lots.
@@ -127,6 +143,11 @@ pub enum NoPlanReason {
     NoLiquidity,
     /// The bounded quantity is below one lot.
     BelowLotSize,
+    /// A reduce-only hedge whose side would not reduce the exposure (or the
+    /// exposure is already zero).
+    NotReducing,
+    /// The exposure limit leaves no room on this side.
+    ExposureLimit,
 }
 
 /// Result of [`hedge_plan_from_action`].
@@ -204,6 +225,44 @@ pub fn hedge_plan_from_action(
         }
     }
 
+    let exposure = market.exposure.normalize();
+    // True if the side moves the exposure toward zero.
+    let reduces = match action.side {
+        Side::Buy => exposure < Decimal::ZERO,
+        Side::Sell => exposure > Decimal::ZERO,
+    };
+    if limits.reduce_only {
+        if !reduces {
+            return Ok(ActionOutcome::NoPlan {
+                requested,
+                reason: NoPlanReason::NotReducing,
+            });
+        }
+        let room = Quantity::new(exposure.abs())?;
+        if quantity > room {
+            quantity = room;
+            adjustments.push(Adjustment::ReduceOnly);
+        }
+    }
+    if let Some(cap) = limits.max_abs_exposure_after {
+        // Buy: exposure + q <= cap. Sell: exposure - q >= -cap.
+        let room = match action.side {
+            Side::Buy => exact::sub(cap.value(), exposure)?,
+            Side::Sell => exact::add(cap.value(), exposure)?,
+        };
+        if room <= Decimal::ZERO {
+            return Ok(ActionOutcome::NoPlan {
+                requested,
+                reason: NoPlanReason::ExposureLimit,
+            });
+        }
+        let room = Quantity::new(room)?;
+        if quantity > room {
+            quantity = room;
+            adjustments.push(Adjustment::ExposureLimit);
+        }
+    }
+
     let Some(level) = market.book.executable(action.side) else {
         return Ok(ActionOutcome::NoPlan {
             requested,
@@ -239,7 +298,6 @@ pub fn hedge_plan_from_action(
         Some(s) => expected_fee.checked_add(s)?,
         None => expected_fee,
     };
-    let exposure = market.exposure.normalize();
     let expected_exposure_after = match action.side {
         Side::Buy => exact::add(exposure, quantity.value())?,
         Side::Sell => exact::sub(exposure, quantity.value())?,
@@ -279,23 +337,22 @@ fn requested_quantity(
                     reason: "action quantity is not finite",
                 });
             }
-            if float_dp > exact::MAX_SCALE {
-                return Err(ArbitrageError::InvalidInput {
-                    reason: "float_dp must be at most 28",
+            if x < 0.0 {
+                // Checked on the float itself: a tiny negative value would
+                // otherwise round to zero.
+                return Err(ArbitrageError::InvalidValue {
+                    field: "action quantity",
+                    value: Decimal::from_f64_retain(x).unwrap_or(Decimal::MIN),
+                    reason: "must not be negative; the side gives the direction",
                 });
             }
-            // The float's exact binary value (to Decimal's 28 digits), then
-            // one explicit rounding to float_dp places.
-            let d = Decimal::from_f64_retain(x).ok_or(ArbitrageError::InvalidInput {
-                reason: "action quantity is outside the supported Decimal range",
-            })?;
-            let rounded = d
-                .round_dp_with_strategy(float_dp, RoundingStrategy::MidpointNearestEven)
-                .normalize();
-            if rounded != d.normalize() {
+            // -0.0 is zero.
+            let x = if x == 0.0 { 0.0 } else { x };
+            let (rounded, inexact) = wide::f64_to_decimal_half_even(x, float_dp)?;
+            if inexact {
                 adjustments.push(Adjustment::FloatRounded);
             }
-            Ok(rounded)
+            Ok(rounded.normalize())
         }
     }
 }

@@ -40,6 +40,8 @@ fn limits(on_excess: ExcessPolicy) -> HedgeLimits {
         lot_size: Some(q(dec!(0.1))),
         float_dp: 8,
         on_excess,
+        reduce_only: false,
+        max_abs_exposure_after: None,
     }
 }
 
@@ -116,7 +118,7 @@ fn out_of_range_actions_cannot_create_unbounded_plans() {
 
 #[test]
 fn unsupported_float_values_are_errors() {
-    for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e40, -1e40] {
+    for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e40] {
         assert!(
             matches!(
                 hedge_plan_from_action(
@@ -262,4 +264,166 @@ fn an_expired_instrument_is_an_error() {
         hedge_plan_from_action(&a, &limits(ExcessPolicy::Clip), &market()),
         Err(ArbitrageError::Expired { .. })
     ));
+}
+
+fn requested_of(x: f64, dp: u32) -> Result<Decimal, ArbitrageError> {
+    let l = HedgeLimits {
+        max_quantity: q(Decimal::MAX),
+        lot_size: None,
+        float_dp: dp,
+        on_excess: ExcessPolicy::Clip,
+        reduce_only: false,
+        max_abs_exposure_after: None,
+    };
+    let mut m = market();
+    m.book.ask = lvl(dec!(1), Decimal::MAX);
+    m.book.bid = None;
+    m.fee = FeeRate::zero();
+    // Zero exposure so that tiny quantities stay representable after it.
+    m.exposure = Decimal::ZERO;
+    match hedge_plan_from_action(&action(Side::Buy, ActionQuantity::Float(x)), &l, &m)? {
+        ActionOutcome::Plan(p) => Ok(p.requested),
+        ActionOutcome::NoPlan { requested, .. } => Ok(requested),
+    }
+}
+
+#[test]
+fn negative_floats_are_rejected_even_when_tiny() {
+    // Codex M404-C1: checked on the float, before any rounding.
+    for x in [-1e-9, -1e-100, -5e-324, -1.0, -1e40] {
+        assert!(
+            matches!(requested_of(x, 8), Err(ArbitrageError::InvalidValue { .. })),
+            "{x}"
+        );
+    }
+    // -0.0 is zero.
+    assert_eq!(requested_of(-0.0, 8).unwrap(), dec!(0));
+}
+
+#[test]
+fn floats_are_rounded_once_from_their_exact_binary_value() {
+    // Codex M404-C2: 1.4999999999999999e-27 is 1.4999999999999998780e-27 in
+    // binary, below the tie, so 27 places give 1e-27 (not 2e-27 as a double
+    // rounding through 28 digits would).
+    assert_eq!(
+        requested_of(1.4999999999999999e-27, 27).unwrap(),
+        dec!(0.000000000000000000000000001)
+    );
+    // Exact ties go to even; their neighbours go to the nearer side.
+    assert_eq!(requested_of(0.125, 2).unwrap(), dec!(0.12));
+    assert_eq!(
+        requested_of(f64::from_bits(0.125f64.to_bits() + 1), 2).unwrap(),
+        dec!(0.13)
+    );
+    assert_eq!(requested_of(0.375, 2).unwrap(), dec!(0.38));
+    assert_eq!(
+        requested_of(f64::from_bits(0.375f64.to_bits() - 1), 2).unwrap(),
+        dec!(0.37)
+    );
+    assert_eq!(requested_of(2.5, 0).unwrap(), dec!(2));
+    assert_eq!(requested_of(3.5, 0).unwrap(), dec!(4));
+    // 28 places, and a subnormal that rounds to zero.
+    assert_eq!(
+        requested_of(1e-28, 28).unwrap(),
+        dec!(0.0000000000000000000000000001)
+    );
+    assert_eq!(requested_of(5e-324, 28).unwrap(), dec!(0));
+    // Large integers are exact; beyond Decimal's range is an error.
+    assert_eq!(
+        requested_of(2f64.powi(80), 8).unwrap(),
+        dec!(1208925819614629174706176)
+    );
+    assert!(matches!(
+        requested_of(2f64.powi(96), 0),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn reduce_only_never_increases_or_flips_the_exposure() {
+    // Exposure +12.5. A buy would increase it: no plan.
+    let mut l = limits(ExcessPolicy::Clip);
+    l.reduce_only = true;
+    assert_eq!(
+        hedge_plan_from_action(
+            &action(Side::Buy, ActionQuantity::Exact(dec!(1))),
+            &l,
+            &market()
+        )
+        .unwrap(),
+        ActionOutcome::NoPlan {
+            requested: dec!(1),
+            reason: NoPlanReason::NotReducing
+        }
+    );
+    // A sell of 18 is clipped to 12.5 so the position does not flip.
+    let p = plan(
+        &action(Side::Sell, ActionQuantity::Exact(dec!(18))),
+        &l,
+        &market(),
+    );
+    assert_eq!(p.feasible, q(dec!(12.5)));
+    assert_eq!(p.adjustments, vec![Adjustment::ReduceOnly]);
+    assert_eq!(p.plan.expected_exposure_after, dec!(0));
+    // Flat exposure: nothing reduces it.
+    let mut flat = market();
+    flat.exposure = dec!(0);
+    assert!(matches!(
+        hedge_plan_from_action(
+            &action(Side::Sell, ActionQuantity::Exact(dec!(1))),
+            &l,
+            &flat
+        )
+        .unwrap(),
+        ActionOutcome::NoPlan {
+            reason: NoPlanReason::NotReducing,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn the_exposure_limit_clips_the_quantity() {
+    // |exposure after| <= 15. From +12.5 a buy has room 2.5 and a sell 27.5
+    // (clipped by max_quantity 20 first).
+    let mut l = limits(ExcessPolicy::Clip);
+    l.max_abs_exposure_after = Some(q(dec!(15)));
+    let p = plan(
+        &action(Side::Buy, ActionQuantity::Exact(dec!(10))),
+        &l,
+        &market(),
+    );
+    assert_eq!(p.feasible, q(dec!(2.5)));
+    assert_eq!(p.adjustments, vec![Adjustment::ExposureLimit]);
+    assert_eq!(p.plan.expected_exposure_after, dec!(15));
+    let p = plan(
+        &action(Side::Sell, ActionQuantity::Exact(dec!(30))),
+        &l,
+        &market(),
+    );
+    assert_eq!(p.feasible, q(dec!(20)));
+    assert_eq!(p.adjustments, vec![Adjustment::MaxQuantity]);
+    assert_eq!(p.plan.expected_exposure_after, dec!(-7.5));
+    // Already beyond the limit (+16): buying has no room; selling reduces.
+    let mut over = market();
+    over.exposure = dec!(16);
+    assert_eq!(
+        hedge_plan_from_action(
+            &action(Side::Buy, ActionQuantity::Exact(dec!(1))),
+            &l,
+            &over
+        )
+        .unwrap(),
+        ActionOutcome::NoPlan {
+            requested: dec!(1),
+            reason: NoPlanReason::ExposureLimit
+        }
+    );
+    let p = plan(
+        &action(Side::Sell, ActionQuantity::Exact(dec!(3))),
+        &l,
+        &over,
+    );
+    assert_eq!(p.feasible, q(dec!(3)));
+    assert_eq!(p.plan.expected_exposure_after, dec!(13));
 }
