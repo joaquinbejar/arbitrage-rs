@@ -358,6 +358,10 @@ pub enum AdmissionReject {
         /// Unreserved inventory on the venue.
         available: Decimal,
     },
+    /// What the leg's fills use could not be computed exactly (a product
+    /// that does not fit a `Decimal`), so the capital a resubmission needs
+    /// is unknown and none is sent.
+    CoverageUnknown,
     /// The plan's reservations were released
     /// ([`TwoLegPlan::release_reservations`](crate::legs::TwoLegPlan::release_reservations)):
     /// it reserves nothing more, so no resubmission is sent.

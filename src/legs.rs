@@ -380,6 +380,41 @@ impl AttemptState {
     }
 }
 
+/// What a leg's recorded fills use beyond its current reservation, with
+/// budget gating ([`TwoLegPlan::with_budget_gating`]).
+///
+/// The reservation covers the leg's quantity with its notional valued at
+/// [`LegState::covered_bound`] and the fee modelled at that bound. Fills are
+/// always recorded; whatever they use beyond that is reported here, never as
+/// an error. The next readmission covers the price and the fee (it raises
+/// the bound and adds the excess fee) or holds the resubmission; an
+/// overfill is never resubmitted, so it stays reported.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct CoverageDeficit {
+    /// The highest fill price above the covered bound.
+    pub price: Option<Price>,
+    /// The fees charged above the fee modelled at the covered bound for the
+    /// executed quantity, cumulatively over the leg's fills and not yet
+    /// included in the reservation.
+    pub fee: Option<Money>,
+    /// The quantity executed beyond the leg's quantity.
+    pub overfill: Option<Decimal>,
+    /// True when what the fills use could not be computed exactly (a
+    /// product that does not fit a `Decimal`): the fills stand, the other
+    /// fields are not measured, and no resubmission is sent
+    /// ([`AdmissionReject::CoverageUnknown`]).
+    pub coverage_unknown: bool,
+}
+
+impl CoverageDeficit {
+    fn is_empty(&self) -> bool {
+        self.price.is_none()
+            && self.fee.is_none()
+            && self.overfill.is_none()
+            && !self.coverage_unknown
+    }
+}
+
 /// Where a leg stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LegStatus {
@@ -452,14 +487,16 @@ pub struct LegState {
     /// With budget gating: the price the current reservation values the
     /// leg's notional at.
     pub covered_bound: Option<Price>,
-    /// With budget gating: the highest fill price above
-    /// [`LegState::covered_bound`], if any. The fill is recorded as executed;
-    /// the reservation does not cover it yet, so the next resubmission must
-    /// first be readmitted at this price or higher.
-    pub deficit: Option<Price>,
+    /// With budget gating: what the recorded fills use beyond the current
+    /// reservation, if anything. The fills stand; the next resubmission is
+    /// first readmitted to cover it, or held.
+    pub deficit: Option<CoverageDeficit>,
     /// With budget gating: why the last readmission held the resubmission
     /// back, if it did.
     pub hold: Option<AdmissionReject>,
+    /// The fees above the modelled fee that the current reservation already
+    /// includes (from the last readmission).
+    covered_excess_fee: Decimal,
     deadline_cancelled: bool,
     last_at: Timestamp,
 }
@@ -605,6 +642,8 @@ pub struct TwoLegPlan {
     clock: Timestamp,
     max_staleness_ms: Option<i64>,
     funding: Option<[LegFunding; 2]>,
+    /// True once any event has been applied.
+    started: bool,
     fills: BTreeMap<ExecId, FillRecord>,
     unwind_requested: Decimal,
 }
@@ -675,6 +714,7 @@ impl TwoLegPlan {
             covered_bound: None,
             deficit: None,
             hold: None,
+            covered_excess_fee: Decimal::ZERO,
             deadline_cancelled: false,
             last_at: created_at,
         };
@@ -686,6 +726,7 @@ impl TwoLegPlan {
             clock: created_at,
             max_staleness_ms: None,
             funding: None,
+            started: false,
             fills: BTreeMap::new(),
             unwind_requested: Decimal::ZERO,
         })
@@ -792,9 +833,14 @@ impl TwoLegPlan {
     ///   on each later non-fill event: after changing a budget outside the
     ///   plan, send a [`LegExecution::Tick`]. Past the leg's deadline the
     ///   policy's fallback applies, once;
-    /// - a fill is always recorded. A fill price above the covered bound
-    ///   leaves a [`LegState::deficit`] that the next readmission must cover;
-    ///   fill events never readmit, so no budget shortfall can reject or
+    /// - a fill is always recorded. What the fills use beyond the current
+    ///   reservation (a price above the covered bound, cumulative fees above
+    ///   the fee modelled at it for the executed quantity, an overfill) is
+    ///   reported in [`LegState::deficit`], never as an error; when it cannot
+    ///   be computed exactly the coverage is marked unknown. The next
+    ///   readmission covers the price and the fees, or holds the
+    ///   resubmission ([`AdmissionReject::CoverageUnknown`] when unknown).
+    ///   Fill events never readmit, so no budget shortfall can reject or
     ///   lose an execution;
     /// - capital is never borrowed across venues: a leg only ever reserves
     ///   on its own venue's budget.
@@ -808,22 +854,24 @@ impl TwoLegPlan {
     ///
     /// # Errors
     ///
-    /// [`ArbitrageError::InvalidInput`] if the plan has already seen an
-    /// event, a view is of another venue or instrument than its leg, or a
-    /// reservation is of another venue or is not exactly the leg's
-    /// requirement on its view, fee and funding; the errors of
+    /// [`ArbitrageError::InvalidInput`] if the plan already has budget
+    /// gating (even released) or has already applied any event, a view is
+    /// of another venue or instrument than its leg, or a reservation is of
+    /// another venue or is not exactly the leg's requirement on its view,
+    /// fee and funding; [`ArbitrageError::CurrencyMismatch`] if a
+    /// reservation is not in the plan currency; the errors of
     /// [`requirement`].
     pub fn with_budget_gating(
         mut self,
         max_staleness_ms: i64,
         legs: [AdmittedLeg; 2],
     ) -> Result<Self> {
-        let fresh = self.fills.is_empty()
-            && self
-                .legs
-                .iter()
-                .all(|l| l.attempts.len() == 1 && l.attempts.iter().all(|a| a.outcome.is_none()));
-        if !fresh {
+        if self.funding.is_some() {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "the plan already has budget gating",
+            });
+        }
+        if self.started {
             return Err(ArbitrageError::InvalidInput {
                 reason: "budget gating must be set before the plan sees an event",
             });
@@ -840,6 +888,12 @@ impl TwoLegPlan {
             if admitted.view.instrument.id != spec.leg.instrument.id {
                 return Err(ArbitrageError::InvalidInput {
                     reason: "admitted view is for another instrument than the leg",
+                });
+            }
+            if admitted.reservation.cash.currency() != self.currency {
+                return Err(ArbitrageError::CurrencyMismatch {
+                    left: self.currency,
+                    right: admitted.reservation.cash.currency(),
                 });
             }
             let request = LegRequest {
@@ -1012,6 +1066,7 @@ impl TwoLegPlan {
         let mut next = self.clone();
         let mut actions = Vec::new();
         next.clock = now;
+        next.started = true;
         if let (false, Some(leg)) = (matches!(event, LegExecution::Fill { .. }), event.leg()) {
             leg.of_mut(&mut next.legs).last_at = at;
         }
@@ -1176,15 +1231,13 @@ impl TwoLegPlan {
         )?;
         leg_state.filled_notional = Money::new(notional, self.currency);
         leg_state.fees = leg_state.fees.checked_add(fill.fee)?;
-        // A fill above the price the reservation covers is still recorded;
-        // the next readmission must cover it.
-        if let Some(covered) = leg_state.covered_bound {
-            let highest = leg_state.deficit.unwrap_or(covered).max(fill.price);
-            if highest > covered {
-                leg_state.deficit = Some(highest);
-            }
-        }
+        let leg = fill.leg;
         self.fills.insert(exec_id.clone(), fill);
+        // The fill stands; what it uses beyond the reservation is reported.
+        if let Some(covered) = leg.of(&self.legs).covered_bound {
+            let deficit = self.deficit(leg, covered);
+            leg.of_mut(&mut self.legs).deficit = deficit;
+        }
         Ok(())
     }
 
@@ -1353,9 +1406,10 @@ impl TwoLegPlan {
 
     /// Sends a held resubmission if the venue (and, with budget gating, its
     /// budget) admits it, drops it for the fallback once the deadline has
-    /// passed, and otherwise keeps holding. With budget gating, a fill event
-    /// never readmits: the retry waits for the next non-fill event, so a
-    /// readmission error can never reject a real execution.
+    /// passed (on any event), and otherwise keeps holding. With budget
+    /// gating, a fill event never readmits: the retry waits for the next
+    /// non-fill event, so a readmission error can never reject a real
+    /// execution.
     fn try_resubmit(
         &mut self,
         leg: LegIndex,
@@ -1364,15 +1418,16 @@ impl TwoLegPlan {
         budgets: Option<&mut BTreeMap<VenueId, VenueBudget>>,
         is_fill: bool,
     ) -> Result<()> {
-        if self.funding.is_some() && is_fill {
-            return Ok(());
-        }
         let state = leg.of(&self.legs);
         let past_deadline =
             state.deadline_cancelled || state.spec.effective_deadline().is_some_and(|d| d <= at);
         if past_deadline {
+            // The fallback touches no budget, so it applies on any event.
             leg.of_mut(&mut self.legs).pending_resubmit = false;
             return self.enter_fallback(self.fallback(), leg, actions);
+        }
+        if self.funding.is_some() && is_fill {
+            return Ok(());
         }
         match self.venue_gate(leg, at)? {
             VenueGate::Open => {}
@@ -1448,12 +1503,42 @@ impl TwoLegPlan {
         let covered = state.covered_bound.ok_or(ArbitrageError::InvalidInput {
             reason: "a reserved leg has no covered price bound",
         })?;
-        let mut bound = covered.max(state.deficit.unwrap_or(covered));
+        let mut bound = covered.max(
+            state
+                .deficit
+                .as_ref()
+                .and_then(|d| d.price)
+                .unwrap_or(covered),
+        );
         // venue_gate admitted the view, so it exists.
         if let Some(view) = &state.view {
             bound = bound.max(price_bound(&state.spec, view)?);
         }
-        let need = requirement_at(&state.spec, bound, funding, current.cash.currency())?;
+        if state.deficit.as_ref().is_some_and(|d| d.coverage_unknown) {
+            return Ok(Some(AdmissionReject::CoverageUnknown));
+        }
+        // The whole leg (or what it executed, if more) at the bound, plus the
+        // fees charged above the fee modelled at that bound: the fills'
+        // notional and modelled fee are within the bound's, so nothing is
+        // counted twice, and an excess a higher bound now models is dropped.
+        let mut spec = state.spec.clone();
+        let executed = state.executed()?;
+        if executed > spec.leg.quantity.value() {
+            spec.leg.quantity = Quantity::new(executed)?;
+        }
+        let computed = (|| -> Result<(Reservation, Money)> {
+            let mut need = requirement_at(&spec, bound, funding, current.cash.currency())?;
+            let excess = self.excess_fees(leg, bound, funding)?;
+            need.cash = need.cash.checked_add(excess)?;
+            Ok((need, excess))
+        })();
+        let (need, excess) = match computed {
+            Ok(values) => values,
+            Err(ArbitrageError::Overflow { .. } | ArbitrageError::Inexact { .. }) => {
+                return Ok(Some(AdmissionReject::CoverageUnknown));
+            }
+            Err(error) => return Err(error),
+        };
         let Some(budget) = budgets.get(&state.spec.venue) else {
             return Ok(Some(AdmissionReject::NoBudget));
         };
@@ -1466,8 +1551,71 @@ impl TwoLegPlan {
         let state = leg.of_mut(&mut self.legs);
         state.reservation = Some(need);
         state.covered_bound = Some(bound);
-        state.deficit = None;
+        state.covered_excess_fee = excess.amount();
+        let deficit = self.deficit(leg, bound);
+        leg.of_mut(&mut self.legs).deficit = deficit;
         Ok(None)
+    }
+
+    /// What the leg's recorded fills use beyond a reservation covering its
+    /// quantity at `covered`. It never fails: a value that cannot be
+    /// computed exactly marks the coverage as unknown instead, so a real
+    /// fill is never rejected by this diagnostic.
+    fn deficit(&self, leg: LegIndex, covered: Price) -> Option<CoverageDeficit> {
+        let funding = *leg.of(&self.funding?);
+        let state = leg.of(&self.legs);
+        let price = self
+            .fills
+            .values()
+            .filter(|f| f.leg == leg)
+            .map(|f| f.price)
+            .max()
+            .filter(|p| *p > covered);
+        let measured = (|| -> Result<(Decimal, Decimal)> {
+            // Only the excess the reservation does not include yet.
+            let fee = exact::sub(
+                self.excess_fees(leg, covered, funding)?.amount(),
+                state.covered_excess_fee,
+            )?;
+            Ok((fee, state.overfill()?))
+        })();
+        let deficit = match measured {
+            Ok((fee, overfill)) => CoverageDeficit {
+                price,
+                fee: (fee > Decimal::ZERO).then(|| Money::new(fee, self.currency)),
+                overfill: (overfill > Decimal::ZERO).then_some(overfill),
+                coverage_unknown: false,
+            },
+            Err(_) => CoverageDeficit {
+                price,
+                fee: None,
+                overfill: None,
+                coverage_unknown: true,
+            },
+        };
+        (!deficit.is_empty()).then_some(deficit)
+    }
+
+    /// The fees the leg's fills were charged above the fee modelled at
+    /// `bound` for the quantity they executed, cumulatively (a later rebate
+    /// offsets an earlier excess): `max(0, sum(fees) - max(0, rate * bound *
+    /// sum(quantities)))`, the model floored at zero as in the requirement.
+    fn excess_fees(&self, leg: LegIndex, bound: Price, funding: LegFunding) -> Result<Money> {
+        let (mut fees, mut quantities) = (Vec::new(), Vec::new());
+        for fill in self.fills.values().filter(|f| f.leg == leg) {
+            fees.push(fill.fee.money().amount());
+            quantities.push(fill.quantity.value());
+        }
+        let observed = wide::sum(&fees, "observed fees")?;
+        let executed = wide::sum(&quantities, "filled quantity")?;
+        let modelled = funding
+            .fee
+            .fee_on_factors(&[bound.value(), executed], self.currency)?
+            .money()
+            .amount()
+            .max(Decimal::ZERO);
+        let excess = exact::sub(observed, modelled)?.max(Decimal::ZERO);
+        Ok(Money::new(excess, self.currency))
     }
 
     fn request_unwind(&mut self, actions: &mut Vec<PlanAction>) -> Result<()> {

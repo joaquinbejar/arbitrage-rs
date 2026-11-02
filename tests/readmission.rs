@@ -21,8 +21,8 @@
 )]
 
 use arbitrage_rs::legs::{
-    ExecId, FailurePolicy, Fallback, LegExecution, LegIndex, LegSpec, PlanAction, PlanState,
-    TwoLegPlan,
+    CoverageDeficit, ExecId, FailurePolicy, Fallback, LegExecution, LegIndex, LegSpec, PlanAction,
+    PlanState, TwoLegPlan,
 };
 use arbitrage_rs::venues::{
     Admission, AdmissionReject, AdmittedLeg, LegFunding, LegRequest, Reservation, SellFunding,
@@ -207,6 +207,39 @@ fn fill(
         at: t(1_050),
     }
 }
+fn price_gap(x: Decimal) -> CoverageDeficit {
+    CoverageDeficit {
+        price: Some(p(x)),
+        ..CoverageDeficit::default()
+    }
+}
+fn fill_with_fee(
+    leg: LegIndex,
+    id: &str,
+    qty: Decimal,
+    cum: Decimal,
+    px: Decimal,
+    fee: Decimal,
+) -> LegExecution {
+    LegExecution::Fill {
+        leg,
+        attempt: 0,
+        exec_id: ExecId(id.to_owned()),
+        quantity: q(qty),
+        cum_qty: q(cum),
+        price: p(px),
+        fee: Cost::new(m(fee)),
+        at: t(1_050),
+    }
+}
+fn cancel_ack(leg: LegIndex, cum: Decimal) -> LegExecution {
+    LegExecution::CancelAck {
+        leg,
+        attempt: 0,
+        cum_qty: cum,
+        at: t(1_100),
+    }
+}
 fn reservation(v: &str, cash: Decimal) -> Reservation {
     Reservation {
         venue: venue(v),
@@ -331,7 +364,7 @@ fn a_fill_above_the_bound_is_recorded_and_leaves_a_deficit() {
         .unwrap();
     assert!(!report.duplicate);
     assert_eq!(plan.leg(B).executed().unwrap(), dec!(1));
-    assert_eq!(plan.leg(B).deficit, Some(p(dec!(112))));
+    assert_eq!(plan.leg(B).deficit, Some(price_gap(dec!(112))));
     assert_eq!(
         plan.leg(B).reservation,
         Some(reservation("B", dec!(40.602)))
@@ -359,7 +392,7 @@ fn a_fill_above_the_bound_is_recorded_and_leaves_a_deficit() {
             available: m(dec!(41)),
         })
     );
-    assert_eq!(plan.leg(B).deficit, Some(p(dec!(112))));
+    assert_eq!(plan.leg(B).deficit, Some(price_gap(dec!(112))));
 }
 
 #[test]
@@ -552,15 +585,33 @@ fn budget_gating_checks_what_it_is_handed() {
     let mut funded = admitted.clone();
     funded[1].funding = funding(dec!(20), MARGIN_20);
     assert!(fresh().with_budget_gating(50, funded).is_err());
-    // After the plan has seen an event.
-    let mut started = fresh();
-    started.apply(&rejected(B, 0, 1_100)).unwrap();
+    // After the plan has seen any event, even one that changes no leg.
+    for event in [
+        rejected(B, 0, 1_100),
+        tick(1_010),
+        update(B, view("B", "BTC-B", 1_005, dec!(101))),
+    ] {
+        let mut started = fresh();
+        started.apply(&event).unwrap();
+        assert!(matches!(
+            started.with_budget_gating(50, admitted.clone()),
+            Err(ArbitrageError::InvalidInput { .. })
+        ));
+    }
+    // The matching legs are accepted, once: a second call would take over
+    // reservations again without releasing the first ones.
+    let gated_once = fresh().with_budget_gating(50, admitted.clone()).unwrap();
     assert!(matches!(
-        started.with_budget_gating(50, admitted.clone()),
+        gated_once.clone().with_budget_gating(50, admitted.clone()),
         Err(ArbitrageError::InvalidInput { .. })
     ));
-    // The matching legs are accepted.
-    assert!(fresh().with_budget_gating(50, admitted).is_ok());
+    // Nor after its reservations were released.
+    let mut released = gated_once;
+    released.release_reservations(&mut b).unwrap();
+    assert!(matches!(
+        released.with_budget_gating(50, admitted),
+        Err(ArbitrageError::InvalidInput { .. })
+    ));
 }
 
 #[test]
@@ -587,6 +638,36 @@ fn a_held_resubmission_past_the_deadline_falls_back_once() {
     // Later events neither resubmit nor fall back again.
     let report = plan.apply_with_budgets(&tick(5_100), &mut b).unwrap();
     assert_eq!(report.actions, vec![]);
+}
+
+#[test]
+fn a_fill_past_the_deadline_still_drops_a_held_resubmission() {
+    let mut b = budgets(dec!(1_000), dec!(42));
+    let mut plan = gated(&mut b);
+    plan.apply_with_budgets(&update(B, view("B", "BTC-B", 1_090, dec!(110))), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&rejected(B, 0, 1_100), &mut b)
+        .unwrap();
+    assert!(plan.leg(B).pending_resubmit);
+
+    // The first event past the deadline (5000) is a fill on the other leg:
+    // the fallback applies on it, without readmitting anything.
+    let late = LegExecution::Fill {
+        leg: A,
+        attempt: 0,
+        exec_id: ExecId("a-late".to_owned()),
+        quantity: q(dec!(1)),
+        cum_qty: q(dec!(1)),
+        price: p(dec!(100)),
+        fee: Cost::new(m(dec!(0))),
+        at: t(5_100),
+    };
+    let before = b.clone();
+    let report = plan.apply_with_budgets(&late, &mut b).unwrap();
+    assert_eq!(resubmits(&report.actions), 0);
+    assert!(!plan.leg(B).pending_resubmit);
+    assert_eq!(plan.state(), PlanState::Unwinding);
+    assert_eq!(b, before);
 }
 
 #[test]
@@ -700,7 +781,7 @@ fn a_buy_filled_above_its_limit_is_covered_at_the_fill_price() {
     let mut plan = gated(&mut b);
     plan.apply_with_budgets(&fill(A, 0, "a-1", dec!(1), dec!(1), dec!(103)), &mut b)
         .unwrap();
-    assert_eq!(plan.leg(A).deficit, Some(p(dec!(103))));
+    assert_eq!(plan.leg(A).deficit, Some(price_gap(dec!(103))));
     plan.apply_with_budgets(&update(A, view("A", "BTC-A", 1_090, dec!(99))), &mut b)
         .unwrap();
     plan.apply_with_budgets(
@@ -718,4 +799,201 @@ fn a_buy_filled_above_its_limit_is_covered_at_the_fill_price() {
         Some(reservation("A", dec!(206.206)))
     );
     assert_eq!(plan.leg(A).deficit, None);
+}
+
+#[test]
+fn a_fee_above_the_model_is_reported_and_covered_by_the_readmission() {
+    // Sell 1 at 101 charged 0.5 instead of the modelled 0.101: 0.399 above.
+    let mut b = budgets(dec!(1_000), dec!(100));
+    let mut plan = gated(&mut b);
+    plan.apply_with_budgets(
+        &fill_with_fee(B, "b-1", dec!(1), dec!(1), dec!(101), dec!(0.5)),
+        &mut b,
+    )
+    .unwrap();
+    assert_eq!(plan.leg(B).executed().unwrap(), dec!(1));
+    assert_eq!(
+        plan.leg(B).deficit,
+        Some(CoverageDeficit {
+            fee: Some(m(dec!(0.399))),
+            ..CoverageDeficit::default()
+        })
+    );
+    plan.apply_with_budgets(&update(B, view("B", "BTC-B", 1_090, dec!(101))), &mut b)
+        .unwrap();
+    let report = plan
+        .apply_with_budgets(&cancel_ack(B, dec!(1)), &mut b)
+        .unwrap();
+    assert_eq!(resubmits(&report.actions), 1);
+    // The whole leg at 101 (40.602) plus the 0.399 already charged above it.
+    assert_eq!(
+        plan.leg(B).reservation,
+        Some(reservation("B", dec!(41.001)))
+    );
+    assert_eq!(plan.leg(B).deficit, None);
+    assert_eq!(b[&venue("B")].reserved_cash(), m(dec!(41.001)));
+}
+
+#[test]
+fn partial_fills_are_covered_without_counting_anything_twice() {
+    // Sell 0.5 at 105 (fee 0.06) and 0.5 at 103 (fee 0.2): 0.26 charged
+    // against 0.101 modelled for the executed 1 at the covered bound 101.
+    let mut b = budgets(dec!(1_000), dec!(100));
+    let mut plan = gated(&mut b);
+    plan.apply_with_budgets(
+        &fill_with_fee(B, "b-1", dec!(0.5), dec!(0.5), dec!(105), dec!(0.06)),
+        &mut b,
+    )
+    .unwrap();
+    plan.apply_with_budgets(
+        &fill_with_fee(B, "b-2", dec!(0.5), dec!(1), dec!(103), dec!(0.2)),
+        &mut b,
+    )
+    .unwrap();
+    assert_eq!(
+        plan.leg(B).deficit,
+        Some(CoverageDeficit {
+            price: Some(p(dec!(105))),
+            fee: Some(m(dec!(0.159))),
+            overfill: None,
+            coverage_unknown: false,
+        })
+    );
+
+    plan.apply_with_budgets(&update(B, view("B", "BTC-B", 1_090, dec!(101))), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&cancel_ack(B, dec!(1)), &mut b)
+        .unwrap();
+    // Readmitted at 105: the whole leg is 0.2 * 105 * 2 + 0.21 = 42.21, and
+    // the fees above the model at 105 are 0.26 - 0.105 = 0.155.
+    let need = dec!(42.21) + dec!(0.155);
+    assert_eq!(plan.leg(B).reservation, Some(reservation("B", need)));
+    assert_eq!(plan.leg(B).deficit, None);
+    // It covers the real obligation of the fills plus what remains:
+    // 10.5 + 0.06 + 10.3 + 0.2 for the fills, 21 + 0.105 for the rest.
+    let obligation = dec!(10.5) + dec!(0.06) + dec!(10.3) + dec!(0.2);
+    let remaining = dec!(21) + dec!(0.105);
+    assert!(obligation + remaining <= need);
+    // And it is not the bound's requirement plus every fill fee again.
+    assert!(need < dec!(42.21) + dec!(0.06) + dec!(0.2));
+}
+
+#[test]
+fn an_overfill_at_the_same_price_is_reported() {
+    // Buy 2 at 100, then 0.5 more on the same attempt: the reservation
+    // covers 2. The fill stands, the leg is done, the overfill is reported.
+    let mut b = budgets(dec!(1_000), dec!(100));
+    let mut plan = gated(&mut b);
+    plan.apply_with_budgets(
+        &fill_with_fee(A, "a-1", dec!(2), dec!(2), dec!(100), dec!(0.2)),
+        &mut b,
+    )
+    .unwrap();
+    assert_eq!(plan.leg(A).deficit, None);
+    let report = plan
+        .apply_with_budgets(
+            &fill_with_fee(A, "a-2", dec!(0.5), dec!(2.5), dec!(100), dec!(0.05)),
+            &mut b,
+        )
+        .unwrap();
+    assert!(!report.duplicate);
+    assert_eq!(plan.leg(A).executed().unwrap(), dec!(2.5));
+    assert_eq!(
+        plan.leg(A).deficit,
+        Some(CoverageDeficit {
+            overfill: Some(dec!(0.5)),
+            ..CoverageDeficit::default()
+        })
+    );
+    assert_eq!(resubmits(&report.actions), 0);
+}
+
+#[test]
+fn a_later_rebate_offsets_an_earlier_excess() {
+    // 0.3 charged, then a 0.2 rebate: 0.1 in total for 1 executed, within
+    // the 0.101 modelled at 101. Measured cumulatively, there is no excess.
+    let mut b = budgets(dec!(1_000), dec!(100));
+    let mut plan = gated(&mut b);
+    plan.apply_with_budgets(
+        &fill_with_fee(B, "b-1", dec!(0.5), dec!(0.5), dec!(101), dec!(0.3)),
+        &mut b,
+    )
+    .unwrap();
+    assert_eq!(
+        plan.leg(B).deficit,
+        Some(CoverageDeficit {
+            fee: Some(m(dec!(0.2495))),
+            ..CoverageDeficit::default()
+        })
+    );
+    plan.apply_with_budgets(
+        &fill_with_fee(B, "b-2", dec!(0.5), dec!(1), dec!(101), dec!(-0.2)),
+        &mut b,
+    )
+    .unwrap();
+    assert_eq!(plan.leg(B).deficit, None);
+}
+
+#[test]
+fn an_excess_a_higher_bound_models_is_not_reserved_twice() {
+    // Sell 1 at 112 charged exactly the fee modelled at 112 (0.112). At the
+    // covered bound 101 that is 0.011 above the model; readmitted at 112 it
+    // is not, so the reservation is exactly the leg's requirement at 112.
+    let mut b = budgets(dec!(1_000), dec!(100));
+    let mut plan = gated(&mut b);
+    plan.apply_with_budgets(
+        &fill_with_fee(B, "b-1", dec!(1), dec!(1), dec!(112), dec!(0.112)),
+        &mut b,
+    )
+    .unwrap();
+    assert_eq!(
+        plan.leg(B).deficit,
+        Some(CoverageDeficit {
+            price: Some(p(dec!(112))),
+            fee: Some(m(dec!(0.011))),
+            ..CoverageDeficit::default()
+        })
+    );
+    plan.apply_with_budgets(&update(B, view("B", "BTC-B", 1_090, dec!(101))), &mut b)
+        .unwrap();
+    plan.apply_with_budgets(&cancel_ack(B, dec!(1)), &mut b)
+        .unwrap();
+    assert_eq!(
+        plan.leg(B).reservation,
+        Some(reservation("B", dec!(45.024)))
+    );
+    assert_eq!(plan.leg(B).deficit, None);
+}
+
+#[test]
+fn a_coverage_that_cannot_be_computed_keeps_the_fill_and_holds() {
+    // 28 fractional digits: the fill's notional (100 * q) fits a Decimal,
+    // but the fee modelled for it (0.1 * q) needs 29 digits.
+    let qty = dec!(0.1234567890123456789012345678);
+    let mut b = budgets(dec!(1_000), dec!(100));
+    let mut plan = gated(&mut b);
+    let report = plan
+        .apply_with_budgets(
+            &fill_with_fee(A, "a-1", qty, qty, dec!(100), dec!(0)),
+            &mut b,
+        )
+        .unwrap();
+    assert!(!report.duplicate);
+    assert_eq!(plan.leg(A).executed().unwrap(), qty);
+    assert_eq!(
+        plan.leg(A).deficit,
+        Some(CoverageDeficit {
+            coverage_unknown: true,
+            ..CoverageDeficit::default()
+        })
+    );
+    plan.apply_with_budgets(&update(A, view("A", "BTC-A", 1_090, dec!(99))), &mut b)
+        .unwrap();
+    let before = b.clone();
+    let report = plan
+        .apply_with_budgets(&cancel_ack(A, qty), &mut b)
+        .unwrap();
+    assert_eq!(resubmits(&report.actions), 0);
+    assert_eq!(plan.leg(A).hold, Some(AdmissionReject::CoverageUnknown));
+    assert_eq!(b, before);
 }
