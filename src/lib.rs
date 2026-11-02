@@ -11,7 +11,11 @@
 //! - [`opportunity::evaluate`] (M1-06): the net edge of buying one instrument
 //!   at its ask and selling another at its bid, after fees and carry;
 //! - [`hedge::plan_band_hedge`] (M1-06): a one-leg hedge that brings an
-//!   exposure back inside a band.
+//!   exposure back inside a band;
+//! - [`funding`] (M3-06): linear perpetual funding cashflows, schedules and
+//!   estimated versus published rates;
+//! - [`basis::evaluate_spot_perp`] (M3-06): the net edge of a spot-perpetual
+//!   basis trade after fees, carry and funding.
 //!
 //! Opportunities and hedge plans are intents with expected numbers. They are
 //! never reported as executed or guaranteed profit, and execution is not
@@ -88,8 +92,10 @@
 //! # }
 //! ```
 
+pub mod basis;
 pub mod error;
 pub mod exact;
+pub mod funding;
 pub mod hedge;
 pub mod opportunity;
 
