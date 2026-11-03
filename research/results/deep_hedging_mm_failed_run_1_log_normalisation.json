@@ -1,0 +1,8 @@
+{
+  "file": "research/results/deep_hedging_mm_failed_run_1.log",
+  "original_sha256": "a9a64b522fb6e8589f4f12cda179d32fdbbb52bf310ad9a02462a1ec5afdc53a",
+  "normalised_sha256": "a927d635070f13ba09db8b106689a10e1f4a744bd7ce89f8627f40c4bb6afd14",
+  "transformation": "every occurrence of the absolute path of the run's working tree, followed by '/', replaced by '<repo>/'; no other byte changed",
+  "occurrences": 6,
+  "original": "kept outside the repository; the failed-run record and run 2's JSON cite its sha256 (original_sha256)"
+}

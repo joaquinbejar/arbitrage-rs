@@ -1,0 +1,26 @@
+surfaces: B healthy, conformance pass, 107 s
+comparison done, 120 s
+eps 0: band w 0.005, 137 s
+eps 0.0005: band w 0.01, 154 s
+eps 0.005: band w 0.15, 171 s
+done in 175.7 s
+{
+  "criterion": "M5-06b's, on surface B with the market-maker-rs counterpart; ADOPT also requires every gate",
+  "in_model_all_seeds_better": true,
+  "out_of_model_veto": {
+    "sticky-moneyness": false,
+    "sticky-strike": false
+  },
+  "criterion_outcome": "adopt",
+  "gates": {
+    "1_conformance_passed": true,
+    "2_surface_b_not_failed_and_frozen": true,
+    "3_out_of_domain_within_bound": true,
+    "4_every_required_row_priced": true,
+    "5_all_panels_agree": true,
+    "6_in_model_matches_m5_06b": false,
+    "7_in_range_subset_no_veto": true
+  },
+  "outcome": "revise",
+  "counterpart_validation": "market-maker-rs"
+}

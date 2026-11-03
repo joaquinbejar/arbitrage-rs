@@ -27,10 +27,12 @@ Timestamps are integers in `timestamp_unit` (only `"s"`, seconds, is
 supported), and consecutive steps of a path are exactly `step_days` days
 apart. Prices are exact multiples of `tick`, checked in exact rational arithmetic
 on the CSV text (`Fraction`), not in binary floating point and with no
-precision limit below the bound on a literal's length: a number in the CSV
-files or the manifest longer than 1000 characters is a violation, checked on
-its text before any conversion (CPython refuses int conversions beyond 4300
-digits, and that must not become an exception).
+precision limit below the bound on a literal's length: a numeric literal in
+the CSV files longer than 1000 characters, and an integer literal in the
+manifest with more than 1000 digits, is a violation, checked on its text
+before any conversion (CPython refuses int conversions beyond 4300 digits,
+and that must not become an exception). Manifest floats are not bounded by
+length; they parse to the nearest float.
 """
 
 from __future__ import annotations
