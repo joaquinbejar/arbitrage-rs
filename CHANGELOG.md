@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   s0 * (x / mid_0), so prices near the float maximum stay finite, and a
   book that is not finite and positive once rebased is refused before
   simulating.
+- Research, outside the crate: the dataset validator bounds a declared
+  `seed` to a u64, like the generator's, and the steps-bound and int64
+  lot messages echo at most 40 characters of the value. A number longer
+  than 1000 characters, in the CSV files or the manifest, is a violation
+  read from its text: it no longer raises CPython's 4300-digit int
+  conversion error.
 
 ## [0.3.1] - 2026-11-03
 

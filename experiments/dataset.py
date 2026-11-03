@@ -27,7 +27,10 @@ Timestamps are integers in `timestamp_unit` (only `"s"`, seconds, is
 supported), and consecutive steps of a path are exactly `step_days` days
 apart. Prices are exact multiples of `tick`, checked in exact rational arithmetic
 on the CSV text (`Fraction`), not in binary floating point and with no
-precision limit.
+precision limit below the bound on a literal's length: a number in the CSV
+files or the manifest longer than 1000 characters is a violation, checked on
+its text before any conversion (CPython refuses int conversions beyond 4300
+digits, and that must not become an exception).
 """
 
 from __future__ import annotations
@@ -75,6 +78,10 @@ ROUNDING = "floor-lots"
 MAX_LOTS = 2**63 - 1
 MAX_EXPONENT = 400
 MAX_STEPS = 100_000
+# A numeric literal longer than this is a violation, read from its text.
+MAX_DIGITS = 1000
+# The seed is recorded only; bounded like the generator's (a u64).
+MAX_SEED = 2**64 - 1
 
 _INT = re.compile(r"^(0|[1-9][0-9]*)$")
 _NUMBER = re.compile(r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$")
@@ -162,6 +169,9 @@ def _manifest_violations(m) -> list[str]:
             out.append(f"manifest: unknown field {field}")
     if m.get("synthetic") is True and not (isinstance(m.get("seed"), int) and not isinstance(m.get("seed"), bool)):
         out.append("manifest: a synthetic dataset must declare its integer seed")
+    seed = m.get("seed")
+    if isinstance(seed, int) and not isinstance(seed, bool) and not 0 <= seed <= MAX_SEED:
+        out.append(f"manifest: seed {_show(seed)} is outside [0, 2**64 - 1]")
     files = m.get("files")
     if isinstance(files, dict):
         for f in FILES:
@@ -213,15 +223,35 @@ def _read_csv(path: Path, columns: list[str], out: list[str]):
     return rows
 
 
+class _LongInteger:
+    """A JSON integer literal longer than MAX_DIGITS, kept as its length: it
+    fails every type check and is echoed by its length only."""
+
+    def __init__(self, digits: int):
+        self.digits = digits
+
+    def __repr__(self) -> str:
+        return f"<an integer literal of {self.digits} digits>"
+
+
+def _json_int(text: str):
+    digits = len(text.lstrip("-"))
+    return _LongInteger(digits) if digits > MAX_DIGITS else int(text)
+
+
 def _int(value: str, where: str, out: list[str], bound: int | None = None):
     if not _INT.match(value):
         out.append(f"{where}: {_show(value)} is not a non-negative integer")
         return None
-    x = int(value)
-    if bound is not None and x > bound:
-        out.append(f"{where}: {value} is above the int64 range of lot counts")
+    # _INT has no leading zeros, so a longer text is a larger integer; both
+    # checks run before int(), which refuses very long texts.
+    if bound is not None and (len(value) > len(str(bound)) or int(value) > bound):
+        out.append(f"{where}: {_show(value)} is above the int64 range of lot counts")
         return None
-    return x
+    if len(value) > MAX_DIGITS:
+        out.append(f"{where}: {_show(value)} has more than {MAX_DIGITS} digits")
+        return None
+    return int(value)
 
 
 def _num(value: str, where: str, out: list[str]):
@@ -229,9 +259,18 @@ def _num(value: str, where: str, out: list[str]):
     if not m:
         out.append(f"{where}: {_show(value)} is not a finite decimal number")
         return None
-    if m.group(3) and abs(int(m.group(3)[1:])) > MAX_EXPONENT:
-        out.append(f"{where}: {_show(value)} has an exponent beyond {MAX_EXPONENT}")
+    # The whole text, exponent included: Fraction() converts every part with
+    # int(), which refuses very long texts.
+    if len(value) > MAX_DIGITS:
+        out.append(f"{where}: {_show(value)} has more than {MAX_DIGITS} characters")
         return None
+    if m.group(3):
+        # Read on the text: an exponent of more than three significant
+        # digits is beyond the bound, and int() never sees a long one.
+        digits = m.group(3)[1:].lstrip("+-").lstrip("0")
+        if len(digits) > len(str(MAX_EXPONENT)) or int(digits or "0") > MAX_EXPONENT:
+            out.append(f"{where}: {_show(value)} has an exponent beyond {MAX_EXPONENT}")
+            return None
     x = float(value)
     if not math.isfinite(x):
         out.append(f"{where}: {_show(value)} is not finite")
@@ -246,9 +285,11 @@ def _parse(directory: Path):
     if not mpath.is_file():
         return None, None, [f"{directory}: no manifest.json"], {}
     try:
-        manifest = json.loads(mpath.read_text())
+        manifest = json.loads(mpath.read_text(), parse_int=_json_int)
     except json.JSONDecodeError as e:
-        return None, None, [f"manifest: not JSON ({e})"], {}
+        return None, None, [f"manifest: not JSON ({_show(str(e), 120)})"], {}
+    except RecursionError:
+        return None, None, ["manifest: not JSON (nested too deeply)"], {}
     out += _manifest_violations(manifest)
     if not isinstance(manifest, dict):
         return None, None, out, {}
@@ -266,7 +307,7 @@ def _parse(directory: Path):
         return manifest, None, out, hashes
     steps = manifest["steps"]
     if steps > MAX_STEPS:
-        out.append(f"manifest: steps {steps} above {MAX_STEPS}")
+        out.append(f"manifest: steps {_show(steps)} above {MAX_STEPS}")
         return manifest, None, out, hashes
     tick = None
     if _check_type(manifest.get("tick"), "positive_number"):
