@@ -159,6 +159,19 @@ class Validator(unittest.TestCase):
         refresh_hashes(self.d)
         self.assertViolation("is not a multiple of the tick")
 
+    def test_the_tick_check_has_no_precision_limit(self):
+        # Exact on the grid, far beyond 28 significant digits: no exception,
+        # and no tick violation.
+        for value, on_tick in (("1e40", True), ("123456789012345678901234567890.01", True), ("1e-30", False)):
+            with self.subTest(value=value):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                edit_csv(self.d, "paths.csv", lambda l: edit_field(edit_field(l, 1, 3, value), 1, 4, value))
+                refresh_hashes(self.d)
+                v = ds.validate(self.d)
+                ticks = [x for x in v if "multiple of the tick" in x]
+                self.assertEqual(ticks == [], on_tick, v[:5])
+
     def test_a_duplicate_key(self):
         edit_csv(self.d, "execution.csv", lambda l: l[:2] + [l[1]] + l[2:])
         refresh_hashes(self.d)

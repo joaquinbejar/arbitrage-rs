@@ -23,19 +23,20 @@ an invalid dataset. Parsing is strict: integers are plain decimal digits
 (no `1.0`, no `True`), numbers are finite decimals (no `nan`, no `inf`).
 Timestamps are integers in `timestamp_unit` (only `"s"`, seconds, is
 supported), and consecutive steps of a path are exactly `step_days` days
-apart. Prices are exact multiples of `tick`, checked in decimal on the CSV
-text, not in binary floating point.
+apart. Prices are exact multiples of `tick`, checked in exact rational arithmetic
+on the CSV text (`Fraction`), not in binary floating point and with no
+precision limit.
 """
 
 from __future__ import annotations
 
 import csv
-import decimal
 import hashlib
 import json
 import math
 import re
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
@@ -227,12 +228,12 @@ def _parse(directory: Path):
     steps = manifest["steps"]
     tick = None
     if _check_type(manifest.get("tick"), "positive_number"):
-        tick = decimal.Decimal(repr(manifest["tick"]))
+        tick = Fraction(repr(manifest["tick"]))
     step_seconds = None
     if _check_type(manifest.get("step_days"), "positive_number") and manifest.get("timestamp_unit") == "s":
-        x = decimal.Decimal(repr(manifest["step_days"])) * 86400
-        if x == x.to_integral_value():
-            step_seconds = int(x)
+        x = Fraction(repr(manifest["step_days"])) * 86400
+        if x.denominator == 1:
+            step_seconds = x.numerator
         else:
             out.append(f"manifest: step_days {manifest['step_days']} is not a whole number of seconds")
 
@@ -250,9 +251,11 @@ def _parse(directory: Path):
             continue
         if not 0.0 < bid <= ask:
             out.append(f"{where}: needs 0 < bid <= ask, got {bid}, {ask}")
-        if tick is not None:
+        elif tick is not None:
+            # Both prices are positive and finite as floats here, so their
+            # decimal exponents are bounded and the Fractions stay small.
             for col in ("bid", "ask"):
-                if decimal.Decimal(r[col]) % tick != 0:
+                if Fraction(r[col]) % tick != 0:
                     out.append(f"{where}: {col} {r[col]} is not a multiple of the tick {tick}")
         if step > steps:
             out.append(f"{where}: step {step} beyond steps {steps}")

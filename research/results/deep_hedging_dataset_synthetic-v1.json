@@ -901,7 +901,7 @@
     "source": "research/results/deep_hedging.json"
   },
   "run": {
-    "git_commit": "959f87bbf0a2065b6ad5c69752e279d090f45325",
+    "git_commit": "99cdb9619ed204883c9c1c67e4d702882a93c55f",
     "machine": "arm64",
     "numpy": "2.5.4",
     "python": "3.12.16",
