@@ -154,24 +154,37 @@ def post_run_gate6(r: dict) -> list[str]:
     weight_hashes = {w["sha256"] for w in old["weights"].values()}
     extra_names = sorted({x for x, _ in extra})
     extra_are_weights = {v for _, v in extra} == weight_hashes
+    if value_diffs or missing or not scalars_equal or not extra_are_weights or extra_names != ["weights_sha256"]:
+        check = (
+            f"The key-by-key check found differences: {value_diffs} differing values, {missing} missing keys, "
+            f"extra keys {extra_names}, scalar rows equal {scalars_equal}, extra values equal to the weight hashes "
+            f"{extra_are_weights}."
+        )
+    else:
+        check = (
+            f"All {keys} shared values are equal and no key is missing. The band width, delta and band rows of every "
+            f"half spread are equal. The only difference is the {len(extra)} extra keys `weights_sha256`, which this "
+            "run adds to record the weights it loaded. Their values are exactly the set of 15 weight sha256 recorded "
+            "in M5-06b's `weights`."
+        )
     return [
         "## After the run: the cause of gate 6",
         "",
         "This section was written after the run. It changes neither gate 6 nor the outcome, which stays **REVISE** "
         "as preregistered.",
         "",
-        f"Gate 6 compares this run's in-model rows with M5-06b's as whole records. Compared key by key over the "
-        f"{rows} in-model learned rows (3 half spreads × 5 seeds):",
-        f"- {keys} shared keys, with {value_diffs} differing values and {missing} missing keys;",
-        f"- {len(extra)} extra keys, all named {', '.join(f'`{n}`' for n in extra_names)}. They are this run's "
-        "record of the weights it loaded; their values equal the set of 15 weight sha256 recorded in M5-06b: "
-        f"{'yes' if extra_are_weights else '**no**'}.",
-        f"- The band width, delta and band rows of every half spread are equal: {'yes' if scalars_equal else '**no**'}.",
+        f"Gate 6 compares this run's in-model rows with M5-06b's as whole records. Compared key by key and value by "
+        f"value, the {rows} in-model learned rows (3 half spreads × 5 seeds) give the following.",
         "",
-        "Gate 6 therefore fails on a field the harness added, not on a value. Even so, \"ADOPT except for gate 6\" "
-        "is **not** a preregistered result. Claiming ADOPT needs a new preregistered experiment, authorized "
-        "separately, with gate 6 comparing values and ignoring metadata keys, declared before any new run. The "
-        "gate 6 fix goes in a separate change and does not regenerate this run.",
+        check,
+        "",
+        "Gate 6 therefore fails on a field the harness added, not on a value. That the criterion gives adopt with "
+        "every other gate holding is **not** a preregistered result. \"ADOPT except for gate 6\" is a post-run "
+        "interpretation, not the preregistered outcome.",
+        "",
+        "Any ADOPT claim requires a new preregistered experiment, authorized separately and declared before it runs, "
+        "with gate 6 comparing values and leaving metadata keys out. A correction of the gate 6 check belongs in a "
+        "separate change, and it does not regenerate or reclassify run 2.",
         "",
     ]
 

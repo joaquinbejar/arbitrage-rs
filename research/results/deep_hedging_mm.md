@@ -135,9 +135,10 @@ In-model rows equal M5-06b: False. Run: 175.7 s, python 3.12.16, numpy 2.5.4, to
 
 This section was written after the run. It changes neither gate 6 nor the outcome, which stays **REVISE** as preregistered.
 
-Gate 6 compares this run's in-model rows with M5-06b's as whole records. Compared key by key over the 15 in-model learned rows (3 half spreads × 5 seeds):
-- 255 shared keys, with 0 differing values and 0 missing keys;
-- 15 extra keys, all named `weights_sha256`. They are this run's record of the weights it loaded; their values equal the set of 15 weight sha256 recorded in M5-06b: yes.
-- The band width, delta and band rows of every half spread are equal: yes.
+Gate 6 compares this run's in-model rows with M5-06b's as whole records. Compared key by key and value by value, the 15 in-model learned rows (3 half spreads × 5 seeds) give the following.
 
-Gate 6 therefore fails on a field the harness added, not on a value. Even so, "ADOPT except for gate 6" is **not** a preregistered result. Claiming ADOPT needs a new preregistered experiment, authorized separately, with gate 6 comparing values and ignoring metadata keys, declared before any new run. The gate 6 fix goes in a separate change and does not regenerate this run.
+All 255 shared values are equal and no key is missing. The band width, delta and band rows of every half spread are equal. The only difference is the 15 extra keys `weights_sha256`, which this run adds to record the weights it loaded. Their values are exactly the set of 15 weight sha256 recorded in M5-06b's `weights`.
+
+Gate 6 therefore fails on a field the harness added, not on a value. That the criterion gives adopt with every other gate holding is **not** a preregistered result. "ADOPT except for gate 6" is a post-run interpretation, not the preregistered outcome.
+
+Any ADOPT claim requires a new preregistered experiment, authorized separately and declared before it runs, with gate 6 comparing values and leaving metadata keys out. A correction of the gate 6 check belongs in a separate change, and it does not regenerate or reclassify run 2.
