@@ -154,6 +154,64 @@ def solve_box_ls(design: np.ndarray, target: np.ndarray, weight: np.ndarray, g: 
     return best[1], best[2], best[0]
 
 
+# The feasibility tolerance of `solve_box_ls`: a constraint holds when
+# g x - h <= FEASIBILITY_TOLERANCE * scale, scale = max(1, max |h|).
+FEASIBILITY_TOLERANCE = 1e-12
+# Indices of the rows of `_constraints`.
+C_FLAT, RHO_UPPER, RHO_LOWER = 0, 1, 2
+
+
+def recover_rho(x, active, g: np.ndarray, h: np.ndarray) -> float:
+    """rho from the solution x = (a, d, c) of a face.
+
+    A constraint is active when the face has it, or when it holds with
+    equality within the solver's feasibility tolerance. With c > 0, an active
+    rho bound gives rho exactly (d = c: rho = 1; d = -c: rho = -1), as the
+    constraint itself says; d / c would carry the rounding of the solve, one
+    ulp outside [-1, 1]. Otherwise rho = d / c. With c = 0 within the
+    tolerance (the flat face active, b about 0) rho does not change w by more
+    than the tolerance and is 0. Both rho bounds active with c > 0 is a
+    contradiction and an error."""
+    a, d, c = (float(v) for v in x)
+    if not all(math.isfinite(v) for v in (a, d, c)):
+        raise ValueError(f"svi fit: non-finite solution {(a, d, c)}")
+    scale = max(1.0, float(np.max(np.abs(h))))
+    residual = g @ np.asarray(x, dtype=float) - h
+    on = {i for i in range(len(h)) if i in active or residual[i] >= -FEASIBILITY_TOLERANCE * scale}
+    if c == 0.0 or C_FLAT in on:
+        # c = 0 within the tolerance: both rho bounds hold trivially and rho
+        # moves w by at most the tolerance; it is 0 by convention.
+        return 0.0
+    upper, lower = RHO_UPPER in on, RHO_LOWER in on
+    if upper and lower:
+        raise ValueError(f"svi fit: both rho bounds active with c = {c!r} > 0")
+    if upper:
+        return 1.0
+    if lower:
+        return -1.0
+    return d / c
+
+
+def check_slice_domain(sl: "SviSlice", a_max: float) -> None:
+    """The raw SVI domain of a fitted slice, checked after recovery and never
+    clamped: every parameter finite, sigma > 0, b >= 0, |rho| <= 1, Lee's
+    bound b (1 + |rho|) <= 2 and 0 <= a <= a_max. Written so that NaN fails."""
+    vals = {k: getattr(sl, k) for k in ("tau", "a", "b", "rho", "m", "sigma")}
+    bad = [k for k, v in vals.items() if not math.isfinite(v)]
+    if bad:
+        raise ValueError(f"svi fit: non-finite {bad} in {vals}")
+    checks = {
+        "sigma > 0": sl.sigma > 0.0,
+        "b >= 0": sl.b >= 0.0,
+        "|rho| <= 1": abs(sl.rho) <= 1.0,
+        "b (1 + |rho|) <= 2": sl.b * (1.0 + abs(sl.rho)) <= LEE_SLOPE_BOUND,
+        "0 <= a <= a_max": 0.0 <= sl.a <= a_max,
+    }
+    failed = [k for k, ok in checks.items() if not ok]
+    if failed:
+        raise ValueError(f"svi fit: outside the domain ({', '.join(failed)}): {vals}")
+
+
 def _inner(k, w_obs, weight, m, sigma):
     y = (k - m) / sigma
     design = np.stack([np.ones_like(y), y, np.sqrt(y * y + 1.0)], axis=1)
@@ -212,8 +270,11 @@ def fit_slice(tau: float, k: np.ndarray, w_obs: np.ndarray, weight: np.ndarray, 
     sigma = math.exp(ls)
     a, d, c = (float(v) for v in x)
     b = c / sigma
-    rho = d / c if c > 0.0 else 0.0
+    a_max = float(np.max(w_obs))
+    g, h = _constraints(sigma, a_max)
+    rho = recover_rho(x, active, g, h)
     sl = SviSlice(tau=tau, a=a, b=b, rho=rho, m=m, sigma=sigma)
+    check_slice_domain(sl, a_max)
     report = {
         "objective": obj,
         "active_constraints": list(active),
