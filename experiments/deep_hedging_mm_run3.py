@@ -30,6 +30,7 @@ Three commands, from the repository root:
 from __future__ import annotations
 
 import argparse
+import calendar
 import errno
 import hashlib
 import json
@@ -96,6 +97,10 @@ MAX_SEED = 2**64 - BOOTSTRAP_SPAN
 # Every integer seed the repository uses anywhere (experiments, tests and
 # datasets), besides those of CONFIG. No seed of run 3 may be one of them.
 LITERAL_SEEDS = (1, 2, 3, 5, 11, 12, 101, 202, 20261103, 2**64 - 1)
+# The dummy seeds of the dry run done before the code commit
+# (preregistration, "Dry run"): forbidden, and their bootstrap range is
+# used, like the reference run's.
+DRY_RUN_SEEDS = {"eval_seed": 4659386883093802759, "bootstrap_seed": 2043307074730982498}
 # Infrastructure causes after which one restart is allowed (preregistration,
 # "Failures"). Exceptions are classified from the attempt's own record;
 # the two causes without an exception need a system record.
@@ -172,7 +177,13 @@ def sha256_bytes(raw: bytes) -> str:
 
 def forbidden_seeds(cfg: dict) -> list[int]:
     """The seeds no run 3 seed may be: CONFIG's and every literal seed."""
-    return sorted({cfg["data_seed"], cfg["bootstrap_seed"], *cfg["train_seeds"], *LITERAL_SEEDS})
+    return sorted({cfg["data_seed"], cfg["bootstrap_seed"], *cfg["train_seeds"], *LITERAL_SEEDS, *DRY_RUN_SEEDS.values()})
+
+
+def used_bootstrap_ranges(cfg: dict) -> list[tuple[int, int]]:
+    """The bootstrap ranges already drawn from: the reference run's and the
+    dry run's."""
+    return [(b, b + BOOTSTRAP_SPAN - 1) for b in (cfg["bootstrap_seed"], DRY_RUN_SEEDS["bootstrap_seed"])]
 
 
 def fill_rule(seeds: dict, cfg: dict, forbidden: list[int]) -> list[str]:
@@ -192,16 +203,16 @@ def fill_rule(seeds: dict, cfg: dict, forbidden: list[int]) -> list[str]:
     if len(cfg["train_seeds"]) >= 100:
         bad.append("100 or more train seeds would overlap the bootstrap offsets")
     e, b = seeds["eval_seed"], seeds["bootstrap_seed"]
-    ref = (cfg["bootstrap_seed"], cfg["bootstrap_seed"] + BOOTSTRAP_SPAN - 1)
     mine = (b, b + BOOTSTRAP_SPAN - 1)
     if e in forbidden:
         bad.append(f"eval_seed {e} is a forbidden seed")
-    if ref[0] <= e <= ref[1]:
-        bad.append(f"eval_seed {e} is in the reference bootstrap range {list(ref)}")
     if mine[0] <= e <= mine[1]:
         bad.append(f"eval_seed {e} is in its own bootstrap range {list(mine)}")
-    if mine[0] <= ref[1] and ref[0] <= mine[1]:
-        bad.append(f"bootstrap range {list(mine)} meets the reference bootstrap range {list(ref)}")
+    for used in used_bootstrap_ranges(cfg):
+        if used[0] <= e <= used[1]:
+            bad.append(f"eval_seed {e} is in the used bootstrap range {list(used)}")
+        if mine[0] <= used[1] and used[0] <= mine[1]:
+            bad.append(f"bootstrap range {list(mine)} meets the used bootstrap range {list(used)}")
     hit = [f for f in forbidden if mine[0] <= f <= mine[1]]
     if hit:
         bad.append(f"bootstrap range {list(mine)} holds forbidden seeds {hit}")
@@ -395,6 +406,30 @@ def classify_exception(record: dict) -> str | None:
     return INFRA_ERRNOS.get(record.get("errno"))
 
 
+def utc_stamp(t: float | None = None) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() if t is None else t))
+
+
+def parse_utc(stamp) -> float:
+    if not isinstance(stamp, str):
+        raise AttemptError(f"a record time {stamp!r} is not a UTC stamp")
+    try:
+        return float(calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")))
+    except ValueError:
+        raise AttemptError(f"a record time {stamp!r} is not a UTC stamp") from None
+
+
+def last_record_time(manifest: dict, stages: list[dict], exception: dict | None) -> float:
+    """The restart window's anchor: the latest time the interrupted run
+    wrote inside its own records (the execution manifest's start, each
+    stage line, the exception record). File times are not used, so
+    touching or copying a file does not move it."""
+    stamps = [manifest.get("started_at"), *(s.get("at") for s in stages)]
+    if exception is not None:
+        stamps.append(exception.get("at"))
+    return max(parse_utc(x) for x in stamps)
+
+
 def _comparable(manifest: dict) -> dict:
     return {k: v for k, v in manifest.items() if k not in ("attempt", "started_at")}
 
@@ -442,8 +477,9 @@ def open_attempt(attempts: Path, out: Path, execution: dict, restart: bool, now:
                 raise AttemptError("attempt-1's failure record shows no infrastructure cause with its system record")
         if _comparable(m1) != _comparable(execution):
             raise AttemptError("the restart's execution manifest differs from attempt-1's")
-        written = [first / n for n in ("execution_manifest.json", "stage.log", "exception.json") if (first / n).exists()]
-        last = max(p.stat().st_mtime for p in written)
+        last = last_record_time(m1, stages, json.loads(exc.read_text()) if exc.exists() else None)
+        if last > now:
+            raise AttemptError(f"attempt-1's last record is in the future ({last - now:.0f} s ahead)")
         if now - last > RESTART_WINDOW_S:
             raise AttemptError(f"the restart is {now - last:.0f} s after attempt-1's last record, beyond {RESTART_WINDOW_S} s")
         previous = {s["stage"]: s.get("arrays", {}) for s in stages}
@@ -468,7 +504,7 @@ class StageLog:
         hashes = {k: array_sha256(v) for k, v in (arrays or {}).items()}
         if self.previous is not None and name in self.previous and self.previous[name] != hashes:
             raise AttemptError(f"stage {name}: the restart does not reproduce attempt-1's data")
-        line = json.dumps({"stage": name, "elapsed_s": round(time.time() - self.started, 1), "arrays": hashes}, sort_keys=True)
+        line = json.dumps({"stage": name, "at": utc_stamp(), "elapsed_s": round(time.time() - self.started, 1), "arrays": hashes}, sort_keys=True)
         self.f.write(line + "\n")
         os.fsync(self.f.fileno())
         if self.echo:
@@ -714,7 +750,7 @@ def preflight_failure(args, error: Exception) -> None:
         "error": _scrub(str(error)),
         "type": type(error).__name__,
         "launch": {"code_commit": args.code_commit, "preregistration_sha256": args.preregistration_sha256, "template_sha256": args.template_sha256, "manifest_sha256": args.manifest_sha256},
-        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "at": utc_stamp(),
     }
     try:
         write_exclusive(PRE_FLIGHT_FAILURE, canonical_bytes(record))
@@ -740,7 +776,7 @@ def command_run(args) -> None:
             "host": platform.node(),
             "environment": environment(),
             "binary_sha256": final["binary_sha256"],
-            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "started_at": utc_stamp(),
         }
         here, previous = open_attempt(ATTEMPTS, OUT, execution, args.restart)
     except (LaunchError, AttemptError, OSError) as e:
@@ -768,7 +804,7 @@ def execute_attempt(here: Path, previous: dict | None, out: Path, started: float
             "errno": getattr(e, "errno", None),
             "message": _scrub(str(e)),
             "traceback": _scrub(traceback.format_exc()),
-            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "at": utc_stamp(),
         }
         try:
             write_exclusive(here / "exception.json", canonical_bytes(record))

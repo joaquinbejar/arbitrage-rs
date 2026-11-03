@@ -32,13 +32,15 @@ maintainer after both approvers' GOs (see "Binding").
   [s, s + 299], the streams `paired_bootstrap` draws from it.
   - `eval_seed` is not a forbidden seed, and is in neither the reference
     run's bootstrap range nor run 3's.
-  - Run 3's bootstrap range meets neither the reference run's nor any
-    forbidden seed.
+  - Run 3's bootstrap range meets neither the reference run's, nor the
+    dry run's (see "Dry run"), nor any forbidden seed; `eval_seed` is in
+    neither of those two ranges.
   - The forbidden seeds are listed in the template (`forbidden_seeds`):
     `data_seed`, the reference `bootstrap_seed`, the train seeds, and
     every literal seed the repository uses in experiments, tests and
-    datasets. Runs 1 and 2 and the reference run drew their Heston sets
-    from `data_seed`, so those are covered.
+    datasets, and the two dummy seeds of the dry run. Runs 1 and 2 and
+    the reference run drew their Heston sets from `data_seed`, so those
+    are covered.
   - There are fewer than 100 train seeds, so the offsets i, 100 + i and
     200 + i never collide.
 - **Streams.** `c0, c1 = np.random.SeedSequence(eval_seed).spawn(2)`. The
@@ -55,6 +57,30 @@ maintainer after both approvers' GOs (see "Binding").
   ideal execution one; the in-range subset (gate 7) uses
   `default_rng(bootstrap_seed + 200 + i)`. These are run 2's offsets, so
   both dynamics stay paired.
+
+## Dry run
+
+Before the code commit was fixed, the whole run was executed once, as the
+approvers asked and the maintainer authorized, to find failures in the
+code rather than in run 3 itself:
+
+- on commit `05e2c9e86258e890101d61b8540871b4d0ca638b`, which differs from
+  the code commit only in the dry run's seeds being forbidden, in this
+  section, and in the restart window's anchor (record times instead of
+  file times, so each stage line also carries its UTC time);
+- in a scratch clone, through the real launch path (template, a dummy
+  final manifest in a child commit, `run` with the four launch arguments
+  and the thread variables at 1);
+- with dummy seeds drawn by `draw_seeds` (one draw): `eval_seed`
+  4659386883093802759 and `bootstrap_seed` 2043307074730982498, now
+  forbidden, with their bootstrap range treated as used.
+
+Only these were recorded: exit code 0; 191.8 s; a peak resident set of
+939950080 bytes for the largest process; gate 6 equal, bit for bit, under
+the pinned thread settings (it depends only on `data_seed`, so it says
+nothing about any Heston set). The results file, the attempt's files, the
+stage log and the captured output were deleted unread at
+2026-11-03T16:11:35Z. The run 3 report states this dry run.
 
 ## What changes, and nothing else
 
@@ -226,7 +252,10 @@ Otherwise the outcome is REVISE, or REJECT under the criterion's own rule.
     the restart.
   A stop by an operator is not one. The run may then be restarted once,
   with `--restart`, from the same commit with the same approvals, within
-  1 hour of attempt 1's last record (the run refuses a later restart):
+  1 hour of the last time attempt 1 wrote in its own records (the
+  execution manifest's start, the stage lines, the exception record; file
+  times do not count). The run refuses a later restart, and a record time
+  in the future:
   - attempt 1 must be complete on record (its execution manifest and stage
     log, and its exception record or failure record), and is kept
     verbatim;

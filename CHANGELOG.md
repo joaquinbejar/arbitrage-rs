@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with strict types. Attempts and results are written once and never
   replaced, the log carries no outcome, every thread count is pinned to
   one, and one restart is allowed only after an infrastructure
-  interruption, within an hour, reproducing the first attempt's data.
+  interruption, within an hour, reproducing the first attempt's data. A
+  dry run with dummy seeds (now forbidden) checked the code end to end
+  before the commit was fixed; its results were deleted unread.
 
 ### Fixed
 

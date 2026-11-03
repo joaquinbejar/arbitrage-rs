@@ -226,7 +226,7 @@ class FillRule(unittest.TestCase):
         self.assertEqual(r3.fill_rule({"eval_seed": 0, "bootstrap_seed": r3.MAX_SEED - 1}, CONFIG, FORBIDDEN), [])
 
     def test_forbidden_seeds_cover_the_configuration_and_the_literals(self):
-        for s in (CONFIG["data_seed"], CONFIG["bootstrap_seed"], *CONFIG["train_seeds"], *r3.LITERAL_SEEDS):
+        for s in (CONFIG["data_seed"], CONFIG["bootstrap_seed"], *CONFIG["train_seeds"], *r3.LITERAL_SEEDS, *r3.DRY_RUN_SEEDS.values()):
             self.assertIn(s, FORBIDDEN)
 
     def test_broken(self):
@@ -247,6 +247,9 @@ class FillRule(unittest.TestCase):
             "bootstrap meets the reference range": {"eval_seed": 10**12, "bootstrap_seed": ref + 299},
             "bootstrap below and into the reference range": {"eval_seed": 10**12, "bootstrap_seed": 0},
             "bootstrap range holds a forbidden seed": {"eval_seed": 10**12, "bootstrap_seed": CONFIG["data_seed"] - 10},
+            "the dry run's eval seed": {"eval_seed": r3.DRY_RUN_SEEDS["eval_seed"], "bootstrap_seed": 10**15},
+            "in the dry run's bootstrap range": {"eval_seed": r3.DRY_RUN_SEEDS["bootstrap_seed"] + 299, "bootstrap_seed": 10**15},
+            "bootstrap meets the dry run's range": {"eval_seed": 10**12, "bootstrap_seed": r3.DRY_RUN_SEEDS["bootstrap_seed"] - 299},
             "a missing slot": {"eval_seed": 10**12},
             "an extra slot": GOOD | {"x": 1},
             "not an object": [10**12, 10**15],
@@ -271,7 +274,7 @@ class Attempts(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         self.attempts = self.dir / "attempts"
         self.out = self.dir / "run3.json"
-        self.execution = {"launch": {"code_commit": "c" * 40}, "seeds": GOOD, "host": "h", "started_at": "t0"}
+        self.execution = {"launch": {"code_commit": "c" * 40}, "seeds": GOOD, "host": "h", "started_at": r3.utc_stamp()}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -298,12 +301,12 @@ class Attempts(unittest.TestCase):
 
     def test_a_restart_needs_an_infrastructure_cause(self):
         here = self.first()
-        later = self.execution | {"started_at": "t1"}
+        later = self.execution | {"started_at": r3.utc_stamp()}
         with self.assertRaises(r3.AttemptError):
             r3.open_attempt(self.attempts, self.out, later, restart=True)
         for record in ({"type": "KeyboardInterrupt", "errno": None}, {"type": "SystemExit", "errno": None}, {"type": "OSError", "errno": errno.ENOENT}):
             p = here / "exception.json"
-            p.write_text(json.dumps(record))
+            p.write_text(json.dumps(record | {"at": r3.utc_stamp()}))
             with self.subTest(record), self.assertRaises(r3.AttemptError):
                 r3.open_attempt(self.attempts, self.out, later, restart=True)
             p.unlink()
@@ -316,10 +319,10 @@ class Attempts(unittest.TestCase):
 
     def test_a_valid_restart_reproduces_the_data(self):
         here = self.first()
-        (here / "exception.json").write_text(json.dumps({"type": "OSError", "errno": errno.ENOSPC}))
+        (here / "exception.json").write_text(json.dumps({"type": "OSError", "errno": errno.ENOSPC, "at": r3.utc_stamp()}))
         with self.assertRaises(r3.AttemptError):
             r3.open_attempt(self.attempts, self.out, self.execution | {"host": "other"}, restart=True)
-        second, previous = r3.open_attempt(self.attempts, self.out, self.execution | {"started_at": "t1"}, restart=True)
+        second, previous = r3.open_attempt(self.attempts, self.out, self.execution | {"started_at": r3.utc_stamp()}, restart=True)
         self.assertEqual(second.name, "attempt-2")
         log = r3.StageLog(second / "stage.log", previous, 0.0, echo=False)
         with self.assertRaises(r3.AttemptError):
@@ -335,14 +338,28 @@ class Attempts(unittest.TestCase):
         second, _ = r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
         self.assertEqual(second.name, "attempt-2")
 
-    def test_a_restart_after_the_window_is_refused(self):
+    def test_the_restart_window_is_anchored_in_the_records(self):
+        self.execution["started_at"] = "2026-11-03T10:00:00Z"
         here = self.first()
-        (here / "exception.json").write_text(json.dumps({"type": "MemoryError"}))
-        last = max(p.stat().st_mtime for p in here.iterdir())
+        stamp = json.loads((here / "stage.log").read_text().splitlines()[-1])["at"]
+        (here / "exception.json").write_text(json.dumps({"type": "MemoryError", "at": "2026-11-03T10:00:30Z"}))
+        last = max(r3.parse_utc(x) for x in (stamp, "2026-11-03T10:00:30Z"))
+        # File times do not count: touching every file changes nothing.
+        for p in here.iterdir():
+            os.utime(p, (last + 10 * r3.RESTART_WINDOW_S,) * 2)
         with self.assertRaises(r3.AttemptError):
             r3.open_attempt(self.attempts, self.out, self.execution, restart=True, now=last + r3.RESTART_WINDOW_S + 1)
+        with self.assertRaises(r3.AttemptError):
+            r3.open_attempt(self.attempts, self.out, self.execution, restart=True, now=last - 1)
         second, _ = r3.open_attempt(self.attempts, self.out, self.execution, restart=True, now=last + r3.RESTART_WINDOW_S - 1)
         self.assertEqual(second.name, "attempt-2")
+
+    def test_a_record_without_a_valid_time_refuses_the_restart(self):
+        here = self.first()
+        for at in (None, "yesterday", 1730000000):
+            (here / "exception.json").write_text(json.dumps({"type": "MemoryError", "at": at}))
+            with self.subTest(at), self.assertRaises(r3.AttemptError):
+                r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
 
     def test_classification(self):
         self.assertEqual(r3.classify_exception({"type": "MemoryError"}), "MemoryError")
@@ -392,7 +409,7 @@ class Lifecycle(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         self.attempts = self.dir / "attempts"
         self.out = self.dir / "run3.json"
-        self.execution = {"launch": {"code_commit": "c" * 40}, "seeds": GOOD, "host": "h", "started_at": "t0"}
+        self.execution = {"launch": {"code_commit": "c" * 40}, "seeds": GOOD, "host": "h", "started_at": r3.utc_stamp()}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -483,7 +500,7 @@ class EndToEnd(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
             attempts, out = d / "attempts", d / "run3.json"
-            execution = {"launch": {}, "seeds": final["seeds"], "started_at": "t0"}
+            execution = {"launch": {}, "seeds": final["seeds"], "started_at": r3.utc_stamp()}
             here, previous = r3.open_attempt(attempts, out, execution, restart=False)
             results = r3.execute_attempt(here, previous, out, 0.0, lambda log: r3.run(final, {"attempt": 1}, log, 0.0, cfg=cfg))
             stages = [json.loads(x)["stage"] for x in (here / "stage.log").read_text().splitlines()]
