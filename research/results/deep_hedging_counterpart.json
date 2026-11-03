@@ -1,0 +1,3486 @@
+{
+  "by_eps": {
+    "0": {
+      "band_w": 0.005,
+      "heston_sticky-moneyness": {
+        "band": {
+          "cvar50": 0.5956244880271807,
+          "cvar95": 1.8537108378263178,
+          "cvar95_vs_ideal_execution": 0.3577977500222478,
+          "fee_cost": 0.04946902794606327,
+          "max_holding_mean": 0.8078799621582031,
+          "max_holding_p99": 0.9999,
+          "mean_pnl": -0.04547309002011563,
+          "mean_pnl_vs_ideal_execution": 0.005277285233448444,
+          "mean_residual": 0.0303311634310208,
+          "rebalance_trades": 25.664947509765625,
+          "rebalance_turnover": 1.9204978576660157,
+          "rejected_orders": 0.527435302734375,
+          "spread_cost": 0.0,
+          "std_pnl": 0.7254625488416062
+        },
+        "delta": {
+          "cvar50": 0.5957224895663805,
+          "cvar95": 1.8537726270679096,
+          "cvar95_vs_ideal_execution": 0.3576896605359785,
+          "fee_cost": 0.0495705281215538,
+          "max_holding_mean": 0.8083833557128907,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -0.045589172439527904,
+          "mean_pnl_vs_ideal_execution": 0.005300047344256862,
+          "mean_residual": 0.03034173279374822,
+          "rebalance_trades": 28.483154296875,
+          "rebalance_turnover": 1.9253966278076171,
+          "rejected_orders": 0.585662841796875,
+          "spread_cost": 0.0,
+          "std_pnl": 0.7254369559454278
+        },
+        "learned": [
+          {
+            "cvar50": 0.6018744195422931,
+            "cvar95": 1.6691959772973972,
+            "cvar95_vs_ideal_execution": 0.3755197053573829,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.16718019752549246,
+              "ci_low": -0.20221747621503872,
+              "estimate": -0.18451486052892063
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.18340642084119693,
+              "ci_low": -0.22136033956419043,
+              "estimate": -0.20223681586405573
+            },
+            "fee_cost": 0.045832879257303435,
+            "max_holding_mean": 0.7600779296875,
+            "max_holding_p99": 1.0241329999999997,
+            "mean_pnl": -0.04024284527931062,
+            "mean_pnl_vs_ideal_execution": 0.004043178800969072,
+            "mean_residual": 0.02343601305180581,
+            "rebalance_trades": 29.338623046875,
+            "rebalance_turnover": 1.7437993591308594,
+            "rejected_orders": 0.60443115234375,
+            "seed": 11,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7264324683358232
+          },
+          {
+            "cvar50": 0.6184742372394212,
+            "cvar95": 1.712545792522398,
+            "cvar95_vs_ideal_execution": 0.345035077530343,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.12131137282076573,
+              "ci_low": -0.16212387247020033,
+              "estimate": -0.14116504530391993
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.10709045054963852,
+              "ci_low": -0.15098557466162296,
+              "estimate": -0.12840237281201516
+            },
+            "fee_cost": 0.04551592147987418,
+            "max_holding_mean": 0.744864663696289,
+            "max_holding_p99": 1.0067000000000002,
+            "mean_pnl": -0.03998765741890149,
+            "mean_pnl_vs_ideal_execution": 0.004108890002016518,
+            "mean_residual": 0.022322000115880924,
+            "rebalance_trades": 29.349151611328125,
+            "rebalance_turnover": 1.7340504486083985,
+            "rejected_orders": 0.6043701171875,
+            "seed": 12,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7466784581732869
+          },
+          {
+            "cvar50": 0.5999244972795224,
+            "cvar95": 1.6671115076099903,
+            "cvar95_vs_ideal_execution": 0.38111587784901,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.1677408102245123,
+              "ci_low": -0.2046420375098742,
+              "estimate": -0.18659933021632757
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.1928327047621574,
+              "ci_low": -0.22877285590882462,
+              "estimate": -0.2099174580430898
+            },
+            "fee_cost": 0.04552796218708079,
+            "max_holding_mean": 0.7560203338623047,
+            "max_holding_p99": 1.0269000000000001,
+            "mean_pnl": -0.03898535080407795,
+            "mean_pnl_vs_ideal_execution": 0.004616459731136889,
+            "mean_residual": 0.02285885461767041,
+            "rebalance_trades": 29.344970703125,
+            "rebalance_turnover": 1.7361905303955079,
+            "rejected_orders": 0.604583740234375,
+            "seed": 13,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7258581331137797
+          },
+          {
+            "cvar50": 0.608379994859647,
+            "cvar95": 1.698533040427495,
+            "cvar95_vs_ideal_execution": 0.356154935971432,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.13644554750556595,
+              "ci_low": -0.1731355873453571,
+              "estimate": -0.15517779739882287
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.13397371525146884,
+              "ci_low": -0.17565012449841988,
+              "estimate": -0.15353498334800708
+            },
+            "fee_cost": 0.04618134585105324,
+            "max_holding_mean": 0.761004510498047,
+            "max_holding_p99": 1.024,
+            "mean_pnl": -0.04006798625817582,
+            "mean_pnl_vs_ideal_execution": 0.004747909952056,
+            "mean_residual": 0.022653648263878914,
+            "rebalance_trades": 29.353729248046875,
+            "rebalance_turnover": 1.7525826263427735,
+            "rejected_orders": 0.60455322265625,
+            "seed": 14,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7355720339093121
+          },
+          {
+            "cvar50": 0.6149550797527346,
+            "cvar95": 1.6903993785197982,
+            "cvar95_vs_ideal_execution": 0.35366115493600536,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.14271626144081437,
+              "ci_low": -0.18365421391431405,
+              "estimate": -0.1633114593065197
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.13685112511562703,
+              "ci_low": -0.17988778686475032,
+              "estimate": -0.15917486422027727
+            },
+            "fee_cost": 0.04537588444259837,
+            "max_holding_mean": 0.7555665161132813,
+            "max_holding_p99": 1.0249000000000001,
+            "mean_pnl": -0.03917494439658238,
+            "mean_pnl_vs_ideal_execution": 0.004054330636509805,
+            "mean_residual": 0.022560572657851226,
+            "rebalance_trades": 29.351715087890625,
+            "rebalance_turnover": 1.7166645141601564,
+            "rejected_orders": 0.604644775390625,
+            "seed": 15,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7424269840640474
+          }
+        ]
+      },
+      "heston_sticky-strike": {
+        "band": {
+          "cvar50": 0.5579619003713973,
+          "cvar95": 1.7650544246211102,
+          "cvar95_vs_ideal_execution": 0.38437541771207817,
+          "fee_cost": 0.04873890442358096,
+          "max_holding_mean": 0.7939953582763672,
+          "max_holding_p99": 0.9999,
+          "mean_pnl": -0.04428411808039785,
+          "mean_pnl_vs_ideal_execution": 0.0049152236157221,
+          "mean_residual": 0.027273305224361166,
+          "rebalance_trades": 25.74713134765625,
+          "rebalance_turnover": 1.8824542114257814,
+          "rejected_orders": 0.52880859375,
+          "spread_cost": 0.0,
+          "std_pnl": 0.6861935020151445
+        },
+        "delta": {
+          "cvar50": 0.5580543583419917,
+          "cvar95": 1.765085775252986,
+          "cvar95_vs_ideal_execution": 0.38441361132086826,
+          "fee_cost": 0.04884082559165274,
+          "max_holding_mean": 0.7945091217041016,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -0.04440643247890644,
+          "mean_pnl_vs_ideal_execution": 0.004925692657939642,
+          "mean_residual": 0.027284182086184612,
+          "rebalance_trades": 28.607696533203125,
+          "rebalance_turnover": 1.8873925689697266,
+          "rejected_orders": 0.588897705078125,
+          "spread_cost": 0.0,
+          "std_pnl": 0.6861495367107711
+        },
+        "learned": [
+          {
+            "cvar50": 0.6018744195422931,
+            "cvar95": 1.6691959772973972,
+            "cvar95_vs_ideal_execution": 0.3755197053573829,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.07841636680224555,
+              "ci_low": -0.11296632702747099,
+              "estimate": -0.09585844732371296
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.0684072118961406,
+              "ci_low": -0.10632351676985789,
+              "estimate": -0.08700273496901767
+            },
+            "fee_cost": 0.045832879257303435,
+            "max_holding_mean": 0.7600779296875,
+            "max_holding_p99": 1.0241329999999997,
+            "mean_pnl": -0.04024284527931062,
+            "mean_pnl_vs_ideal_execution": 0.004043178800969072,
+            "mean_residual": 0.02343601305180581,
+            "rebalance_trades": 29.338623046875,
+            "rebalance_turnover": 1.7437993591308594,
+            "rejected_orders": 0.60443115234375,
+            "seed": 11,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7264324683358232
+          },
+          {
+            "cvar50": 0.6184742372394212,
+            "cvar95": 1.712545792522398,
+            "cvar95_vs_ideal_execution": 0.345035077530343,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.03295114058949387,
+              "ci_low": -0.07190012377387413,
+              "estimate": -0.05250863209871226
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": 0.00902498622535362,
+              "ci_low": -0.03678775782001139,
+              "estimate": -0.013168291916977104
+            },
+            "fee_cost": 0.04551592147987418,
+            "max_holding_mean": 0.744864663696289,
+            "max_holding_p99": 1.0067000000000002,
+            "mean_pnl": -0.03998765741890149,
+            "mean_pnl_vs_ideal_execution": 0.004108890002016518,
+            "mean_residual": 0.022322000115880924,
+            "rebalance_trades": 29.349151611328125,
+            "rebalance_turnover": 1.7340504486083985,
+            "rejected_orders": 0.6043701171875,
+            "seed": 12,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7466784581732869
+          },
+          {
+            "cvar50": 0.5999244972795224,
+            "cvar95": 1.6671115076099903,
+            "cvar95_vs_ideal_execution": 0.38111587784901,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.08045721129332924,
+              "ci_low": -0.11464788860981447,
+              "estimate": -0.0979429170111199
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.07611702221148592,
+              "ci_low": -0.11451652929131202,
+              "estimate": -0.09468337714805175
+            },
+            "fee_cost": 0.04552796218708079,
+            "max_holding_mean": 0.7560203338623047,
+            "max_holding_p99": 1.0269000000000001,
+            "mean_pnl": -0.03898535080407795,
+            "mean_pnl_vs_ideal_execution": 0.004616459731136889,
+            "mean_residual": 0.02285885461767041,
+            "rebalance_trades": 29.344970703125,
+            "rebalance_turnover": 1.7361905303955079,
+            "rejected_orders": 0.604583740234375,
+            "seed": 13,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7258581331137797
+          },
+          {
+            "cvar50": 0.608379994859647,
+            "cvar95": 1.698533040427495,
+            "cvar95_vs_ideal_execution": 0.356154935971432,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.04861558789238768,
+              "ci_low": -0.08382804791802889,
+              "estimate": -0.0665213841936152
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.017907337160069807,
+              "ci_low": -0.06108433959851195,
+              "estimate": -0.03830090245296902
+            },
+            "fee_cost": 0.04618134585105324,
+            "max_holding_mean": 0.761004510498047,
+            "max_holding_p99": 1.024,
+            "mean_pnl": -0.04006798625817582,
+            "mean_pnl_vs_ideal_execution": 0.004747909952056,
+            "mean_residual": 0.022653648263878914,
+            "rebalance_trades": 29.353729248046875,
+            "rebalance_turnover": 1.7525826263427735,
+            "rejected_orders": 0.60455322265625,
+            "seed": 14,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7355720339093121
+          },
+          {
+            "cvar50": 0.6149550797527346,
+            "cvar95": 1.6903993785197982,
+            "cvar95_vs_ideal_execution": 0.35366115493600536,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.05437717304518178,
+              "ci_low": -0.0941967632566041,
+              "estimate": -0.07465504610131202
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.02254633540854983,
+              "ci_low": -0.06319894287282687,
+              "estimate": -0.04394078332523921
+            },
+            "fee_cost": 0.04537588444259837,
+            "max_holding_mean": 0.7555665161132813,
+            "max_holding_p99": 1.0249000000000001,
+            "mean_pnl": -0.03917494439658238,
+            "mean_pnl_vs_ideal_execution": 0.004054330636509805,
+            "mean_residual": 0.022560572657851226,
+            "rebalance_trades": 29.351715087890625,
+            "rebalance_turnover": 1.7166645141601564,
+            "rejected_orders": 0.604644775390625,
+            "seed": 15,
+            "spread_cost": 0.0,
+            "std_pnl": 0.7424269840640474
+          }
+        ]
+      },
+      "in_model": {
+        "band": {
+          "cvar50": 0.5009400691385998,
+          "cvar95": 1.577073030671841,
+          "cvar95_vs_ideal_execution": 0.676177330924899,
+          "fee_cost": 0.04857978462254768,
+          "max_holding_mean": 0.783880224609375,
+          "max_holding_p99": 0.9999,
+          "mean_pnl": -0.04807539718279094,
+          "mean_pnl_vs_ideal_execution": 0.005246188542212225,
+          "mean_residual": 0.027634623806480085,
+          "rebalance_trades": 25.77001953125,
+          "rebalance_turnover": 1.9130122558593752,
+          "rejected_orders": 0.524383544921875,
+          "spread_cost": 0.0,
+          "std_pnl": 0.6087971188438419
+        },
+        "delta": {
+          "cvar50": 0.5010261590836144,
+          "cvar95": 1.5770225324114344,
+          "cvar95_vs_ideal_execution": 0.6759622329401936,
+          "fee_cost": 0.04867806618265309,
+          "max_holding_mean": 0.7843465484619141,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -0.04816859624078573,
+          "mean_pnl_vs_ideal_execution": 0.005269587423812739,
+          "mean_residual": 0.027645035316324246,
+          "rebalance_trades": 28.579833984375,
+          "rebalance_turnover": 1.9178877838134767,
+          "rejected_orders": 0.583038330078125,
+          "spread_cost": 0.0,
+          "std_pnl": 0.6087874517062499
+        },
+        "learned": [
+          {
+            "cvar50": 0.5450660490770215,
+            "cvar95": 1.5445830207426219,
+            "cvar95_vs_ideal_execution": 0.6996999464468591,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.019231268744699777,
+              "ci_low": -0.0454999342255974,
+              "estimate": -0.03249000992921913
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.04056778727723441,
+              "ci_low": -0.0692556510910839,
+              "estimate": -0.05601262545117924
+            },
+            "fee_cost": 0.0461236245836691,
+            "max_holding_mean": 0.757166098022461,
+            "max_holding_p99": 1.0357,
+            "mean_pnl": -0.04645684873855846,
+            "mean_pnl_vs_ideal_execution": 0.003048038824302383,
+            "mean_residual": 0.02377217470868486,
+            "rebalance_trades": 29.35211181640625,
+            "rebalance_turnover": 1.7880022216796876,
+            "rejected_orders": 0.5968017578125,
+            "seed": 11,
+            "spread_cost": 0.0,
+            "std_pnl": 0.6564074368211864
+          },
+          {
+            "cvar50": 0.5623665631519904,
+            "cvar95": 1.5711692820987493,
+            "cvar95_vs_ideal_execution": 0.6724627758994989,
+            "delta_cvar95_vs_band": {
+              "ci_high": 0.009981605539201,
+              "ci_low": -0.02096582765679526,
+              "estimate": -0.005903748573091727
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": 0.011556257883074345,
+              "ci_low": -0.017878257365639378,
+              "estimate": -0.002189193547691648
+            },
+            "fee_cost": 0.045377243715366625,
+            "max_holding_mean": 0.7429104766845703,
+            "max_holding_p99": 1.018,
+            "mean_pnl": -0.04615233492834935,
+            "mean_pnl_vs_ideal_execution": 0.0033304520980706443,
+            "mean_residual": 0.022309835907522998,
+            "rebalance_trades": 29.363739013671875,
+            "rebalance_turnover": 1.7532882263183596,
+            "rejected_orders": 0.597442626953125,
+            "seed": 12,
+            "spread_cost": 0.0,
+            "std_pnl": 0.6742352947686361
+          },
+          {
+            "cvar50": 0.5476561729556967,
+            "cvar95": 1.5504400798232065,
+            "cvar95_vs_ideal_execution": 0.6965401352651315,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.012994413947639128,
+              "ci_low": -0.040779551333539575,
+              "estimate": -0.026632950848634485
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.03388045791398275,
+              "ci_low": -0.06073865581301013,
+              "estimate": -0.046995755188867006
+            },
+            "fee_cost": 0.04581423791565102,
+            "max_holding_mean": 0.7532508270263671,
+            "max_holding_p99": 1.0432000000000001,
+            "mean_pnl": -0.04633128775189292,
+            "mean_pnl_vs_ideal_execution": 0.0036241543780376278,
+            "mean_residual": 0.02314546552884996,
+            "rebalance_trades": 29.35504150390625,
+            "rebalance_turnover": 1.7789437805175783,
+            "rejected_orders": 0.597137451171875,
+            "seed": 13,
+            "spread_cost": 0.0,
+            "std_pnl": 0.6586708779945303
+          },
+          {
+            "cvar50": 0.5467418658211339,
+            "cvar95": 1.5534401730978835,
+            "cvar95_vs_ideal_execution": 0.6937743503310615,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.010649525967234029,
+              "ci_low": -0.03754454489261706,
+              "estimate": -0.0236328575739575
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.02834832552033749,
+              "ci_low": -0.05492275591609002,
+              "estimate": -0.04122987698012004
+            },
+            "fee_cost": 0.04619469617291477,
+            "max_holding_mean": 0.7569520568847656,
+            "max_holding_p99": 1.0331329999999999,
+            "mean_pnl": -0.04609367289518225,
+            "mean_pnl_vs_ideal_execution": 0.0038187268721369075,
+            "mean_residual": 0.022813626387027035,
+            "rebalance_trades": 29.365753173828125,
+            "rebalance_turnover": 1.7829957061767578,
+            "rejected_orders": 0.597503662109375,
+            "seed": 14,
+            "spread_cost": 0.0,
+            "std_pnl": 0.658607875120001
+          },
+          {
+            "cvar50": 0.5562815714103853,
+            "cvar95": 1.5603089267916306,
+            "cvar95_vs_ideal_execution": 0.6890907766799181,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.003230408359380417,
+              "ci_low": -0.03225119237950589,
+              "estimate": -0.016764103880210435
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.015180201810551717,
+              "ci_low": -0.04341901528237803,
+              "estimate": -0.029677549635229616
+            },
+            "fee_cost": 0.04540577601991349,
+            "max_holding_mean": 0.7536736785888674,
+            "max_holding_p99": 1.0435,
+            "mean_pnl": -0.04535462510046874,
+            "mean_pnl_vs_ideal_execution": 0.003211925597861726,
+            "mean_residual": 0.02275606016678992,
+            "rebalance_trades": 29.360443115234375,
+            "rebalance_turnover": 1.7465939544677735,
+            "rejected_orders": 0.597320556640625,
+            "seed": 15,
+            "spread_cost": 0.0,
+            "std_pnl": 0.6694187140574193
+          }
+        ]
+      }
+    },
+    "0.0005": {
+      "band_w": 0.01,
+      "heston_sticky-moneyness": {
+        "band": {
+          "cvar50": 0.7201158007072099,
+          "cvar95": 1.9984241540927787,
+          "cvar95_vs_ideal_execution": 0.3171898413524832,
+          "fee_cost": 0.049245193929847,
+          "max_holding_mean": 0.8071268035888672,
+          "max_holding_p99": 0.9999,
+          "mean_pnl": -0.16835477937766102,
+          "mean_pnl_vs_ideal_execution": 0.02072633867813968,
+          "mean_residual": 0.030320053098345512,
+          "rebalance_trades": 23.946990966796875,
+          "rebalance_turnover": 1.909616653442383,
+          "rejected_orders": 0.48931884765625,
+          "spread_cost": 0.12311298048504085,
+          "std_pnl": 0.7299694552505821
+        },
+        "delta": {
+          "cvar50": 0.7211278309771594,
+          "cvar95": 1.999019046538292,
+          "cvar95_vs_ideal_execution": 0.31679035647188014,
+          "fee_cost": 0.04957052985958839,
+          "max_holding_mean": 0.8083833557128907,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -0.16951549448143421,
+          "mean_pnl_vs_ideal_execution": 0.020934112754880226,
+          "mean_residual": 0.03034173279374822,
+          "rebalance_trades": 28.483154296875,
+          "rebalance_turnover": 1.9253966278076171,
+          "rejected_orders": 0.585662841796875,
+          "spread_cost": 0.12392632030388448,
+          "std_pnl": 0.7297278241555069
+        },
+        "learned": [
+          {
+            "cvar50": 0.724791773914423,
+            "cvar95": 1.80830279819744,
+            "cvar95_vs_ideal_execution": 0.3626346120126178,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.17104979506322393,
+              "ci_low": -0.2086805690393803,
+              "estimate": -0.19012135589533874
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.2148282953462909,
+              "ci_low": -0.2568388007736546,
+              "estimate": -0.23556612655547338
+            },
+            "fee_cost": 0.0440496636531927,
+            "max_holding_mean": 0.7514015075683594,
+            "max_holding_p99": 1.067033,
+            "mean_pnl": -0.14838281075178253,
+            "mean_pnl_vs_ideal_execution": 0.013142098274228731,
+            "mean_residual": 0.02261697263860322,
+            "rebalance_trades": 29.3387451171875,
+            "rebalance_turnover": 1.6700828247070314,
+            "rejected_orders": 0.60400390625,
+            "seed": 11,
+            "spread_cost": 0.11012415524030839,
+            "std_pnl": 0.7429201384208534
+          },
+          {
+            "cvar50": 0.7256914888448911,
+            "cvar95": 1.8164470779007804,
+            "cvar95_vs_ideal_execution": 0.3496631809841686,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.16233965768097838,
+              "ci_low": -0.20300251114289408,
+              "estimate": -0.18197707619199832
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.1936712155083173,
+              "ci_low": -0.23704204289708486,
+              "estimate": -0.21445041582368374
+            },
+            "fee_cost": 0.0440809406548259,
+            "max_holding_mean": 0.7505892364501954,
+            "max_holding_p99": 1.0170000000000001,
+            "mean_pnl": -0.14833468684575074,
+            "mean_pnl_vs_ideal_execution": 0.013621269362650325,
+            "mean_residual": 0.02189458548822021,
+            "rebalance_trades": 29.3507080078125,
+            "rebalance_turnover": 1.6603144165039063,
+            "rejected_orders": 0.6046142578125,
+            "seed": 12,
+            "spread_cost": 0.11020234778378973,
+            "std_pnl": 0.7455626190341094
+          },
+          {
+            "cvar50": 0.7192146891774415,
+            "cvar95": 1.7914138997717737,
+            "cvar95_vs_ideal_execution": 0.36613818346277416,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.18712099597294815,
+              "ci_low": -0.22711696965603223,
+              "estimate": -0.20701025432100506
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.2371456188129404,
+              "ci_low": -0.2771311898041134,
+              "estimate": -0.25595859643129604
+            },
+            "fee_cost": 0.0440405397186691,
+            "max_holding_mean": 0.7536233032226562,
+            "max_holding_p99": 1.0151000000000001,
+            "mean_pnl": -0.14757168955821215,
+            "mean_pnl_vs_ideal_execution": 0.013602289277355139,
+            "mean_residual": 0.022283259381686127,
+            "rebalance_trades": 29.334686279296875,
+            "rebalance_turnover": 1.6643825012207032,
+            "rejected_orders": 0.604217529296875,
+            "seed": 13,
+            "spread_cost": 0.11010134559879627,
+            "std_pnl": 0.7382565330773214
+          },
+          {
+            "cvar50": 0.7271765441238692,
+            "cvar95": 1.8258436475069446,
+            "cvar95_vs_ideal_execution": 0.3385437992098559,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.1528803648372721,
+              "ci_low": -0.19258483348642444,
+              "estimate": -0.17258050658583413
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.17298046236406656,
+              "ci_low": -0.2168286668083023,
+              "estimate": -0.19393446444320683
+            },
+            "fee_cost": 0.044691438668093934,
+            "max_holding_mean": 0.7599009552001953,
+            "max_holding_p99": 1.0205329999999997,
+            "mean_pnl": -0.15013076227211913,
+            "mean_pnl_vs_ideal_execution": 0.015320639136042931,
+            "mean_residual": 0.021481350760467168,
+            "rebalance_trades": 29.35107421875,
+            "rebalance_turnover": 1.6776673919677736,
+            "rejected_orders": 0.6041259765625,
+            "seed": 14,
+            "spread_cost": 0.11172859290212675,
+            "std_pnl": 0.7455477940432863
+          },
+          {
+            "cvar50": 0.733792331063882,
+            "cvar95": 1.824699575655224,
+            "cvar95_vs_ideal_execution": 0.3330187064109946,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.15200851604559112,
+              "ci_low": -0.19578308883886456,
+              "estimate": -0.17372457843755473
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.16607302749220512,
+              "ci_low": -0.21292551028204107,
+              "estimate": -0.18955344349606618
+            },
+            "fee_cost": 0.04375983040339677,
+            "max_holding_mean": 0.7506392303466798,
+            "max_holding_p99": 1.0150000000000001,
+            "mean_pnl": -0.14725637155532817,
+            "mean_pnl_vs_ideal_execution": 0.01276472256459836,
+            "mean_residual": 0.02168845738311979,
+            "rebalance_trades": 29.341461181640625,
+            "rebalance_turnover": 1.6392544952392578,
+            "rejected_orders": 0.603851318359375,
+            "seed": 15,
+            "spread_cost": 0.10939957214382424,
+            "std_pnl": 0.7550122196525171
+          }
+        ]
+      },
+      "heston_sticky-strike": {
+        "band": {
+          "cvar50": 0.6831491080881297,
+          "cvar95": 1.9109116425316353,
+          "cvar95_vs_ideal_execution": 0.3456951332958884,
+          "fee_cost": 0.048516087068106506,
+          "max_holding_mean": 0.7932331970214843,
+          "max_holding_p99": 0.9999,
+          "mean_pnl": -0.1653331293874402,
+          "mean_pnl_vs_ideal_execution": 0.019622151046542774,
+          "mean_residual": 0.027262289639891826,
+          "rebalance_trades": 24.043426513671875,
+          "rebalance_turnover": 1.8715463806152346,
+          "rejected_orders": 0.490753173828125,
+          "spread_cost": 0.12129021344813364,
+          "std_pnl": 0.6930529352826938
+        },
+        "delta": {
+          "cvar50": 0.6841538662591315,
+          "cvar95": 1.9116569539055912,
+          "cvar95_vs_ideal_execution": 0.3453798456933568,
+          "fee_cost": 0.04884082728438359,
+          "max_holding_mean": 0.7945091217041016,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -0.1665084981507559,
+          "mean_pnl_vs_ideal_execution": 0.01979493145326447,
+          "mean_residual": 0.027284182086184612,
+          "rebalance_trades": 28.607696533203125,
+          "rebalance_turnover": 1.8873925689697266,
+          "rejected_orders": 0.588897705078125,
+          "spread_cost": 0.12210206397913184,
+          "std_pnl": 0.6928430153331838
+        },
+        "learned": [
+          {
+            "cvar50": 0.724791773914423,
+            "cvar95": 1.80830279819744,
+            "cvar95_vs_ideal_execution": 0.3626346120126178,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.08318389246380374,
+              "ci_low": -0.12067818103392859,
+              "estimate": -0.10260884433419526
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.09967458834663795,
+              "ci_low": -0.14142822809794314,
+              "estimate": -0.11954832305092467
+            },
+            "fee_cost": 0.0440496636531927,
+            "max_holding_mean": 0.7514015075683594,
+            "max_holding_p99": 1.067033,
+            "mean_pnl": -0.14838281075178253,
+            "mean_pnl_vs_ideal_execution": 0.013142098274228731,
+            "mean_residual": 0.02261697263860322,
+            "rebalance_trades": 29.3387451171875,
+            "rebalance_turnover": 1.6700828247070314,
+            "rejected_orders": 0.60400390625,
+            "seed": 11,
+            "spread_cost": 0.11012415524030839,
+            "std_pnl": 0.7429201384208534
+          },
+          {
+            "cvar50": 0.7256914888448911,
+            "cvar95": 1.8164470779007804,
+            "cvar95_vs_ideal_execution": 0.3496631809841686,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.0760934865721991,
+              "ci_low": -0.11450199595712263,
+              "estimate": -0.09446456463085484
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.07765539975361757,
+              "ci_low": -0.12094943867432359,
+              "estimate": -0.09843261231913503
+            },
+            "fee_cost": 0.0440809406548259,
+            "max_holding_mean": 0.7505892364501954,
+            "max_holding_p99": 1.0170000000000001,
+            "mean_pnl": -0.14833468684575074,
+            "mean_pnl_vs_ideal_execution": 0.013621269362650325,
+            "mean_residual": 0.02189458548822021,
+            "rebalance_trades": 29.3507080078125,
+            "rebalance_turnover": 1.6603144165039063,
+            "rejected_orders": 0.6046142578125,
+            "seed": 12,
+            "spread_cost": 0.11020234778378973,
+            "std_pnl": 0.7455626190341094
+          },
+          {
+            "cvar50": 0.7192146891774415,
+            "cvar95": 1.7914138997717737,
+            "cvar95_vs_ideal_execution": 0.36613818346277416,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.10095776348594633,
+              "ci_low": -0.13813834430172883,
+              "estimate": -0.11949774275986158
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.11976802725973215,
+              "ci_low": -0.16176577642323872,
+              "estimate": -0.13994079292674733
+            },
+            "fee_cost": 0.0440405397186691,
+            "max_holding_mean": 0.7536233032226562,
+            "max_holding_p99": 1.0151000000000001,
+            "mean_pnl": -0.14757168955821215,
+            "mean_pnl_vs_ideal_execution": 0.013602289277355139,
+            "mean_residual": 0.022283259381686127,
+            "rebalance_trades": 29.334686279296875,
+            "rebalance_turnover": 1.6643825012207032,
+            "rejected_orders": 0.604217529296875,
+            "seed": 13,
+            "spread_cost": 0.11010134559879627,
+            "std_pnl": 0.7382565330773214
+          },
+          {
+            "cvar50": 0.7271765441238692,
+            "cvar95": 1.8258436475069446,
+            "cvar95_vs_ideal_execution": 0.3385437992098559,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.06550556600251885,
+              "ci_low": -0.10378103299625183,
+              "estimate": -0.08506799502469065
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.05637496127216272,
+              "ci_low": -0.10142015876197757,
+              "estimate": -0.07791666093865812
+            },
+            "fee_cost": 0.044691438668093934,
+            "max_holding_mean": 0.7599009552001953,
+            "max_holding_p99": 1.0205329999999997,
+            "mean_pnl": -0.15013076227211913,
+            "mean_pnl_vs_ideal_execution": 0.015320639136042931,
+            "mean_residual": 0.021481350760467168,
+            "rebalance_trades": 29.35107421875,
+            "rebalance_turnover": 1.6776673919677736,
+            "rejected_orders": 0.6041259765625,
+            "seed": 14,
+            "spread_cost": 0.11172859290212675,
+            "std_pnl": 0.7455477940432863
+          },
+          {
+            "cvar50": 0.733792331063882,
+            "cvar95": 1.824699575655224,
+            "cvar95_vs_ideal_execution": 0.3330187064109946,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.06518229519501044,
+              "ci_low": -0.10760429697252061,
+              "estimate": -0.08621206687641125
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.051157397968761974,
+              "ci_low": -0.09535525239818246,
+              "estimate": -0.07353563999151747
+            },
+            "fee_cost": 0.04375983040339677,
+            "max_holding_mean": 0.7506392303466798,
+            "max_holding_p99": 1.0150000000000001,
+            "mean_pnl": -0.14725637155532817,
+            "mean_pnl_vs_ideal_execution": 0.01276472256459836,
+            "mean_residual": 0.02168845738311979,
+            "rebalance_trades": 29.341461181640625,
+            "rebalance_turnover": 1.6392544952392578,
+            "rejected_orders": 0.603851318359375,
+            "seed": 15,
+            "spread_cost": 0.10939957214382424,
+            "std_pnl": 0.7550122196525171
+          }
+        ]
+      },
+      "in_model": {
+        "band": {
+          "cvar50": 0.6297061643571596,
+          "cvar95": 1.717473505285991,
+          "cvar95_vs_ideal_execution": 0.638730554827321,
+          "fee_cost": 0.04836500346391504,
+          "max_holding_mean": 0.7832161987304688,
+          "max_holding_p99": 0.9999,
+          "mean_pnl": -0.16885290672269299,
+          "mean_pnl_vs_ideal_execution": 0.020176007946427727,
+          "mean_residual": 0.027624909917825395,
+          "rebalance_trades": 24.148223876953125,
+          "rebalance_turnover": 1.902308920288086,
+          "rejected_orders": 0.491241455078125,
+          "spread_cost": 0.12091251483390555,
+          "std_pnl": 0.618081735962901
+        },
+        "delta": {
+          "cvar50": 0.6305621416083107,
+          "cvar95": 1.7183457376188211,
+          "cvar95_vs_ideal_execution": 0.638698674937938,
+          "fee_cost": 0.04867806370452009,
+          "max_holding_mean": 0.7843465484619141,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -0.169863759219274,
+          "mean_pnl_vs_ideal_execution": 0.020434197723231844,
+          "mean_residual": 0.027645035316324246,
+          "rebalance_trades": 28.579833984375,
+          "rebalance_turnover": 1.9178877838134767,
+          "rejected_orders": 0.583038330078125,
+          "spread_cost": 0.12169516545663273,
+          "std_pnl": 0.6178756828360187
+        },
+        "learned": [
+          {
+            "cvar50": 0.672156041073001,
+            "cvar95": 1.6963016718774748,
+            "cvar95_vs_ideal_execution": 0.6875455302307429,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.005724483935888448,
+              "ci_low": -0.03646689392873987,
+              "estimate": -0.02117183340851625
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.05373281348439599,
+              "ci_low": -0.08471316625181867,
+              "estimate": -0.0699868088119382
+            },
+            "fee_cost": 0.04458319130842081,
+            "max_holding_mean": 0.7549497619628907,
+            "max_holding_p99": 1.1296319999999993,
+            "mean_pnl": -0.15668965578037516,
+            "mean_pnl_vs_ideal_execution": 0.01229246954550011,
+            "mean_residual": 0.02292100201774761,
+            "rebalance_trades": 29.3504638671875,
+            "rebalance_turnover": 1.720235073852539,
+            "rejected_orders": 0.597412109375,
+            "seed": 11,
+            "spread_cost": 0.111457984176897,
+            "std_pnl": 0.6756354938415007
+          },
+          {
+            "cvar50": 0.670753528449404,
+            "cvar95": 1.6881584369447575,
+            "cvar95_vs_ideal_execution": 0.6808720612763348,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.013755402199600681,
+              "ci_low": -0.04404679050335133,
+              "estimate": -0.02931506834123354
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.056470258140021046,
+              "ci_low": -0.08703216163651359,
+              "estimate": -0.07145657479024736
+            },
+            "fee_cost": 0.04421560478676371,
+            "max_holding_mean": 0.7481014251708985,
+            "max_holding_p99": 1.0279,
+            "mean_pnl": -0.15544202294555662,
+            "mean_pnl_vs_ideal_execution": 0.012427011517430621,
+            "mean_residual": 0.022073732037719607,
+            "rebalance_trades": 29.3607177734375,
+            "rebalance_turnover": 1.6941483947753906,
+            "rejected_orders": 0.597381591796875,
+            "seed": 12,
+            "spread_cost": 0.11053901786302422,
+            "std_pnl": 0.6752963180867982
+          },
+          {
+            "cvar50": 0.6672771440687075,
+            "cvar95": 1.678375991944199,
+            "cvar95_vs_ideal_execution": 0.6879619386144091,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.024637728208404198,
+              "ci_low": -0.05408879079047805,
+              "estimate": -0.03909751334179212
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.07397567404890511,
+              "ci_low": -0.10400320238704167,
+              "estimate": -0.08832889712888026
+            },
+            "fee_cost": 0.044291162483465596,
+            "max_holding_mean": 0.7502460968017579,
+            "max_holding_p99": 1.0272329999999998,
+            "mean_pnl": -0.1556175958218446,
+            "mean_pnl_vs_ideal_execution": 0.012622988910727578,
+            "mean_residual": 0.022549487699076838,
+            "rebalance_trades": 29.345916748046875,
+            "rebalance_turnover": 1.7064778686523439,
+            "rejected_orders": 0.597198486328125,
+            "seed": 13,
+            "spread_cost": 0.11072791212699873,
+            "std_pnl": 0.6709809651312443
+          },
+          {
+            "cvar50": 0.6673106567298777,
+            "cvar95": 1.6872677604835373,
+            "cvar95_vs_ideal_execution": 0.6864411741524037,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.016420017163800385,
+              "ci_low": -0.04491101173549815,
+              "estimate": -0.03020574480245375
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.06361039891066951,
+              "ci_low": -0.09254711687280949,
+              "estimate": -0.07791636412753644
+            },
+            "fee_cost": 0.04469427481854206,
+            "max_holding_mean": 0.7551848968505859,
+            "max_holding_p99": 1.03,
+            "mean_pnl": -0.15626906919752123,
+            "mean_pnl_vs_ideal_execution": 0.01451804173371838,
+            "mean_residual": 0.02164316161297281,
+            "rebalance_trades": 29.35906982421875,
+            "rebalance_turnover": 1.7082266815185547,
+            "rejected_orders": 0.597320556640625,
+            "seed": 14,
+            "spread_cost": 0.11173569315454487,
+            "std_pnl": 0.6705674847229393
+          },
+          {
+            "cvar50": 0.6753190942857814,
+            "cvar95": 1.6886471126842744,
+            "cvar95_vs_ideal_execution": 0.6685489568907836,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.01392138110725007,
+              "ci_low": -0.044523176393145444,
+              "estimate": -0.02882639260171671
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.04289411375934778,
+              "ci_low": -0.07347038734348607,
+              "estimate": -0.058644794665179356
+            },
+            "fee_cost": 0.0436384332474066,
+            "max_holding_mean": 0.7473104766845704,
+            "max_holding_p99": 1.0204,
+            "mean_pnl": -0.1531066200488892,
+            "mean_pnl_vs_ideal_execution": 0.01154750981251694,
+            "mean_residual": 0.021785778838925244,
+            "rebalance_trades": 29.3525390625,
+            "rebalance_turnover": 1.6620284637451173,
+            "rejected_orders": 0.59735107421875,
+            "seed": 15,
+            "spread_cost": 0.10909608909345711,
+            "std_pnl": 0.6821236236770772
+          }
+        ]
+      }
+    },
+    "0.005": {
+      "band_w": 0.15,
+      "heston_sticky-moneyness": {
+        "band": {
+          "cvar50": 1.624743252183701,
+          "cvar95": 3.137983734793614,
+          "cvar95_vs_ideal_execution": 0.04813048706313383,
+          "fee_cost": 0.035896379619354254,
+          "max_holding_mean": 0.7514704254150391,
+          "max_holding_p99": 0.9987,
+          "mean_pnl": -0.9286979209612146,
+          "mean_pnl_vs_ideal_execution": 0.0977295062147416,
+          "mean_residual": 0.029534738849714193,
+          "rebalance_trades": 7.144073486328125,
+          "rebalance_turnover": 1.2505501892089845,
+          "rejected_orders": 0.14239501953125,
+          "spread_cost": 0.8974090716295728,
+          "std_pnl": 0.9097410348229307
+        },
+        "delta": {
+          "cvar50": 1.9056588263539935,
+          "cvar95": 3.3978342323024178,
+          "cvar95_vs_ideal_execution": -0.0678978089833513,
+          "fee_cost": 0.04957054550189974,
+          "max_holding_mean": 0.8083833557128907,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -1.2848523928587057,
+          "mean_pnl_vs_ideal_execution": 0.1616407014504791,
+          "mean_residual": 0.03034173279374822,
+          "rebalance_trades": 28.483154296875,
+          "rebalance_turnover": 1.9253966278076171,
+          "rejected_orders": 0.585662841796875,
+          "spread_cost": 1.2392632030388449,
+          "std_pnl": 0.8266517719505896
+        },
+        "learned": [
+          {
+            "cvar50": 1.5701652056531983,
+            "cvar95": 2.8703636028074113,
+            "cvar95_vs_ideal_execution": 0.256192655509313,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.23267380568139678,
+              "ci_low": -0.30412577231051086,
+              "estimate": -0.2676201319862028
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.4358438009606211,
+              "ci_low": -0.5179386653017388,
+              "estimate": -0.475682300432382
+            },
+            "fee_cost": 0.035519166588454554,
+            "max_holding_mean": 0.7430525756835937,
+            "max_holding_p99": 0.9641000000000001,
+            "mean_pnl": -0.9158142661585669,
+            "mean_pnl_vs_ideal_execution": 0.037955562672848935,
+            "mean_residual": 0.016832836610240716,
+            "rebalance_trades": 29.09014892578125,
+            "rebalance_turnover": 1.2563129364013672,
+            "rejected_orders": 0.599029541015625,
+            "seed": 11,
+            "spread_cost": 0.887978822761903,
+            "std_pnl": 0.850419381379703
+          },
+          {
+            "cvar50": 1.5728150922911202,
+            "cvar95": 2.8666368706599568,
+            "cvar95_vs_ideal_execution": 0.2724464331485459,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.2365401417539393,
+              "ci_low": -0.3070506275053774,
+              "estimate": -0.2713468641336574
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.4570327715584962,
+              "ci_low": -0.5353030381080492,
+              "estimate": -0.49566281021906944
+            },
+            "fee_cost": 0.03554695790824456,
+            "max_holding_mean": 0.7423657623291016,
+            "max_holding_p99": 0.9555,
+            "mean_pnl": -0.9165488665027326,
+            "mean_pnl_vs_ideal_execution": 0.04102224557872475,
+            "mean_residual": 0.01687499876077355,
+            "rebalance_trades": 28.58367919921875,
+            "rebalance_turnover": 1.2569375793457032,
+            "rejected_orders": 0.58795166015625,
+            "seed": 12,
+            "spread_cost": 0.8886736054559949,
+            "std_pnl": 0.8506399452586078
+          },
+          {
+            "cvar50": 1.5588901680824003,
+            "cvar95": 2.8278449888254236,
+            "cvar95_vs_ideal_execution": 0.2752068619368586,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.27483825084359775,
+              "ci_low": -0.34461172452190936,
+              "estimate": -0.3101387459681906
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.4979534776542255,
+              "ci_low": -0.5784469232368956,
+              "estimate": -0.5372151208419154
+            },
+            "fee_cost": 0.03516219165409035,
+            "max_holding_mean": 0.7358858520507813,
+            "max_holding_p99": 0.9489000000000001,
+            "mean_pnl": -0.9063515506356041,
+            "mean_pnl_vs_ideal_execution": 0.0422886584715187,
+            "mean_residual": 0.016762636866168086,
+            "rebalance_trades": 28.980255126953125,
+            "rebalance_turnover": 1.2546307037353515,
+            "rejected_orders": 0.59637451171875,
+            "seed": 13,
+            "spread_cost": 0.8790544539370917,
+            "std_pnl": 0.8432347348808428
+          },
+          {
+            "cvar50": 1.5546722753560653,
+            "cvar95": 2.8607573300103866,
+            "cvar95_vs_ideal_execution": 0.26302566392543136,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.2449780081978857,
+              "ci_low": -0.31272479656933316,
+              "estimate": -0.2772264047832276
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.448155739298792,
+              "ci_low": -0.5327088261224774,
+              "estimate": -0.4921215816455251
+            },
+            "fee_cost": 0.034703122840775584,
+            "max_holding_mean": 0.7325509826660157,
+            "max_holding_p99": 0.9575,
+            "mean_pnl": -0.8946809335873399,
+            "mean_pnl_vs_ideal_execution": 0.04313213708756446,
+            "mean_residual": 0.016048422056627928,
+            "rebalance_trades": 28.8541259765625,
+            "rebalance_turnover": 1.227003158569336,
+            "rejected_orders": 0.59417724609375,
+            "seed": 14,
+            "spread_cost": 0.8675777269747547,
+            "std_pnl": 0.8574185260844861
+          },
+          {
+            "cvar50": 1.5641531713314554,
+            "cvar95": 2.8565189672969113,
+            "cvar95_vs_ideal_execution": 0.2600551474064252,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.24484418346805115,
+              "ci_low": -0.3149481780457187,
+              "estimate": -0.2814647674967028
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.45176485839746117,
+              "ci_low": -0.5332240643940176,
+              "estimate": -0.4933894278399942
+            },
+            "fee_cost": 0.034825928581920115,
+            "max_holding_mean": 0.7335611480712891,
+            "max_holding_p99": 0.9513,
+            "mean_pnl": -0.8977475865232585,
+            "mean_pnl_vs_ideal_execution": 0.04175077191098407,
+            "mean_residual": 0.01619685198597385,
+            "rebalance_trades": 29.125,
+            "rebalance_turnover": 1.2124762939453124,
+            "rejected_orders": 0.59942626953125,
+            "seed": 15,
+            "spread_cost": 0.8706478736608553,
+            "std_pnl": 0.8626079848753585
+          }
+        ]
+      },
+      "heston_sticky-strike": {
+        "band": {
+          "cvar50": 1.5985474127537422,
+          "cvar95": 3.0482244970953993,
+          "cvar95_vs_ideal_execution": 0.09225161262657533,
+          "fee_cost": 0.03497964565926244,
+          "max_holding_mean": 0.7382679077148437,
+          "max_holding_p99": 0.9989,
+          "mean_pnl": -0.9029289571857946,
+          "mean_pnl_vs_ideal_execution": 0.09357152425851925,
+          "mean_residual": 0.02649615404265539,
+          "rebalance_trades": 6.9949951171875,
+          "rebalance_turnover": 1.2022336914062501,
+          "rejected_orders": 0.14111328125,
+          "spread_cost": 0.8744907709755066,
+          "std_pnl": 0.9038431771638111
+        },
+        "delta": {
+          "cvar50": 1.8807237291114753,
+          "cvar95": 3.3146336450152663,
+          "cvar95_vs_ideal_execution": -0.015875317598949668,
+          "fee_cost": 0.04884084251896125,
+          "max_holding_mean": 0.7945091217041016,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -1.2654270891975203,
+          "mean_pnl_vs_ideal_execution": 0.15361808061120694,
+          "mean_residual": 0.027284182086184612,
+          "rebalance_trades": 28.607696533203125,
+          "rebalance_turnover": 1.8873925689697266,
+          "rejected_orders": 0.588897705078125,
+          "spread_cost": 1.2210206397913184,
+          "std_pnl": 0.8156969636947341
+        },
+        "learned": [
+          {
+            "cvar50": 1.5701652056531983,
+            "cvar95": 2.8703636028074113,
+            "cvar95_vs_ideal_execution": 0.256192655509313,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.14498799753253674,
+              "ci_low": -0.21119746017635294,
+              "estimate": -0.17786089428798801
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.30390588729680607,
+              "ci_low": -0.380909466502042,
+              "estimate": -0.3418019371707257
+            },
+            "fee_cost": 0.035519166588454554,
+            "max_holding_mean": 0.7430525756835937,
+            "max_holding_p99": 0.9641000000000001,
+            "mean_pnl": -0.9158142661585669,
+            "mean_pnl_vs_ideal_execution": 0.037955562672848935,
+            "mean_residual": 0.016832836610240716,
+            "rebalance_trades": 29.09014892578125,
+            "rebalance_turnover": 1.2563129364013672,
+            "rejected_orders": 0.599029541015625,
+            "seed": 11,
+            "spread_cost": 0.887978822761903,
+            "std_pnl": 0.850419381379703
+          },
+          {
+            "cvar50": 1.5728150922911202,
+            "cvar95": 2.8666368706599568,
+            "cvar95_vs_ideal_execution": 0.2724464331485459,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.149103390419048,
+              "ci_low": -0.21411349327418336,
+              "estimate": -0.18158762643544257
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.32315328645868646,
+              "ci_low": -0.40241965342624625,
+              "estimate": -0.36178244695741313
+            },
+            "fee_cost": 0.03554695790824456,
+            "max_holding_mean": 0.7423657623291016,
+            "max_holding_p99": 0.9555,
+            "mean_pnl": -0.9165488665027326,
+            "mean_pnl_vs_ideal_execution": 0.04102224557872475,
+            "mean_residual": 0.01687499876077355,
+            "rebalance_trades": 28.58367919921875,
+            "rebalance_turnover": 1.2569375793457032,
+            "rejected_orders": 0.58795166015625,
+            "seed": 12,
+            "spread_cost": 0.8886736054559949,
+            "std_pnl": 0.8506399452586078
+          },
+          {
+            "cvar50": 1.5588901680824003,
+            "cvar95": 2.8278449888254236,
+            "cvar95_vs_ideal_execution": 0.2752068619368586,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.18675989105440408,
+              "ci_low": -0.2529412626766311,
+              "estimate": -0.22037950826997577
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.36461450351673536,
+              "ci_low": -0.4436120492439111,
+              "estimate": -0.40333475758025905
+            },
+            "fee_cost": 0.03516219165409035,
+            "max_holding_mean": 0.7358858520507813,
+            "max_holding_p99": 0.9489000000000001,
+            "mean_pnl": -0.9063515506356041,
+            "mean_pnl_vs_ideal_execution": 0.0422886584715187,
+            "mean_residual": 0.016762636866168086,
+            "rebalance_trades": 28.980255126953125,
+            "rebalance_turnover": 1.2546307037353515,
+            "rejected_orders": 0.59637451171875,
+            "seed": 13,
+            "spread_cost": 0.8790544539370917,
+            "std_pnl": 0.8432347348808428
+          },
+          {
+            "cvar50": 1.5546722753560653,
+            "cvar95": 2.8607573300103866,
+            "cvar95_vs_ideal_execution": 0.26302566392543136,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.15507863512024378,
+              "ci_low": -0.22110452805095804,
+              "estimate": -0.18746716708501276
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.3145331793134993,
+              "ci_low": -0.4001583501303743,
+              "estimate": -0.3582412183838688
+            },
+            "fee_cost": 0.034703122840775584,
+            "max_holding_mean": 0.7325509826660157,
+            "max_holding_p99": 0.9575,
+            "mean_pnl": -0.8946809335873399,
+            "mean_pnl_vs_ideal_execution": 0.04313213708756446,
+            "mean_residual": 0.016048422056627928,
+            "rebalance_trades": 28.8541259765625,
+            "rebalance_turnover": 1.227003158569336,
+            "rejected_orders": 0.59417724609375,
+            "seed": 14,
+            "spread_cost": 0.8675777269747547,
+            "std_pnl": 0.8574185260844861
+          },
+          {
+            "cvar50": 1.5641531713314554,
+            "cvar95": 2.8565189672969113,
+            "cvar95_vs_ideal_execution": 0.2600551474064252,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.1569749893402328,
+              "ci_low": -0.22550651877495645,
+              "estimate": -0.19170552979848798
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.31931503198476796,
+              "ci_low": -0.3991781850424462,
+              "estimate": -0.35950906457833787
+            },
+            "fee_cost": 0.034825928581920115,
+            "max_holding_mean": 0.7335611480712891,
+            "max_holding_p99": 0.9513,
+            "mean_pnl": -0.8977475865232585,
+            "mean_pnl_vs_ideal_execution": 0.04175077191098407,
+            "mean_residual": 0.01619685198597385,
+            "rebalance_trades": 29.125,
+            "rebalance_turnover": 1.2124762939453124,
+            "rejected_orders": 0.59942626953125,
+            "seed": 15,
+            "spread_cost": 0.8706478736608553,
+            "std_pnl": 0.8626079848753585
+          }
+        ]
+      },
+      "in_model": {
+        "band": {
+          "cvar50": 1.5917300877338005,
+          "cvar95": 2.9108559759764643,
+          "cvar95_vs_ideal_execution": 0.33318160814485065,
+          "fee_cost": 0.03461227784212047,
+          "max_holding_mean": 0.7295371215820312,
+          "max_holding_p99": 0.9992000000000001,
+          "mean_pnl": -0.9041866631844808,
+          "mean_pnl_vs_ideal_execution": 0.09780785594704376,
+          "mean_residual": 0.026859860925793434,
+          "rebalance_trades": 7.10504150390625,
+          "rebalance_turnover": 1.216487322998047,
+          "rejected_orders": 0.14544677734375,
+          "spread_cost": 0.8653074461760364,
+          "std_pnl": 0.8782098453558199
+        },
+        "delta": {
+          "cvar50": 1.8608099768167579,
+          "cvar95": 3.0700363772062564,
+          "cvar95_vs_ideal_execution": 0.26252246217849873,
+          "fee_cost": 0.048678041401322994,
+          "max_holding_mean": 0.7843465484619141,
+          "max_holding_p99": 1.0,
+          "mean_pnl": -1.2651202260257701,
+          "mean_pnl_vs_ideal_execution": 0.1569156904179535,
+          "mean_residual": 0.027645035316324246,
+          "rebalance_trades": 28.579833984375,
+          "rebalance_turnover": 1.9178877838134767,
+          "rejected_orders": 0.583038330078125,
+          "spread_cost": 1.2169516545663273,
+          "std_pnl": 0.769479703042545
+        },
+        "learned": [
+          {
+            "cvar50": 1.5222823561665284,
+            "cvar95": 2.7453278510824957,
+            "cvar95_vs_ideal_execution": 0.5471188301672472,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.13825379224168766,
+              "ci_low": -0.1917713743670701,
+              "estimate": -0.16552812489396862
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.34749795572587294,
+              "ci_low": -0.4080336691491429,
+              "estimate": -0.37946534691636513
+            },
+            "fee_cost": 0.0352991141058642,
+            "max_holding_mean": 0.7366570709228516,
+            "max_holding_p99": 0.9644,
+            "mean_pnl": -0.9193826110788128,
+            "mean_pnl_vs_ideal_execution": 0.03695328026211171,
+            "mean_residual": 0.016941320693629917,
+            "rebalance_trades": 29.03497314453125,
+            "rebalance_turnover": 1.2763084899902344,
+            "rejected_orders": 0.591583251953125,
+            "seed": 11,
+            "spread_cost": 0.8824784193161674,
+            "std_pnl": 0.7892281048545807
+          },
+          {
+            "cvar50": 1.5245645022330807,
+            "cvar95": 2.743037544686511,
+            "cvar95_vs_ideal_execution": 0.5578683540929101,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.1402708514415028,
+              "ci_low": -0.1947294883729239,
+              "estimate": -0.1678184312899531
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.3628383849540878,
+              "ci_low": -0.42120359194965856,
+              "estimate": -0.3925051772380126
+            },
+            "fee_cost": 0.0353275237227536,
+            "max_holding_mean": 0.7359968170166016,
+            "max_holding_p99": 0.9562,
+            "mean_pnl": -0.9205132803798267,
+            "mean_pnl_vs_ideal_execution": 0.03987436971527258,
+            "mean_residual": 0.01698739735825575,
+            "rebalance_trades": 28.57763671875,
+            "rebalance_turnover": 1.276631265258789,
+            "rejected_orders": 0.582427978515625,
+            "seed": 12,
+            "spread_cost": 0.8831886499376758,
+            "std_pnl": 0.7895967090041869
+          },
+          {
+            "cvar50": 1.5147601425064956,
+            "cvar95": 2.7355033102826996,
+            "cvar95_vs_ideal_execution": 0.5762268098057022,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.14934847424638198,
+              "ci_low": -0.20393448023323377,
+              "estimate": -0.17535266569376473
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.3913050605986629,
+              "ci_low": -0.44788153797328417,
+              "estimate": -0.41839786735461626
+            },
+            "fee_cost": 0.03497265187935673,
+            "max_holding_mean": 0.729810888671875,
+            "max_holding_p99": 0.9489000000000001,
+            "mean_pnl": -0.910811951253196,
+            "mean_pnl_vs_ideal_execution": 0.04059475923249141,
+            "mean_residual": 0.01687471023113596,
+            "rebalance_trades": 28.936065673828125,
+            "rebalance_turnover": 1.276323550415039,
+            "rejected_orders": 0.59014892578125,
+            "seed": 13,
+            "spread_cost": 0.8743168657195806,
+            "std_pnl": 0.7876132259884797
+          },
+          {
+            "cvar50": 1.51714825554579,
+            "cvar95": 2.7576043201662443,
+            "cvar95_vs_ideal_execution": 0.5364031551261998,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.1263510299099976,
+              "ci_low": -0.1803125731589235,
+              "estimate": -0.15325165581021993
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.3246858023847397,
+              "ci_low": -0.3875881428614742,
+              "estimate": -0.35647320279156913
+            },
+            "fee_cost": 0.034451100067011575,
+            "max_holding_mean": 0.7263477691650391,
+            "max_holding_p99": 0.9579000000000001,
+            "mean_pnl": -0.8984211047932724,
+            "mean_pnl_vs_ideal_execution": 0.041763921885315025,
+            "mean_residual": 0.016121187342704554,
+            "rebalance_trades": 28.786956787109375,
+            "rebalance_turnover": 1.2445564880371094,
+            "rejected_orders": 0.586273193359375,
+            "seed": 14,
+            "spread_cost": 0.8612780411727043,
+            "std_pnl": 0.8059747212008184
+          },
+          {
+            "cvar50": 1.523807904961672,
+            "cvar95": 2.7551598382553935,
+            "cvar95_vs_ideal_execution": 0.546658954198227,
+            "delta_cvar95_vs_band": {
+              "ci_high": -0.13006416007324392,
+              "ci_low": -0.18310858561825707,
+              "estimate": -0.15569613772107083
+            },
+            "delta_cvar95_vs_band_ideal_execution": {
+              "ci_high": -0.33696043270777254,
+              "ci_low": -0.4008010495817165,
+              "estimate": -0.36917348377444714
+            },
+            "fee_cost": 0.03452815248261574,
+            "max_holding_mean": 0.7271153076171875,
+            "max_holding_p99": 0.9513,
+            "mean_pnl": -0.8999387061909756,
+            "mean_pnl_vs_ideal_execution": 0.04040160167784713,
+            "mean_residual": 0.016272260727140796,
+            "rebalance_trades": 29.045806884765625,
+            "rebalance_turnover": 1.2277156280517578,
+            "rejected_orders": 0.5916748046875,
+            "seed": 15,
+            "spread_cost": 0.8632043637071471,
+            "std_pnl": 0.8117063622996367
+          }
+        ]
+      }
+    }
+  },
+  "calibration": {
+    "dropped_quotes": 0,
+    "failures": [],
+    "max_quad_change": 5.684341886080802e-14,
+    "slices": [
+      {
+        "atm_iv": 0.19985433763184848,
+        "day": 1,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 6.861427400536413e-14
+        },
+        "iv_max_abs_residual": 1.987550521115322e-05,
+        "iv_rmse": 8.32165594774547e-06,
+        "params": {
+          "a": 7.768662060466597e-05,
+          "b": 0.00024537848778374496,
+          "m": 0.06300315072335008,
+          "rho": -1.0000000000000002,
+          "sigma": 0.020837616507251102,
+          "tau": 0.0027397260273972603
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": 9.425838131404962e-07,
+          "-0.5": -1.5620256293980006e-06,
+          "-0.75": -3.9927499268233024e-06,
+          "-1": -6.215726336994409e-06,
+          "-1.25": -8.105363916738328e-06,
+          "-1.5": -9.545145528422339e-06,
+          "-1.75": -1.042800280390277e-05,
+          "-2": -1.0656380549478595e-05,
+          "-2.25": -1.0142080774155904e-05,
+          "-2.5": -8.80595418345509e-06,
+          "-2.75": -6.577488817272048e-06,
+          "-3": -3.394333566275609e-06,
+          "-3.25": 7.982127587236043e-07,
+          "-3.5": 6.047724202623561e-06,
+          "-3.75": 1.2395189872782542e-05,
+          "-4": 1.987550521115322e-05,
+          "0": 3.380328788021858e-06,
+          "0.25": 5.605743212955261e-06,
+          "0.5": 7.471867453423542e-06,
+          "0.75": 8.834871980750725e-06,
+          "1": 9.560538356434556e-06,
+          "1.25": 9.533193121608052e-06,
+          "1.5": 8.667870874029537e-06,
+          "1.75": 6.926715396260441e-06,
+          "2": 4.340923513063144e-06,
+          "2.25": 1.0399052969845002e-06,
+          "2.5": -2.7102220420682777e-06,
+          "2.75": -6.456181405822825e-06,
+          "3": -9.49199318645011e-06,
+          "3.25": -1.0774839482446952e-05,
+          "3.5": -8.818965821832947e-06,
+          "3.75": -1.5653449270125463e-06,
+          "4": 1.3771365382109213e-05
+        }
+      },
+      {
+        "atm_iv": 0.19970542080634487,
+        "day": 2,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 3.0752782406221342e-12
+        },
+        "iv_max_abs_residual": 6.481079708664517e-05,
+        "iv_rmse": 2.7855289506961945e-05,
+        "params": {
+          "a": 0.00014482332352178324,
+          "b": 0.0004918639413789396,
+          "m": 0.07254600988158431,
+          "rho": -0.9999999999999997,
+          "sigma": 0.026723926966011356,
+          "tau": 0.005479452054794521
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -5.191275422450348e-06,
+          "-0.5": -1.3240869110864306e-05,
+          "-0.75": -2.0513927794646447e-05,
+          "-1": -2.6646217103964975e-05,
+          "-1.25": -3.132277489006907e-05,
+          "-1.5": -3.427483070550519e-05,
+          "-1.75": -3.527606827227747e-05,
+          "-2": -3.413861889953185e-05,
+          "-2.25": -3.070903848959028e-05,
+          "-2.5": -2.4864425753168273e-05,
+          "-2.75": -1.6508774788287495e-05,
+          "-3": -5.569612724687367e-06,
+          "-3.25": 8.005059380811197e-06,
+          "-3.5": 2.4249520157726412e-05,
+          "-3.75": 4.318278794834818e-05,
+          "-4": 6.481079708664517e-05,
+          "0": 3.219503549783953e-06,
+          "0.25": 1.1525249361682421e-05,
+          "0.5": 1.9212443097743614e-05,
+          "0.75": 2.572891062860294e-05,
+          "1": 3.0500015085643817e-05,
+          "1.25": 3.2955824002894873e-05,
+          "1.5": 3.25739315634177e-05,
+          "1.75": 2.8944196578117865e-05,
+          "2": 2.186353107178074e-05,
+          "2.25": 1.1470841048022429e-05,
+          "2.5": -1.5662766959800845e-06,
+          "2.75": -1.5801760287509348e-05,
+          "3": -2.8691687743581662e-05,
+          "3.25": -3.6213099156412465e-05,
+          "3.5": -3.246113767979564e-05,
+          "3.75": -9.325113440483701e-06,
+          "4": 4.3563583423278374e-05
+        }
+      },
+      {
+        "atm_iv": 0.19955160291247825,
+        "day": 3,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 2.5839417800457723e-11
+        },
+        "iv_max_abs_residual": 0.00012251729701043268,
+        "iv_rmse": 5.3827802517216057e-05,
+        "params": {
+          "a": 0.00020708072469737522,
+          "b": 0.0007389648959071758,
+          "m": 0.07832606389126254,
+          "rho": -0.9999999999999999,
+          "sigma": 0.03131133297933536,
+          "tau": 0.00821917808219178
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -1.8362229740109814e-05,
+          "-0.5": -3.3290095956789445e-05,
+          "-0.75": -4.619027999341885e-05,
+          "-1": -5.6469457972802006e-05,
+          "-1.25": -6.364840878567146e-05,
+          "-1.5": -6.734812223241349e-05,
+          "-1.75": -6.727626017885568e-05,
+          "-2": -6.321455344374116e-05,
+          "-2.25": -5.500741299974132e-05,
+          "-2.5": -4.2551845891330986e-05,
+          "-2.75": -2.5788656025982348e-05,
+          "-3": -4.694849078723529e-06,
+          "-3.25": 2.072287102883319e-05,
+          "-3.5": 5.043363163770298e-05,
+          "-3.75": 8.438707565999737e-05,
+          "-4": 0.00012251729701043268,
+          "0": -2.127288634079516e-06,
+          "0.25": 1.4556169053575596e-05,
+          "0.5": 3.0686390175588274e-05,
+          "0.75": 4.512314106286386e-05,
+          "1": 5.6609227065906875e-05,
+          "1.25": 6.381883661310539e-05,
+          "1.5": 6.54468535232211e-05,
+          "1.75": 6.03581862937963e-05,
+          "2": 4.78210340370544e-05,
+          "2.25": 2.7850658051553623e-05,
+          "2.5": 1.685791525485314e-06,
+          "2.75": -2.760112657365643e-05,
+          "3": -5.441192331689937e-05,
+          "3.25": -7.000622478500751e-05,
+          "3.5": -6.228282692138931e-05,
+          "3.75": -1.6452663819055413e-05,
+          "4": 8.290764887142199e-05
+        }
+      },
+      {
+        "atm_iv": 0.19939506157840325,
+        "day": 4,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 1.0878898822693662e-10
+        },
+        "iv_max_abs_residual": 0.00018571524250307614,
+        "iv_rmse": 8.283409437523709e-05,
+        "params": {
+          "a": 0.0002672367185622948,
+          "b": 0.00098604530892582,
+          "m": 0.0819007609010791,
+          "rho": -1.0000000000000002,
+          "sigma": 0.034717206447216535,
+          "tau": 0.010958904109589041
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -3.554946559874983e-05,
+          "-0.5": -5.7997805939402625e-05,
+          "-0.75": -7.679820848613406e-05,
+          "-1": -9.115231577844218e-05,
+          "-1.25": -0.00010045727795215953,
+          "-1.5": -0.00010427399794268877,
+          "-1.75": -0.00010229855457791204,
+          "-2": -9.433728547941778e-05,
+          "-2.25": -8.028551972300013e-05,
+          "-2.5": -6.010969563163826e-05,
+          "-2.75": -3.383249107247188e-05,
+          "-3": -1.5205588101419032e-06,
+          "-3.25": 3.6725519021285624e-05,
+          "-3.5": 8.077941933254396e-05,
+          "-3.75": 0.0001304957170639165,
+          "-4": 0.00018571524250307614,
+          "0": -1.0480619226482801e-05,
+          "0.25": 1.5919716947920826e-05,
+          "0.5": 4.207480483006676e-05,
+          "0.75": 6.610956830205295e-05,
+          "1": 8.587038259638691e-05,
+          "1.25": 9.899825248779748e-05,
+          "1.5": 0.00010308883390897083,
+          "1.75": 9.598427290213873e-05,
+          "2": 7.625000869129761e-05,
+          "2.25": 4.38840775706939e-05,
+          "2.5": 1.266630058310847e-06,
+          "2.75": -4.5749211568718584e-05,
+          "3": -8.691182508011042e-05,
+          "3.25": -0.00010741583834031343,
+          "3.5": -8.934623733666824e-05,
+          "3.75": -1.5286679491605115e-05,
+          "4": 0.00012651053768922282
+        }
+      },
+      {
+        "atm_iv": 0.19923824875950014,
+        "day": 5,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 3.120338719471391e-10
+        },
+        "iv_max_abs_residual": 0.00024949216614239544,
+        "iv_rmse": 0.00011222707892829377,
+        "params": {
+          "a": 0.00032673838814504397,
+          "b": 0.0012324852979305142,
+          "m": 0.08413787049020584,
+          "rho": -1.0,
+          "sigma": 0.03711968193709691,
+          "tau": 0.0136986301369863
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -5.3834332838342824e-05,
+          "-0.5": -8.412854070694031e-05,
+          "-0.75": -0.00010893831512523433,
+          "-1": -0.00012728550094195934,
+          "-1.25": -0.00013848138640309982,
+          "-1.5": -0.0001420702280470476,
+          "-1.75": -0.00013778097474717588,
+          "-2": -0.00012548706704165746,
+          "-2.25": -0.00010517355423025898,
+          "-2.5": -7.691053736802456e-05,
+          "-2.75": -4.0831924295825495e-05,
+          "-3": 2.881438858792773e-06,
+          "-3.25": 5.401507817467954e-05,
+          "-3.5": 0.00011233133362709147,
+          "-3.75": 0.0001775775044197403,
+          "-4": 0.00024949216614239544,
+          "0": -1.9386731199944052e-05,
+          "0.25": 1.7463759513003385e-05,
+          "0.5": 5.4485898106665376e-05,
+          "0.75": 8.89279549713684e-05,
+          "1": 0.0001175279498658588,
+          "1.25": 0.0001366202306193054,
+          "1.5": 0.00014240776865248606,
+          "1.75": 0.00013149248711968875,
+          "2": 0.00010176293929312075,
+          "2.25": 5.369483709255496e-05,
+          "2.5": -8.034021495684218e-06,
+          "2.75": -7.30430165797602e-05,
+          "3": -0.000124783302349607,
+          "3.25": -0.00014239286017775354,
+          "3.5": -0.00010567226299659782,
+          "3.75": -2.0310719939242716e-06,
+          "4": 0.00016812350041817137
+        }
+      },
+      {
+        "atm_iv": 0.1990830542004671,
+        "day": 6,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": true,
+          "objective": 7.01003113545368e-10
+        },
+        "iv_max_abs_residual": 0.00031075781210201936,
+        "iv_rmse": 0.00014017374656857533,
+        "params": {
+          "a": 0.00038630956752829524,
+          "b": 0.0014777976127792153,
+          "m": 0.08555523691149511,
+          "rho": -1.0,
+          "sigma": 0.03871533565069079,
+          "tau": 0.01643835616438356
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -7.105366777249156e-05,
+          "-0.5": -0.00010936589022106369,
+          "-0.75": -0.0001402548118404623,
+          "-1": -0.00016258155307163902,
+          "-1.25": -0.00017560113876044503,
+          "-1.5": -0.00017887463932592107,
+          "-1.75": -0.0001721970045714949,
+          "-2": -0.00015553916629412745,
+          "-2.25": -0.00012900232992027472,
+          "-2.5": -9.278230703038681e-05,
+          "-2.75": -4.714193025370794e-05,
+          "-3": 7.610120988543745e-06,
+          "-3.25": 7.113546275938631e-05,
+          "-3.5": 0.0001430782254450702,
+          "-3.75": 0.00022307423036110885,
+          "-4": 0.00031075781210201936,
+          "0": -2.6954078060220654e-05,
+          "0.25": 2.0685870437353593e-05,
+          "0.5": 6.889549263822126e-05,
+          "0.75": 0.00011389574602801988,
+          "1": 0.00015109267200613674,
+          "1.25": 0.0001752349030331446,
+          "1.5": 0.00018086693707625168,
+          "1.75": 0.0001632497851145609,
+          "2": 0.00011990860753710586,
+          "2.25": 5.280933598536541e-05,
+          "2.5": -2.9266776249897708e-05,
+          "2.75": -0.00010933788152758805,
+          "3": -0.000163737436357142,
+          "3.25": -0.0001680345358164581,
+          "3.5": -0.00010613801170503145,
+          "3.75": 2.2357652685239815e-05,
+          "4": 0.00020164376660755656
+        }
+      },
+      {
+        "atm_iv": 0.19893065782499442,
+        "day": 7,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 1.3320748086750341e-09
+        },
+        "iv_max_abs_residual": 0.0003678187980061254,
+        "iv_rmse": 0.00016562161587837084,
+        "params": {
+          "a": 0.0004462855098534727,
+          "b": 0.0017216573491599396,
+          "m": 0.08646520703476754,
+          "rho": -0.9999999999999998,
+          "sigma": 0.039683627398090705,
+          "tau": 0.019178082191780823
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -8.586195712001476e-05,
+          "-0.5": -0.00013228588895189408,
+          "-0.75": -0.00016932312724529663,
+          "-1": -0.00019568524169316648,
+          "-1.25": -0.00021059189786024057,
+          "-1.5": -0.0002136450577932547,
+          "-1.75": -0.00020472906385823886,
+          "-2": -0.00018393300903601917,
+          "-2.25": -0.00015149132706615553,
+          "-2.5": -0.00010773882976156113,
+          "-2.75": -5.3076981426786185e-05,
+          "-3": 1.2051192751799666e-05,
+          "-3.25": 8.717962109830446e-05,
+          "-3.5": 0.00017183271565798797,
+          "-3.75": 0.0002655351488428659,
+          "-4": 0.0003678187980061254,
+          "0": -3.200093530181247e-05,
+          "0.25": 2.6510398767359833e-05,
+          "0.5": 8.586598115528643e-05,
+          "0.75": 0.00014109323097252768,
+          "1": 0.00018602424618058278,
+          "1.25": 0.000213535262011455,
+          "1.5": 0.00021628822576913453,
+          "1.75": 0.00018826880800237866,
+          "2": 0.00012733650881846525,
+          "2.25": 3.8571095175465864e-05,
+          "2.5": -6.2793770546965e-05,
+          "2.75": -0.00015138996744959443,
+          "3": -0.00019751081667887527,
+          "3.25": -0.0001784752542040302,
+          "3.5": -8.952921624968968e-05,
+          "3.75": 5.367585139434694e-05,
+          "4": 0.00022232351579098975
+        }
+      },
+      {
+        "atm_iv": 0.19878165522553942,
+        "day": 8,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 2.2455227319291335e-09
+        },
+        "iv_max_abs_residual": 0.00041993901582168536,
+        "iv_rmse": 0.00018815422261848897,
+        "params": {
+          "a": 0.0005068005859499925,
+          "b": 0.0019638801852915146,
+          "m": 0.08705667437597098,
+          "rho": -0.9999999999999998,
+          "sigma": 0.040172568701405516,
+          "tau": 0.021917808219178082
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -9.756142175301741e-05,
+          "-0.5": -0.0001521477810500771,
+          "-0.75": -0.00019540919915816968,
+          "-1": -0.0002259114858849387,
+          "-1.25": -0.00024285235409873818,
+          "-1.5": -0.0002458911304216438,
+          "-1.75": -0.00023501743820411591,
+          "-2": -0.00021045204453321031,
+          "-2.25": -0.00017257307304130443,
+          "-2.5": -0.00012186169354919119,
+          "-2.75": -5.8862521910535426e-05,
+          "-3": 1.5844987871965754e-05,
+          "-3.25": 0.00010166699574992721,
+          "-3.5": 0.00019800970390171369,
+          "-3.75": 0.00030428936010748475,
+          "-4": 0.00041993901582168536,
+          "0": -3.3929911882724095e-05,
+          "0.25": 3.5367553937543095e-05,
+          "0.5": 0.00010558042520472655,
+          "0.75": 0.00017035756196440155,
+          "1": 0.00022169374046246415,
+          "1.25": 0.000250300822836641,
+          "1.5": 0.00024679704793487134,
+          "1.75": 0.00020418467751670555,
+          "2": 0.00012183558505676761,
+          "2.25": 1.0203985266798998e-05,
+          "2.5": -0.0001064512136126905,
+          "2.75": -0.00019374414039524668,
+          "3": -0.00021966012669885626,
+          "3.25": -0.00017044992968728856,
+          "3.5": -5.8046854890830835e-05,
+          "3.75": 8.661087765529651e-05,
+          "4": 0.00022720461597169894
+        }
+      },
+      {
+        "atm_iv": 0.19863624053506293,
+        "day": 9,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 3.4672147018753842e-09
+        },
+        "iv_max_abs_residual": 0.0004669752203770583,
+        "iv_rmse": 0.00020782072131847896,
+        "params": {
+          "a": 0.0005678889621536302,
+          "b": 0.002204385533073484,
+          "m": 0.08744464800376558,
+          "rho": -1.0000000000000002,
+          "sigma": 0.04029801387979333,
+          "tau": 0.024657534246575342
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00010589502306485032,
+          "-0.5": -0.0001686697401868109,
+          "-0.75": -0.00021823584230040716,
+          "-1": -0.00025301108153302776,
+          "-1.25": -0.0002721787713969581,
+          "-1.5": -0.00027546637943889896,
+          "-1.75": -0.00026297927696877776,
+          "-2": -0.00023507842444289717,
+          "-2.25": -0.0001922916485102566,
+          "-2.5": -0.00013524999581221442,
+          "-2.75": -6.46425376605031e-05,
+          "-3": 1.8815374443009736e-05,
+          "-3.25": 0.00011440410828988945,
+          "-3.5": 0.0002214147228147001,
+          "-3.75": 0.0003391588914420096,
+          "-4": 0.0004669752203770583,
+          "0": -3.2545079764217943e-05,
+          "0.25": 4.734669040140638e-05,
+          "0.5": 0.00012796234721065836,
+          "0.75": 0.00020136674991691472,
+          "1": 0.00025743117297905016,
+          "1.25": 0.00028441078148735977,
+          "1.5": 0.0002708087650890312,
+          "1.75": 0.00020923007260373327,
+          "2": 0.0001023001112332167,
+          "2.25": -3.1328756191606466e-05,
+          "2.5": -0.00015611066780765737,
+          "2.75": -0.00023005023953601156,
+          "3": -0.00022517137598124237,
+          "3.25": -0.00014370397644353217,
+          "3.5": -1.5912299068859825e-05,
+          "3.75": 0.00011627793849508516,
+          "4": 0.00021491761837880152
+        }
+      },
+      {
+        "atm_iv": 0.1984943596933744,
+        "day": 10,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 5.0171170592235275e-09
+        },
+        "iv_max_abs_residual": 0.000509121385139033,
+        "iv_rmse": 0.00022499066198932826,
+        "params": {
+          "a": 0.0006295366431871576,
+          "b": 0.002443162866367182,
+          "m": 0.08769996033841748,
+          "rho": -1.0000000000000002,
+          "sigma": 0.04014848492323942,
+          "tau": 0.0273972602739726
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.0001108793497547611,
+          "-0.5": -0.00018185385112273744,
+          "-0.75": -0.0002378061388687569,
+          "-1": -0.00027699897169430887,
+          "-1.25": -0.00029860455900473926,
+          "-1.5": -0.00030242526565030237,
+          "-1.75": -0.0002886889548426308,
+          "-2": -0.00025790197098243817,
+          "-2.25": -0.000210744991969658,
+          "-2.5": -0.00014800008724685787,
+          "-2.75": -7.050019910134764e-05,
+          "-3": 2.090539234772537e-05,
+          "-3.25": 0.00012537427506975618,
+          "-3.5": 0.00024208611622686393,
+          "-3.75": 0.0003702522575729228,
+          "-4": 0.000509121385139033,
+          "0": -2.7898709010459877e-05,
+          "0.25": 6.233034940858473e-05,
+          "0.5": 0.0001527858707245089,
+          "0.75": 0.00023372193197868096,
+          "1": 0.0002925767125387113,
+          "1.25": 0.0003148627882149646,
+          "1.5": 0.00028701869120428825,
+          "1.75": 0.00020220478732776992,
+          "2": 6.865973546132942e-05,
+          "2.25": -8.357805065817292e-05,
+          "2.5": -0.0002064253143079786,
+          "2.75": -0.00025433539738628497,
+          "3": -0.00021133114859181457,
+          "3.25": -0.00010042297963117064,
+          "3.5": 3.2030971393370855e-05,
+          "3.75": 0.00013889637305408709,
+          "4": 0.00018525621033721462
+        }
+      },
+      {
+        "atm_iv": 0.19835581857770196,
+        "day": 11,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 6.921861408128546e-09
+        },
+        "iv_max_abs_residual": 0.0005467446936634479,
+        "iv_rmse": 0.00024024398358319776,
+        "params": {
+          "a": 0.0006917079619808493,
+          "b": 0.0026802460523467266,
+          "m": 0.08786685653228635,
+          "rho": -0.9999999999999999,
+          "sigma": 0.03979102103841886,
+          "tau": 0.030136986301369864
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00011268800683900126,
+          "-0.5": -0.00019186555342956546,
+          "-0.75": -0.0002542835295540058,
+          "-1": -0.00029803948636314415,
+          "-1.25": -0.0003222949425403798,
+          "-1.5": -0.00032693125157562397,
+          "-1.75": -0.0003123030916047931,
+          "-2": -0.0002790652715687625,
+          "-2.25": -0.0002280527178556424,
+          "-2.5": -0.00016019828886582044,
+          "-2.75": -7.647719058334612e-05,
+          "-3": 2.2130036451017965e-05,
+          "-3.25": 0.00013466162981823349,
+          "-3.5": 0.00026018979752140403,
+          "-3.75": 0.00039782977588137536,
+          "-4": 0.0005467446936634479,
+          "0": -2.018313873775046e-05,
+          "0.25": 8.008957218280655e-05,
+          "0.5": 0.00017975418513044294,
+          "0.75": 0.0002670052539790191,
+          "1": 0.0003265146344881009,
+          "1.25": 0.00034078122844063974,
+          "1.5": 0.00029438767857334347,
+          "1.75": 0.0001824428029582048,
+          "2": 2.1790363963825055e-05,
+          "2.25": -0.00014292962579023905,
+          "2.5": -0.00025161869973552853,
+          "2.75": -0.000261950670087191,
+          "3": -0.00017781736852157115,
+          "3.25": -4.425185287745825e-05,
+          "3.5": 8.126136476802048e-05,
+          "3.75": 0.00015189286659691992,
+          "4": 0.0001387601777816938
+        }
+      },
+      {
+        "atm_iv": 0.19822035277693284,
+        "day": 12,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 9.22905960445439e-09
+        },
+        "iv_max_abs_residual": 0.0005802864616068493,
+        "iv_rmse": 0.00025428883823575726,
+        "params": {
+          "a": 0.0007543590679681107,
+          "b": 0.0029156953222248204,
+          "m": 0.08797337742675498,
+          "rho": -0.9999999999999999,
+          "sigma": 0.039276330883272315,
+          "tau": 0.03287671232876712
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00011157622164273406,
+          "-0.5": -0.00019895593277635681,
+          "-0.75": -0.0002679150187222812,
+          "-1": -0.0003163735105787546,
+          "-1.25": -0.00034348088684055256,
+          "-1.5": -0.0003491999602726614,
+          "-1.75": -0.00033401508440586425,
+          "-2": -0.0002987313668451619,
+          "-2.25": -0.0002443383875423699,
+          "-2.5": -0.00017191883346656667,
+          "-2.75": -8.258809201155959e-05,
+          "-3": 2.25449537509248e-05,
+          "-3.25": 0.00014240267826856612,
+          "-3.5": 0.00027595366663674126,
+          "-3.75": 0.0004222210555325234,
+          "-4": 0.0005802864616068493,
+          "0": -9.661004612082635e-06,
+          "0.25": 0.00010034477934967034,
+          "0.5": 0.00020854837912190338,
+          "0.75": 0.00030081362544356893,
+          "1": 0.00035868922845697093,
+          "1.25": 0.00036141415477861094,
+          "1.5": 0.0002921234592814792,
+          "1.75": 0.00014977870229085366,
+          "2": -3.658909725454129e-05,
+          "2.25": -0.00020496662998273352,
+          "2.5": -0.00028621099582645804,
+          "2.75": -0.0002500733156097501,
+          "3": -0.00012624998835694679,
+          "3.25": 2.063581417335869e-05,
+          "3.5": 0.00012804362303467376,
+          "3.75": 0.00015373696209061705,
+          "4": 7.638507648535797e-05
+        }
+      },
+      {
+        "atm_iv": 0.19808766930533758,
+        "day": 13,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 1.2021886149607636e-08
+        },
+        "iv_max_abs_residual": 0.0006102062501763816,
+        "iv_rmse": 0.0002678975898154562,
+        "params": {
+          "a": 0.0008174443269375502,
+          "b": 0.003149585537984749,
+          "m": 0.08803757133628855,
+          "rho": -1.0000000000000002,
+          "sigma": 0.03864297415597361,
+          "tau": 0.03561643835616438
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00010783541764217142,
+          "-0.5": -0.00020341485411612403,
+          "-0.75": -0.0002789850285801754,
+          "-1": -0.0003322750370680083,
+          "-1.25": -0.0003624200930823773,
+          "-1.5": -0.0003694661051726611,
+          "-1.75": -0.00035402919187985105,
+          "-2": -0.0003170659452943758,
+          "-2.25": -0.00025972051977127264,
+          "-2.5": -0.00018322416362676064,
+          "-2.75": -8.883022703801147e-05,
+          "-3": 2.2226967959698696e-05,
+          "-3.25": 0.0001487572814818372,
+          "-3.5": 0.000289629270653069,
+          "-3.75": 0.0004437776659942383,
+          "-4": 0.0006102062501763816,
+          "0": 3.3764729195639998e-06,
+          "0.25": 0.00012280147542720332,
+          "0.5": 0.00023885490359076833,
+          "0.75": 0.0003347757823609354,
+          "1": 0.0003886095872719375,
+          "1.25": 0.0003761257087571135,
+          "1.5": 0.0002796646723316476,
+          "1.75": 0.00010452008913228172,
+          "2": -0.00010402721770508272,
+          "2.25": -0.0002648499276997618,
+          "2.5": -0.00030560142897934073,
+          "2.75": -0.0002177831746040526,
+          "3": -5.952054010843755e-05,
+          "3.25": 9.019126525874888e-05,
+          "3.5": 0.00016954066064336915,
+          "3.75": 0.0001436880526293205,
+          "4": -6.993250898645886e-07
+        }
+      },
+      {
+        "atm_iv": 0.19795747213124876,
+        "day": 14,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 1.543289118189858e-08
+        },
+        "iv_max_abs_residual": 0.0006369498841856669,
+        "iv_rmse": 0.0002818503219048267,
+        "params": {
+          "a": 0.0008809196512775245,
+          "b": 0.0033819982658837957,
+          "m": 0.08807121176299498,
+          "rho": -0.9999999999999998,
+          "sigma": 0.037920423438423015,
+          "tau": 0.038356164383561646
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00010176502280725974,
+          "-0.5": -0.00020554177834503085,
+          "-0.75": -0.00028778675643650886,
+          "-1": -0.00034602440852279925,
+          "-1.25": -0.00037937326059778176,
+          "-1.5": -0.00038796368974519657,
+          "-1.75": -0.0003725453785456967,
+          "-2": -0.00033422734115898245,
+          "-2.25": -0.00027430806883269043,
+          "-2.5": -0.00019416605550104382,
+          "-2.75": -9.51904567577655e-05,
+          "-3": 2.1261711890929735e-05,
+          "-3.25": 0.00015389090675149708,
+          "-3.5": 0.00030146895385807504,
+          "-3.75": 0.0004628455283175459,
+          "-4": 0.0006369498841856669,
+          "0": 1.8635015038570568e-05,
+          "0.25": 0.0001471713657724416,
+          "0.5": 0.00027038053369352055,
+          "0.75": 0.00036855938604704597,
+          "1": 0.0004158474672064094,
+          "1.25": 0.00038438527638065545,
+          "1.5": 0.00025666531783302693,
+          "1.75": 4.741988600939773e-05,
+          "2": -0.00017746647910027447,
+          "2.25": -0.00031770490326243905,
+          "2.5": -0.00030645965279005316,
+          "2.75": -0.0001658195631430992,
+          "3": 1.8865807818208014e-05,
+          "3.25": 0.00016086326960554342,
+          "3.5": 0.00020375382155682353,
+          "3.75": 0.00012157087010961076,
+          "4": -9.125813429833318e-05
+        }
+      },
+      {
+        "atm_iv": 0.1978294754911505,
+        "day": 15,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 1.965660062689242e-08
+        },
+        "iv_max_abs_residual": 0.0006609342469882096,
+        "iv_rmse": 0.0002968833162133806,
+        "params": {
+          "a": 0.0009447438115915863,
+          "b": 0.003613016996772962,
+          "m": 0.088082084389991,
+          "rho": -0.9999999999999996,
+          "sigma": 0.03713139336675022,
+          "tau": 0.0410958904109589
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -9.365731039898129e-05,
+          "-0.5": -0.000205629887886416,
+          "-0.75": -0.00029460659041638526,
+          "-1": -0.0003578938709638546,
+          "-1.25": -0.00039459145751796765,
+          "-1.5": -0.0004049157108548529,
+          "-1.75": -0.0003897517122616878,
+          "-2": -0.0003503618473866543,
+          "-2.25": -0.0002881987511461903,
+          "-2.5": -0.00020478695118281154,
+          "-2.75": -0.00010164941991375187,
+          "-3": 1.973665028590088e-05,
+          "-3.25": 0.00015796514522017913,
+          "-3.5": 0.0003117141453093386,
+          "-3.75": 0.0004797512841551166,
+          "-4": 0.0006609342469882096,
+          "0": 3.5830595891489514e-05,
+          "0.25": 0.00017318261845872263,
+          "0.5": 0.00030285837921148473,
+          "0.75": 0.00040187164944507914,
+          "1": 0.00044003184867477674,
+          "1.25": 0.00038575728487394434,
+          "1.5": 0.00022298375880558385,
+          "1.75": -2.03473339737692e-05,
+          "2": -0.00025338155712834043,
+          "2.25": -0.0003589863381649183,
+          "2.5": -0.00028690018749924495,
+          "2.75": -9.61610707932159e-05,
+          "3": 0.00010530257115243247,
+          "3.25": 0.0002297437736060448,
+          "3.5": 0.00022937988680102328,
+          "3.75": 8.758628213056951e-05,
+          "4": -0.00019406302955476962
+        }
+      },
+      {
+        "atm_iv": 0.19770341127590346,
+        "day": 16,
+        "fit": {
+          "active_constraints": [
+            2
+          ],
+          "final_grid_edge": false,
+          "objective": 2.4960651652874026e-08
+        },
+        "iv_max_abs_residual": 0.0006825400596947029,
+        "iv_rmse": 0.000313643213773298,
+        "params": {
+          "a": 0.001008878999552663,
+          "b": 0.0038427240499685185,
+          "m": 0.08807540007852992,
+          "rho": -1.0,
+          "sigma": 0.03629351340974603,
+          "tau": 0.043835616438356165
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -8.378868131081463e-05,
+          "-0.5": -0.00020395687371857485,
+          "-0.75": -0.00029971511228785164,
+          "-1": -0.0003681393596945415,
+          "-1.25": -0.0004083091160372865,
+          "-1.5": -0.0004205286585724499,
+          "-1.75": -0.0004058205471525467,
+          "-2": -0.0003656016587808286,
+          "-2.25": -0.0003014787396052321,
+          "-2.5": -0.00021512132311901633,
+          "-2.75": -0.00010818442956780916,
+          "-3": 1.7736835639742266e-05,
+          "-3.25": 0.00016113233995107556,
+          "-3.5": 0.0003205891032255215,
+          "-3.75": 0.0004947954219358119,
+          "-4": 0.0006825400596947029,
+          "0": 5.469682550124366e-05,
+          "0.25": 0.00020058498621505771,
+          "0.5": 0.0003360497962642539,
+          "0.75": 0.0004344571697712518,
+          "1": 0.00046084235949858665,
+          "1.25": 0.00037989182051881287,
+          "1.5": 0.00017867405132770964,
+          "1.75": -9.720996133000259e-05,
+          "2": -0.00032793628849614453,
+          "2.25": -0.00038479977349675787,
+          "2.5": -0.00024645614806018123,
+          "2.75": -1.1560188846154729e-05,
+          "3": 0.00019641980719242724,
+          "3.25": 0.00029457839090107907,
+          "3.5": 0.0002456613514595085,
+          "3.75": 4.2177898379069934e-05,
+          "4": -0.000307943400314592
+        }
+      },
+      {
+        "atm_iv": 0.19757830639258697,
+        "day": 17,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 3.1694710779164876e-08
+        },
+        "iv_max_abs_residual": 0.0007030773018822378,
+        "iv_rmse": 0.0003326472903654886,
+        "params": {
+          "a": 0.0010728053502540558,
+          "b": 0.0040740311109750205,
+          "m": 0.08809491642393852,
+          "rho": -0.9987455818229113,
+          "sigma": 0.035478573489929374,
+          "tau": 0.04657534246575343
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -7.324439882183675e-05,
+          "-0.5": -0.00020164574002473623,
+          "-0.75": -0.00030421338310746004,
+          "-1": -0.0003777935288348244,
+          "-1.25": -0.0004214541105512226,
+          "-1.5": -0.0004355968497743723,
+          "-1.75": -0.0004213896086701363,
+          "-2": -0.00038040927999055674,
+          "-2.25": -0.00031442012511623263,
+          "-2.5": -0.00022523838451932177,
+          "-2.75": -0.00011465155972467667,
+          "-3": 1.5627790437539035e-05,
+          "-3.25": 0.00016398657352467705,
+          "-3.5": 0.0003289221831195288,
+          "-3.75": 0.000509045228636873,
+          "-4": 0.0007030773018822378,
+          "0": 7.426230740206763e-05,
+          "0.25": 0.0002286149381192648,
+          "0.5": 0.0003695065799277364,
+          "0.75": 0.00046629051581117964,
+          "1": 0.00047877717581368273,
+          "1.25": 0.0003679742463761626,
+          "1.5": 0.00012604590860534892,
+          "1.75": -0.0001790546179507857,
+          "2": -0.0003959160504009296,
+          "2.25": -0.00039276629014434183,
+          "2.5": -0.00018830465259289664,
+          "2.75": 8.160109762384016e-05,
+          "3": 0.0002862368751153366,
+          "3.25": 0.00035183397868590593,
+          "3.5": 0.00025221516325515947,
+          "3.75": -1.1786496097815347e-05,
+          "4": -0.0004268591309219416
+        }
+      },
+      {
+        "atm_iv": 0.19743974624588365,
+        "day": 18,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 3.991081697409445e-08
+        },
+        "iv_max_abs_residual": 0.0007415538219419093,
+        "iv_rmse": 0.00035254028317645476,
+        "params": {
+          "a": 0.001126980908710423,
+          "b": 0.004361134776625028,
+          "m": 0.08887526724883149,
+          "rho": -0.9741764393996023,
+          "sigma": 0.035795598848163857,
+          "tau": 0.049315068493150684
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -7.847182878303882e-05,
+          "-0.5": -0.00021583692405685584,
+          "-0.75": -0.0003249173846923692,
+          "-1": -0.00040257663381396136,
+          "-1.25": -0.0004480655970984515,
+          "-1.5": -0.00046203345372491933,
+          "-1.75": -0.0004459078859105903,
+          "-2": -0.00040151289020401437,
+          "-2.25": -0.00033083643745659974,
+          "-2.5": -0.0002358918446418723,
+          "-2.75": -0.0001186374894511788,
+          "-3": 1.9067299011105154e-05,
+          "-3.25": 0.00017548405579526083,
+          "-3.5": 0.0003490034085953386,
+          "-3.75": 0.000538145184110328,
+          "-4": 0.0007415538219419093,
+          "0": 8.011411470668084e-05,
+          "0.25": 0.0002466506746904573,
+          "0.5": 0.00039865393785673553,
+          "0.75": 0.0005016046791081197,
+          "1": 0.0005098772078995784,
+          "1.25": 0.0003800593925565865,
+          "1.5": 0.00010768653288187324,
+          "1.75": -0.00022153756575352124,
+          "2": -0.0004341224767130947,
+          "2.25": -0.0004009864917722261,
+          "2.5": -0.00016747790971102794,
+          "2.75": 0.00011416606119976636,
+          "3": 0.0003146928211650024,
+          "3.25": 0.0003675667461431331,
+          "3.5": 0.0002527230539128289,
+          "3.75": -2.519097029504702e-05,
+          "4": -0.0004508129889110868
+        }
+      },
+      {
+        "atm_iv": 0.19730181636101937,
+        "day": 19,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 4.951504576414038e-08
+        },
+        "iv_max_abs_residual": 0.0007790234832296128,
+        "iv_rmse": 0.00037200377243899155,
+        "params": {
+          "a": 0.001180862420552171,
+          "b": 0.00464763390236215,
+          "m": 0.08958987328543608,
+          "rho": -0.952584652293125,
+          "sigma": 0.036085994609492016,
+          "tau": 0.052054794520547946
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -8.338138018557095e-05,
+          "-0.5": -0.00022971038833341506,
+          "-0.75": -0.0003452626672458825,
+          "-1": -0.000426942182275708,
+          "-1.25": -0.0004742038694970918,
+          "-1.5": -0.0004879599604566409,
+          "-1.75": -0.000469908196054053,
+          "-2": -0.00042212560154419876,
+          "-2.25": -0.0003468266208579984,
+          "-2.5": -0.00024622222805728566,
+          "-2.75": -0.0001224408220855122,
+          "-3": 2.2513245724581354e-05,
+          "-3.25": 0.0001867784006728268,
+          "-3.5": 0.00036864102400585574,
+          "-3.75": 0.0005665327629398309,
+          "-4": 0.0007790234832296128,
+          "0": 8.633940630001224e-05,
+          "0.25": 0.0002651470819145241,
+          "0.5": 0.00042826067421367076,
+          "0.75": 0.0005370022152836051,
+          "1": 0.0005399168064769977,
+          "1.25": 0.0003891987438140454,
+          "1.5": 8.52004191933542e-05,
+          "1.75": -0.0002660884555379939,
+          "2": -0.00046966066959583386,
+          "2.25": -0.00040434001965802824,
+          "2.5": -0.00014368812942872067,
+          "2.75": 0.0001468570639373834,
+          "3": 0.0003415960302791121,
+          "3.25": 0.0003814292935462593,
+          "3.5": 0.0002519581420011574,
+          "3.75": -3.882028810808791e-05,
+          "4": -0.00047382905865550606
+        }
+      },
+      {
+        "atm_iv": 0.19716450410397507,
+        "day": 20,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 6.062513740443245e-08
+        },
+        "iv_max_abs_residual": 0.0008155221924315281,
+        "iv_rmse": 0.00039104353279612486,
+        "params": {
+          "a": 0.001234465967817492,
+          "b": 0.004933487512954413,
+          "m": 0.09024729918288493,
+          "rho": -0.9334630326524918,
+          "sigma": 0.03635277161681526,
+          "tau": 0.0547945205479452
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -8.797681758157538e-05,
+          "-0.5": -0.00024326583415432146,
+          "-0.75": -0.0003652480924146162,
+          "-1": -0.000450890901574047,
+          "-1.25": -0.0004998733022654189,
+          "-1.5": -0.0005133851325810346,
+          "-1.75": -0.0004934034712092417,
+          "-2": -0.0004422635090993998,
+          "-2.25": -0.00036240833191747424,
+          "-2.5": -0.0002562467348033448,
+          "-2.75": -0.0001260760176041431,
+          "-3": 2.5956340901689412e-05,
+          "-3.25": 0.0001978679746381662,
+          "-3.5": 0.00038784352517767795,
+          "-3.75": 0.0005942290058362221,
+          "-4": 0.0008155221924315281,
+          "0": 9.292713855757473e-05,
+          "0.25": 0.00028408220006845286,
+          "0.5": 0.00045828598278338517,
+          "0.75": 0.0005724045779657572,
+          "1": 0.0005687639303130487,
+          "1.25": 0.00039528261319107805,
+          "1.5": 5.8772682769242524e-05,
+          "1.75": -0.0003120444086732177,
+          "2": -0.0005019976355139788,
+          "2.25": -0.0004030832572921583,
+          "2.5": -0.00011753715869577963,
+          "2.75": 0.00017929008261868828,
+          "3": 0.000366882604437041,
+          "3.25": 0.00039355088157050355,
+          "3.5": 0.0002500918832978871,
+          "3.75": -5.25703314155912e-05,
+          "4": -0.0004959310948346451
+        }
+      },
+      {
+        "atm_iv": 0.197027796378599,
+        "day": 21,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 7.335851353975859e-08
+        },
+        "iv_max_abs_residual": 0.000851085983961275,
+        "iv_rmse": 0.0004096670746298939,
+        "params": {
+          "a": 0.0012878050623613036,
+          "b": 0.0052186686378048585,
+          "m": 0.09085466100596071,
+          "rho": -0.9164117863302929,
+          "sigma": 0.036598558749312456,
+          "tau": 0.057534246575342465
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -9.226338341808415e-05,
+          "-0.5": -0.00025650512860550534,
+          "-0.75": -0.00038487501610182107,
+          "-1": -0.0004744259772140047,
+          "-1.25": -0.0005250803783785896,
+          "-1.5": -0.0005383192622874511,
+          "-1.75": -0.0005164074619828374,
+          "-2": -0.00046194277802882877,
+          "-2.25": -0.0003775985953848593,
+          "-2.5": -0.0002659813476971751,
+          "-2.75": -0.0001295559034937277,
+          "-3": 2.9389131701473836e-05,
+          "-3.25": 0.00020875294569755454,
+          "-3.5": 0.0004066209192831738,
+          "-3.75": 0.0006212559061387068,
+          "-4": 0.000851085983961275,
+          "0": 9.986575200568448e-05,
+          "0.25": 0.00030343457954698505,
+          "0.5": 0.0004886903082031713,
+          "0.75": 0.0006077352771189926,
+          "1": 0.0005962941572581482,
+          "1.25": 0.00039822911878401035,
+          "1.5": 2.8637584887691858e-05,
+          "1.75": -0.00035875224772885517,
+          "2": -0.0005307395331856368,
+          "2.25": -0.0003975584836500845,
+          "2.5": -8.957221011599015e-05,
+          "2.75": 0.0002111674041933298,
+          "3": 0.0003905358204285003,
+          "3.25": 0.00040406490069661016,
+          "3.5": 0.0002472772833781445,
+          "3.75": -6.635594368570308e-05,
+          "4": -0.0005171492970313107
+        }
+      },
+      {
+        "atm_iv": 0.19689168064832993,
+        "day": 22,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 8.783181544709524e-08
+        },
+        "iv_max_abs_residual": 0.000885749692910387,
+        "iv_rmse": 0.00042788265137442237,
+        "params": {
+          "a": 0.001340891385145608,
+          "b": 0.005503158692253423,
+          "m": 0.0914179078683876,
+          "rho": -0.9011123276565272,
+          "sigma": 0.03682563612107193,
+          "tau": 0.06027397260273973
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -9.62465998057549e-05,
+          "-0.5": -0.0002694310121535981,
+          "-0.75": -0.00040414598637872334,
+          "-1": -0.0004975518187752825,
+          "-1.25": -0.0005498325921055314,
+          "-1.5": -0.0005627732677932484,
+          "-1.75": -0.0005389340699388789,
+          "-2": -0.00048117923931659257,
+          "-2.25": -0.0003924136765021402,
+          "-2.5": -0.00027544098076975887,
+          "-2.75": -0.00013289208903574656,
+          "-3": 3.2805341991681836e-05,
+          "-3.25": 0.00021943440619554,
+          "-3.5": 0.0004249836593798184,
+          "-3.75": 0.0006476351974663008,
+          "-4": 0.000885749692910387,
+          "0": 0.00010714418040183582,
+          "0.25": 0.0003231839865689423,
+          "0.5": 0.0005194356483395335,
+          "0.75": 0.0006429199046477652,
+          "1": 0.0006223909213756984,
+          "1.25": 0.0003979836063399411,
+          "1.5": -4.929327472591449e-06,
+          "1.75": -0.00040558630246348426,
+          "2": -0.0005556244418696843,
+          "2.25": -0.00038816028249172296,
+          "2.5": -6.0277890081478214e-05,
+          "2.75": 0.00024226429150131512,
+          "3": 0.0004125724360564964,
+          "3.25": 0.0004131019404348957,
+          "3.5": 0.00024364769318410695,
+          "3.75": -8.010955977497125e-05,
+          "4": -0.0005375134552741412
+        }
+      },
+      {
+        "atm_iv": 0.1967561444304453,
+        "day": 23,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 1.0416076807557888e-07
+        },
+        "iv_max_abs_residual": 0.0009195474805193116,
+        "iv_rmse": 0.0004456993431469453,
+        "params": {
+          "a": 0.0013937347540903609,
+          "b": 0.005786947322385243,
+          "m": 0.09194207521232546,
+          "rho": -0.8873071867550995,
+          "sigma": 0.03703602340576109,
+          "tau": 0.06301369863013699
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -9.99327005188344e-05,
+          "-0.5": -0.00028204743742291094,
+          "-0.75": -0.0004230649961256827,
+          "-1": -0.000520274243503871,
+          "-1.25": -0.0005741385847445879,
+          "-1.5": -0.0005867588008836577,
+          "-1.75": -0.0005609974410800966,
+          "-2": -0.0004999884758962458,
+          "-2.25": -0.0004068691580777217,
+          "-2.5": -0.0002846395384989431,
+          "-2.75": -0.00013609499087774424,
+          "-3": 3.61999016608161e-05,
+          "-3.25": 0.00022991448071219,
+          "-3.5": 0.0004429428619917575,
+          "-3.75": 0.0006733887059460764,
+          "-4": 0.0009195474805193116,
+          "0": 0.0001147513301790748,
+          "0.25": 0.00034331081231564475,
+          "0.5": 0.0005504849788342259,
+          "0.75": 0.0006778859369997725,
+          "1": 0.0006469462984824981,
+          "1.25": 0.0003945191522049807,
+          "1.5": -4.1617244889879945e-05,
+          "1.75": -0.00045196099086486363,
+          "2": -0.0005765094281291738,
+          "2.25": -0.0003753094204557994,
+          "2.5": -3.0076258889427665e-05,
+          "2.75": 0.00027241498456176405,
+          "3": 0.0004330322812818588,
+          "3.25": 0.00042078805281731135,
+          "3.5": 0.00023932165311846276,
+          "3.75": -9.377634026497272e-05,
+          "4": -0.0005570558361902289
+        }
+      },
+      {
+        "atm_iv": 0.19662117605382848,
+        "day": 24,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 1.2245983116445157e-07
+        },
+        "iv_max_abs_residual": 0.0009525118527939913,
+        "iv_rmse": 0.0004631264927306956,
+        "params": {
+          "a": 0.0014463437912560144,
+          "b": 0.006070028274278492,
+          "m": 0.09243143665232095,
+          "rho": -0.8747867016319792,
+          "sigma": 0.03723148213897697,
+          "tau": 0.06575342465753424
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00010332769374407635,
+          "-0.5": -0.00029435853226722486,
+          "-0.75": -0.0004416364264076822,
+          "-1": -0.0005425994682883295,
+          "-1.25": -0.000598007242577081,
+          "-1.5": -0.0006102874960015603,
+          "-1.75": -0.0005826113984415959,
+          "-2": -0.0005183854587024472,
+          "-2.25": -0.0004209797890126765,
+          "-2.5": -0.000293589976186337,
+          "-2.75": -0.00013917409644081946,
+          "-3": 3.956849469372026e-05,
+          "-3.25": 0.00024019570597028084,
+          "-3.5": 0.00046050954056858773,
+          "-3.75": 0.0006985374659415622,
+          "-4": 0.0009525118527939913,
+          "0": 0.00012267682129354918,
+          "0.25": 0.00036379650048892764,
+          "0.5": 0.0005818022852785154,
+          "0.75": 0.0007125625150783133,
+          "1": 0.0006698607448401561,
+          "1.25": 0.0003878345169287256,
+          "1.5": -8.108931819661436e-05,
+          "1.75": -0.0004973430259651856,
+          "2": -0.0005933555194961582,
+          "2.25": -0.0003594313251645276,
+          "2.5": 6.724332504426389e-07,
+          "2.75": 0.00030150296772166185,
+          "3": 0.0004519714275261766,
+          "3.25": 0.0004272423825569249,
+          "3.5": 0.0002344023265364037,
+          "3.75": -0.00010731159283344782,
+          "4": -0.0005758097734931134
+        }
+      },
+      {
+        "atm_iv": 0.19648676440705645,
+        "day": 25,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 1.4284192367465538e-07
+        },
+        "iv_max_abs_residual": 0.0009846739422180728,
+        "iv_rmse": 0.0004801734629275198,
+        "params": {
+          "a": 0.0014987259807794709,
+          "b": 0.0063523989238664785,
+          "m": 0.09288965133161825,
+          "rho": -0.8633783267511974,
+          "sigma": 0.037413570491028475,
+          "tau": 0.0684931506849315
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00010643756902536938,
+          "-0.5": -0.00030636874972986283,
+          "-0.75": -0.0004598651508488094,
+          "-1": -0.0005645341840650742,
+          "-1.25": -0.0006214477575691157,
+          "-1.5": -0.0006333710309596452,
+          "-1.75": -0.0006037895115147685,
+          "-2": -0.0005363846275857342,
+          "-2.25": -0.00043475957341040927,
+          "-2.5": -0.0003023043883501608,
+          "-2.75": -0.0001421380388925142,
+          "-3": 4.290751424218531e-05,
+          "-3.25": 0.00025028103466351315,
+          "-3.5": 0.00047769467923591824,
+          "-3.75": 0.0007231018854271243,
+          "-4": 0.0009846739422180728,
+          "0": 0.0001309107165227974,
+          "0.25": 0.0003846232188702836,
+          "0.5": 0.0006133522666749436,
+          "0.75": 0.0007468805199448425,
+          "1": 0.0006910438272542396,
+          "1.25": 0.00037795371929377763,
+          "1.5": -0.00012298904334664962,
+          "1.75": -0.0005412578082968356,
+          "2": -0.0006062101358133287,
+          "2.25": -0.0003409410550902492,
+          "2.5": 3.166452374794848e-05,
+          "2.75": 0.0003294503579187036,
+          "3": 0.00046945565225503527,
+          "3.25": 0.00043257591849019117,
+          "3.5": 0.00022897928742413032,
+          "3.75": -0.00012068127696959752,
+          "4": -0.0005938059470954882
+        }
+      },
+      {
+        "atm_iv": 0.19635289908956768,
+        "day": 26,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 1.6541839777677007e-07
+        },
+        "iv_max_abs_residual": 0.00101606336322968,
+        "iv_rmse": 0.0004968498271059977,
+        "params": {
+          "a": 0.0015508878319774261,
+          "b": 0.006634059621794305,
+          "m": 0.09331987489549066,
+          "rho": -0.8529387330364915,
+          "sigma": 0.03758366743904867,
+          "tau": 0.07123287671232877
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00010926807011094053,
+          "-0.5": -0.0003180825838711432,
+          "-0.75": -0.00047775622830775744,
+          "-1": -0.0005860852553719875,
+          "-1.25": -0.0006444693596984186,
+          "-1.5": -0.0006560209118685878,
+          "-1.75": -0.0006245449467628394,
+          "-2": -0.0005539998133170243,
+          "-2.25": -0.00044822176352837806,
+          "-2.5": -0.00031079406718034774,
+          "-2.75": -0.00014499471056111934,
+          "-3": 4.6213908225400946e-05,
+          "-3.25": 0.000260173656504048,
+          "-3.5": 0.0004945090467349256,
+          "-3.75": 0.0007471015701461248,
+          "-4": 0.00101606336322968,
+          "0": 0.00013944365234244693,
+          "0.25": 0.0004057738574954617,
+          "0.5": 0.0006451002378792536,
+          "0.75": 0.0007807726167501916,
+          "1": 0.0007104144223016307,
+          "1.25": 0.000364924325371635,
+          "1.5": -0.00016694789553747813,
+          "1.75": -0.0005832946785244708,
+          "2": -0.0006151908952730378,
+          "2.25": -0.00032023343402534654,
+          "2.5": 6.264722031842918e-05,
+          "2.75": 0.00035621016465736677,
+          "3": 0.0004855571284883564,
+          "3.25": 0.0004368923100910027,
+          "3.5": 0.0002231324125055445,
+          "3.75": -0.00013385655440312227,
+          "4": -0.0006110783251445095
+        }
+      },
+      {
+        "atm_iv": 0.1962195704294416,
+        "day": 27,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 1.9029846950288522e-07
+        },
+        "iv_max_abs_residual": 0.0010467081081298457,
+        "iv_rmse": 0.0005131646452370934,
+        "params": {
+          "a": 0.0016028352279307786,
+          "b": 0.006915011521277066,
+          "m": 0.09372483178351475,
+          "rho": -0.8433482791038004,
+          "sigma": 0.03774298908540834,
+          "tau": 0.07397260273972603
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00011182459266170786,
+          "-0.5": -0.0003295043992197211,
+          "-0.75": -0.0004953146973458444,
+          "-1": -0.0006072595089518795,
+          "-1.25": -0.00066708112405095,
+          "-1.5": -0.0006782483173514708,
+          "-1.75": -0.000644890361052114,
+          "-2": -0.0005712441860479256,
+          "-2.25": -0.000461378863582107,
+          "-2.5": -0.0003190695564274926,
+          "-2.75": -0.00014775135847772125,
+          "-3": 4.948505295321315e-05,
+          "-3.25": 0.00026987685401724804,
+          "-3.5": 0.0005109630499427475,
+          "-3.75": 0.0007705551915133668,
+          "-4": 0.0010467081081298457,
+          "0": 0.00014826683535035245,
+          "0.25": 0.0004272318910493178,
+          "0.5": 0.0006770119154427823,
+          "0.75": 0.0008141732046557659,
+          "1": 0.0007279007649030056,
+          "1.25": 0.00034881563076860633,
+          "1.5": -0.00021259189058084327,
+          "1.75": -0.0006231081076590872,
+          "2": -0.0006204683031557356,
+          "2.25": -0.0002976750888709634,
+          "2.5": 9.341354418737624e-05,
+          "2.75": 0.0003817596151352576,
+          "3": 0.0005003502176605112,
+          "3.25": 0.00044028559935002654,
+          "3.5": 0.0002169292014842228,
+          "3.75": -0.00014681846876030136,
+          "4": -0.0006276540212657444
+        }
+      },
+      {
+        "atm_iv": 0.19608676944135156,
+        "day": 28,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 2.175894867266828e-07
+        },
+        "iv_max_abs_residual": 0.0010766347636977924,
+        "iv_rmse": 0.0005291271173389596,
+        "params": {
+          "a": 0.0016545732289572801,
+          "b": 0.007195258099587742,
+          "m": 0.09410690506968893,
+          "rho": -0.8345058945357254,
+          "sigma": 0.03789262658840221,
+          "tau": 0.07671232876712329
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00011411225015037219,
+          "-0.5": -0.00034063849572624205,
+          "-0.75": -0.0005125456416821272,
+          "-1": -0.0006280638034189823,
+          "-1.25": -0.0006892920488755228,
+          "-1.5": -0.0007000641877470126,
+          "-1.75": -0.0006648380019557143,
+          "-2": -0.0005881303634368285,
+          "-2.25": -0.0004742427390009296,
+          "-2.5": -0.0003271407531592885,
+          "-2.75": -0.00015041466756338107,
+          "-3": 5.27187016882702e-05,
+          "-3.25": 0.0002793939973194104,
+          "-3.5": 0.0005270667879518354,
+          "-3.75": 0.0007934806142176898,
+          "-4": 0.0010766347636977924,
+          "0": 0.00015737197838394668,
+          "0.25": 0.0004489813426435396,
+          "0.5": 0.0007090535298579503,
+          "0.75": 0.0008470189359524039,
+          "1": 0.0007434411752327286,
+          "1.25": 0.00032971747425350473,
+          "1.5": -0.000259547286858397,
+          "1.75": -0.0006604177031425129,
+          "2": -0.0006222526856348443,
+          "2.25": -0.00027360278341184707,
+          "2.5": 0.00012379478104351804,
+          "2.75": 0.000406094011493191,
+          "3": 0.0005139100298774124,
+          "3.25": 0.00044284289886226125,
+          "3.5": 0.00021043021561997777,
+          "3.75": -0.00015954814768337489,
+          "4": -0.0006435647161296687
+        }
+      },
+      {
+        "atm_iv": 0.195954487649609,
+        "day": 29,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 2.473965115730269e-07
+        },
+        "iv_max_abs_residual": 0.0011058686145987706,
+        "iv_rmse": 0.000544746106854837,
+        "params": {
+          "a": 0.0017061063289839638,
+          "b": 0.007474803726573335,
+          "m": 0.09446817995121506,
+          "rho": -0.826325850912142,
+          "sigma": 0.038033556426176,
+          "tau": 0.07945205479452055
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.00011613597038209744,
+          "-0.5": -0.0003514891299138678,
+          "-0.75": -0.0005294541618722504,
+          "-1": -0.0006485049737494641,
+          "-1.25": -0.0007111109913107982,
+          "-1.5": -0.0007214791656333375,
+          "-1.75": -0.0006843996617988124,
+          "-2": -0.0006046703820067612,
+          "-2.25": -0.0004868246049601621,
+          "-2.5": -0.000335016909509378,
+          "-2.75": -0.00015299076888802832,
+          "-3": 5.591297807250317e-05,
+          "-3.25": 0.0002887285478756496,
+          "-3.5": 0.0005428300781336604,
+          "-3.75": 0.0008158949556812956,
+          "-4": 0.0011058686145987706,
+          "0": 0.00016675110172331697,
+          "0.25": 0.00047100647614176094,
+          "0.5": 0.0007411914942237474,
+          "0.75": 0.0008792485539104999,
+          "1": 0.0007569837782807343,
+          "1.25": 0.0003077379764164223,
+          "1.5": -0.000307446124097277,
+          "1.75": -0.0006950055376219455,
+          "2": -0.0006207805610693451,
+          "2.25": -0.0002483207061392545,
+          "2.5": 0.0001536560561192224,
+          "2.75": 0.0004292228925846797,
+          "3": 0.0005263106818214069,
+          "3.25": 0.0004446436693476552,
+          "3.5": 0.00020368811921461782,
+          "3.75": -0.00017203356351389032,
+          "4": -0.0006588383210011373
+        }
+      },
+      {
+        "atm_iv": 0.19582271750509342,
+        "day": 30,
+        "fit": {
+          "active_constraints": [],
+          "final_grid_edge": false,
+          "objective": 2.79822056378315e-07
+        },
+        "iv_max_abs_residual": 0.0011344332087609987,
+        "iv_rmse": 0.0005600300312227064,
+        "params": {
+          "a": 0.0017574387453847924,
+          "b": 0.007753652309808192,
+          "m": 0.0948104818571846,
+          "rho": -0.8187351878862242,
+          "sigma": 0.03816663647792207,
+          "tau": 0.0821917808219178
+        },
+        "quotes": 33,
+        "residuals_by_k_std": {
+          "-0.25": -0.0001179000178857248,
+          "-0.5": -0.00036206000599117716,
+          "-0.75": -0.0005460448763577597,
+          "-1": -0.0006685893739166726,
+          "-1.25": -0.0007325462750067957,
+          "-1.5": -0.0007425032848891733,
+          "-1.75": -0.000703586457965838,
+          "-2": -0.000620875573192764,
+          "-2.25": -0.0004991349979555637,
+          "-2.5": -0.00034270669611763394,
+          "-2.75": -0.0001554853888495744,
+          "-3": 5.906614945372368e-05,
+          "-3.25": 0.0002978837648882626,
+          "-3.5": 0.0005582621046913983,
+          "-3.75": 0.0008378141873980338,
+          "-4": 0.0011344332087609987,
+          "0": 0.00017639692883561486,
+          "0.25": 0.0004932920685616626,
+          "0.5": 0.0007733925784349782,
+          "0.75": 0.0009108030278068002,
+          "1": 0.0007684860913758917,
+          "1.25": 0.0002830007098516829,
+          "1.5": -0.0003559320197997484,
+          "1.75": -0.0007267131445614639,
+          "2": -0.0006163040056942348,
+          "2.25": -0.0002221001097331976,
+          "2.5": 0.00018289188629438957,
+          "2.75": 0.00045116688672641736,
+          "3": 0.0005376242057271441,
+          "3.25": 0.0004457596425067878,
+          "3.5": 0.00019674748543593856,
+          "3.75": -0.00018426587459968724,
+          "4": -0.0006735005322724974
+        }
+      }
+    ]
+  },
+  "config": {
+    "alpha": 0.95,
+    "band_grid": [
+      0.005,
+      0.01,
+      0.02,
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.3
+    ],
+    "batch": 4096,
+    "bootstrap": 1000,
+    "bootstrap_seed": 7,
+    "data_seed": 20261102,
+    "days_per_year": 365.0,
+    "eps_list": [
+      0.0,
+      0.0005,
+      0.005
+    ],
+    "fee_bps": 2.0,
+    "fixture_paths": 20,
+    "heston": {
+      "kappa": 1.0,
+      "rho": -0.7,
+      "substeps": 10,
+      "theta": 0.04,
+      "v0": 0.04,
+      "xi": 0.5
+    },
+    "hidden": 32,
+    "holding_bound": 2.0,
+    "iterations": 1500,
+    "learning_rate": 0.001,
+    "lot": 0.0001,
+    "n_test": 32768,
+    "n_train": 32768,
+    "n_val": 8192,
+    "p_reject": 0.02,
+    "primary_eps": 0.0005,
+    "s0": 100.0,
+    "sigma": 0.2,
+    "size_mean": 0.3,
+    "steps": 30,
+    "strike": 100.0,
+    "train_seeds": [
+      11,
+      12,
+      13,
+      14,
+      15
+    ]
+  },
+  "config_sha256": "77d927222823da7ee8b5f717036972bed755ecc1ec40c645d263762414be291c",
+  "counterpart_config": {
+    "days": 30,
+    "diagnostic_points": 2001,
+    "heston": {
+      "kappa": 1.0,
+      "rho": -0.7,
+      "theta": 0.04,
+      "v0": 0.04,
+      "xi": 0.5
+    },
+    "iv_price_tol": 1e-11,
+    "k_std": [
+      -4.0,
+      -3.75,
+      -3.5,
+      -3.25,
+      -3.0,
+      -2.75,
+      -2.5,
+      -2.25,
+      -2.0,
+      -1.75,
+      -1.5,
+      -1.25,
+      -1.0,
+      -0.75,
+      -0.5,
+      -0.25,
+      0.0,
+      0.25,
+      0.5,
+      0.75,
+      1.0,
+      1.25,
+      1.5,
+      1.75,
+      2.0,
+      2.25,
+      2.5,
+      2.75,
+      3.0,
+      3.25,
+      3.5,
+      3.75,
+      4.0
+    ],
+    "min_price": 1e-10,
+    "quad": {
+      "cutoff": 40.0,
+      "nodes": 32
+    },
+    "quad_tol": 1e-10,
+    "s_ref": 100.0,
+    "svi_fit": {
+      "grid": 21,
+      "max_recentres": 40,
+      "refinements": 12,
+      "sigma_hi": 2.0,
+      "sigma_lo": 0.005
+    },
+    "year_days": 365.0
+  },
+  "counterpart_config_sha256": "7d37ee2e76d1277d50aad3ea62f842563b4e12629e85cf1f0fb2cdc527870088",
+  "counterpart_validation": "pending",
+  "counterparts": {
+    "heston_sticky-moneyness": {
+      "config_sha256": "059b22e46075ded83c135015dec4b5afa34732f2e27765ab026067f171d5eb81",
+      "dynamics": "sticky-moneyness",
+      "implementation_sha256": "f51c1ccb967ac7e0af39d68c6b9ba792c92344c38a91a44abafb60f5735e7249",
+      "name": "reference-bsm",
+      "surface_sha256": "cc69c8a8dee90a8f2139a4e2d008c30a77ed8f89c99d5c508179ba3f8ed4e683",
+      "version": "1"
+    },
+    "heston_sticky-strike": {
+      "config_sha256": "949b572d61adf6bd9f8477e7052581d37f97e60b012f135343f778e0f0ad573e",
+      "dynamics": "sticky-strike",
+      "implementation_sha256": "f51c1ccb967ac7e0af39d68c6b9ba792c92344c38a91a44abafb60f5735e7249",
+      "name": "reference-bsm",
+      "surface_sha256": "cc69c8a8dee90a8f2139a4e2d008c30a77ed8f89c99d5c508179ba3f8ed4e683",
+      "version": "1"
+    },
+    "in_model": {
+      "config_sha256": "059b22e46075ded83c135015dec4b5afa34732f2e27765ab026067f171d5eb81",
+      "dynamics": "sticky-moneyness",
+      "implementation_sha256": "f51c1ccb967ac7e0af39d68c6b9ba792c92344c38a91a44abafb60f5735e7249",
+      "name": "reference-bsm",
+      "surface": "flat",
+      "surface_sha256": "f75e4649f7cba803ca0574a6a3d435fba40a5346ed0f84db2f5711ddf6b329c0",
+      "version": "1"
+    }
+  },
+  "decision": {
+    "counterpart_validation": "pending",
+    "criterion": "at the primary eps: in_model holds iff the upper bound of the 95 % paired bootstrap CI of CVaR95(learned) - CVaR95(band) is below 0 for every seed (flat surface, as M5-06); veto(D) iff some seed has its lower bound above 0 under Heston with the reference surface and dynamics D. ADOPT iff in_model and no veto under either dynamics; REJECT iff not in_model or a veto under both; REVISE otherwise",
+    "in_model_all_seeds_better": true,
+    "out_of_model_veto": {
+      "sticky-moneyness": false,
+      "sticky-strike": false
+    },
+    "outcome": "adopt"
+  },
+  "diagnostics": {
+    "failures": [],
+    "max_lee_slope": 0.014101840290483458,
+    "min_calendar_gap": 6.054832450607409e-05,
+    "min_g": 0.5490932913305832,
+    "min_w": 7.768662060466597e-05
+  },
+  "in_model_matches_m5_06": true,
+  "market_maker_rs": {
+    "name": "market-maker-rs",
+    "status": "pending market-maker-rs#95/#96",
+    "version": null
+  },
+  "pending_reason": "reference counterpart; market-maker-rs#95/#96 not available",
+  "premium": {
+    "heston_svi": 2.2393929359040214,
+    "in_model": null
+  },
+  "run": {
+    "git_commit": "01e41fb9c9069ae41f3303a2d93243da73254a53",
+    "machine": "arm64",
+    "numpy": "2.5.4",
+    "python": "3.12.16",
+    "seconds": 507.9,
+    "torch": "2.15.0"
+  },
+  "weights": {
+    "0.0005/11": {
+      "file": "research/models/deep_hedging_eps0.0005_seed11.npz",
+      "sha256": "78301d47f80a8f9cb7dca5cc3d213ada6599d4cf5b2ef8b3b21a1f41b8b3623e"
+    },
+    "0.0005/12": {
+      "file": "research/models/deep_hedging_eps0.0005_seed12.npz",
+      "sha256": "022b4d032ff0dbbdb8d7263c5330a8d079beda9797b79a1d739a604358cb0362"
+    },
+    "0.0005/13": {
+      "file": "research/models/deep_hedging_eps0.0005_seed13.npz",
+      "sha256": "8ef5cd5a7486e5f1a146395911d82cd02251656afd6403e34496e5ce4bb14769"
+    },
+    "0.0005/14": {
+      "file": "research/models/deep_hedging_eps0.0005_seed14.npz",
+      "sha256": "a5d670b444e56980c3aacf063ba1d8ad3f0c6eb3ec050b4354eb652671abb56a"
+    },
+    "0.0005/15": {
+      "file": "research/models/deep_hedging_eps0.0005_seed15.npz",
+      "sha256": "1ce776e902e997b7027b94b13abcfc53845d1ba90ddc391cbeeaca0c39dd96b7"
+    },
+    "0.005/11": {
+      "file": "research/models/deep_hedging_eps0.005_seed11.npz",
+      "sha256": "5655d4660d69aa5c20107c4822199a35296c9f736f02fff2e7a97aca9650e644"
+    },
+    "0.005/12": {
+      "file": "research/models/deep_hedging_eps0.005_seed12.npz",
+      "sha256": "e76c9aa64f5e5096700bd1ed3a1a3e506ec6ccb48187d505958157fc10ce0aa2"
+    },
+    "0.005/13": {
+      "file": "research/models/deep_hedging_eps0.005_seed13.npz",
+      "sha256": "8b1c3845694aa0b3e3d1cb01f531affb8b5f10e66e4d2fec50ab5d933c78cfb3"
+    },
+    "0.005/14": {
+      "file": "research/models/deep_hedging_eps0.005_seed14.npz",
+      "sha256": "9b2476451f964036bbc1520b31ba5141eebc9effd59fce7391f5e2ec6c4c7083"
+    },
+    "0.005/15": {
+      "file": "research/models/deep_hedging_eps0.005_seed15.npz",
+      "sha256": "85e57256f936fcda56d2d6c67d49b795a497cf1866546f597db603a54b3c8a31"
+    },
+    "0/11": {
+      "file": "research/models/deep_hedging_eps0_seed11.npz",
+      "sha256": "4fb649c4a1daf48e41f40d8c7352390f6a2ec5d8997eff294cf562508f880819"
+    },
+    "0/12": {
+      "file": "research/models/deep_hedging_eps0_seed12.npz",
+      "sha256": "4c2b539239e70cf9db8ce2f8bba1afd746bec84fd78a309dd19251d84b3fdbdb"
+    },
+    "0/13": {
+      "file": "research/models/deep_hedging_eps0_seed13.npz",
+      "sha256": "9824e3098f79a1a1f0970a1d7087ff10a962358dbd9aff425f9fe5928830ec17"
+    },
+    "0/14": {
+      "file": "research/models/deep_hedging_eps0_seed14.npz",
+      "sha256": "fe46f449da55c13e9eab54a1e27ba9853798afe38d073986286241c897f98d5e"
+    },
+    "0/15": {
+      "file": "research/models/deep_hedging_eps0_seed15.npz",
+      "sha256": "3c2589ae42e687b57bda3d410cdcd925bc17ecba6e88f7e1a1ebf4ae36075aa5"
+    }
+  }
+}
