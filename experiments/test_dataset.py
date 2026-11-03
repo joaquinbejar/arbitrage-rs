@@ -199,6 +199,21 @@ class Validator(unittest.TestCase):
                 refresh_hashes(self.d)
                 self.assertViolation(needle)
 
+    def test_json_integers_beyond_the_float_range_are_violations(self):
+        for field in ("tick", "lot", "fee_bps", "step_days"):
+            with self.subTest(field=field):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                self.manifest(lambda m: m.update({field: 10**400}))
+                v = ds.validate(self.d)
+                self.assertTrue(any(f"{field} must be" in x and "characters" in x for x in v), v[:3])
+
+    def test_violations_echo_a_bounded_prefix_of_the_value(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 3, "1" * 5000 + ".x"))
+        refresh_hashes(self.d)
+        v = [x for x in ds.validate(self.d) if "paths.csv:2" in x]
+        self.assertTrue(v and all(len(x) < 200 for x in v), v)
+
     def test_only_the_implemented_rounding_contract_is_accepted(self):
         self.manifest(lambda m: m.update(rounding="anything-at-all"))
         self.assertViolation("rounding must be floor-lots")

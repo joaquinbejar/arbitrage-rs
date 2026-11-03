@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (the check ran after the cast to float and never fired); the M5-06b
   report states where the SVI fit is on or near rho = -1; the dataset
   validator prints the tick as declared in the manifest. The validator
-  also lists, instead of raising, a manifest that is not an object and lot
-  counts beyond int64; it compares prices exactly (a crossed book could
+  also lists, instead of raising, a manifest that is not an object, JSON
+  numbers beyond the float range and lot counts beyond int64, and echoes
+  at most 40 characters of an offending value; it compares prices exactly (a crossed book could
   hide behind float rounding), refuses decimal exponents beyond 400 and
   prices that underflow to zero, and accepts only the implemented rounding
   contract (`floor-lots`). The mid is bid + (ask - bid) / 2 and the rebase

@@ -112,6 +112,21 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _show(value, limit: int = 40) -> str:
+    """A violation echoes at most `limit` characters of the offending value."""
+    text = value if isinstance(value, str) else repr(value)
+    return repr(text) if len(text) <= limit else repr(text[:limit]) + f"... ({len(text)} characters)"
+
+
+def _finite(value) -> bool:
+    """A JSON number usable as a float: an integer beyond the float range
+    (10**400) is not, and must be a violation rather than an OverflowError."""
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
+
+
 def _check_type(value, kind: str) -> bool:
     is_num = isinstance(value, (int, float)) and not isinstance(value, bool)
     if kind == "str":
@@ -125,9 +140,9 @@ def _check_type(value, kind: str) -> bool:
     if kind == "positive_int":
         return isinstance(value, int) and not isinstance(value, bool) and value > 0
     if kind == "positive_number":
-        return is_num and math.isfinite(value) and value > 0
+        return is_num and _finite(value) and value > 0
     if kind == "non_negative_number":
-        return is_num and math.isfinite(value) and value >= 0
+        return is_num and _finite(value) and value >= 0
     raise ValueError(kind)
 
 
@@ -141,7 +156,7 @@ def _manifest_violations(m) -> list[str]:
                 out.append(f"manifest: missing {field}")
             continue
         if not _check_type(m[field], kind):
-            out.append(f"manifest: {field} must be {kind}, got {m[field]!r}")
+            out.append(f"manifest: {field} must be {kind}, got {_show(m[field])}")
     for field in m:
         if field not in MANIFEST_FIELDS:
             out.append(f"manifest: unknown field {field}")
@@ -200,7 +215,7 @@ def _read_csv(path: Path, columns: list[str], out: list[str]):
 
 def _int(value: str, where: str, out: list[str], bound: int | None = None):
     if not _INT.match(value):
-        out.append(f"{where}: {value!r} is not a non-negative integer")
+        out.append(f"{where}: {_show(value)} is not a non-negative integer")
         return None
     x = int(value)
     if bound is not None and x > bound:
@@ -212,14 +227,14 @@ def _int(value: str, where: str, out: list[str], bound: int | None = None):
 def _num(value: str, where: str, out: list[str]):
     m = _NUMBER.match(value)
     if not m:
-        out.append(f"{where}: {value!r} is not a finite decimal number")
+        out.append(f"{where}: {_show(value)} is not a finite decimal number")
         return None
     if m.group(3) and abs(int(m.group(3)[1:])) > MAX_EXPONENT:
-        out.append(f"{where}: {value!r} has an exponent beyond {MAX_EXPONENT}")
+        out.append(f"{where}: {_show(value)} has an exponent beyond {MAX_EXPONENT}")
         return None
     x = float(value)
     if not math.isfinite(x):
-        out.append(f"{where}: {value!r} is not finite")
+        out.append(f"{where}: {_show(value)} is not finite")
         return None
     return x
 
@@ -279,13 +294,13 @@ def _parse(directory: Path):
         # Exact comparison on the CSV text: floats could hide a crossed book.
         exact = {col: Fraction(r[col]) for col in ("bid", "ask")}
         if not 0 < exact["bid"] <= exact["ask"]:
-            out.append(f"{where}: needs 0 < bid <= ask, got {r['bid']}, {r['ask']}")
+            out.append(f"{where}: needs 0 < bid <= ask, got {_show(r['bid'])}, {_show(r['ask'])}")
         elif not bid > 0.0:
-            out.append(f"{where}: bid {r['bid']} underflows to zero as a float")
+            out.append(f"{where}: bid {_show(r['bid'])} underflows to zero as a float")
         elif tick is not None:
             for col in ("bid", "ask"):
                 if exact[col] % tick != 0:
-                    out.append(f"{where}: {col} {r[col]} is not a multiple of the tick {manifest['tick']!r}")
+                    out.append(f"{where}: {col} {_show(r[col])} is not a multiple of the tick {manifest['tick']!r}")
         if step > steps:
             out.append(f"{where}: step {step} beyond steps {steps}")
             continue
