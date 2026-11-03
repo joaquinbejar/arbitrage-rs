@@ -115,7 +115,8 @@ REFERENCE_RUN = RESULTS / "deep_hedging_counterpart.json"
 SURFACE_B_QUOTES = RESULTS / "deep_hedging_mm_surface_b.csv"
 SURFACE_B_FILE = RESULTS / "deep_hedging_mm_surface_b.json"
 PREREGISTRATION = ROOT / "research" / "preregistration" / "deep_hedging_mm.md"
-PREREGISTRATION_SHA256 = "600e8a5ee5d968ee56bbf915ba5e026ca443ebef80645d43c9f4db7ce78ad735"
+PREREGISTRATION_SHA256 = "ec0c4b5e69717c1625915024883d28ec47e9dc24742b5431164ad564341fb15b"
+FAILED_RUNS = [RESULTS / "deep_hedging_mm_failed_run_1.json"]
 
 
 # ---------------------------------------------------------------- surfaces
@@ -189,6 +190,35 @@ def surface_a(ccfg: dict) -> tuple[str, dict]:
         std = math.sqrt(ccfg["heston"]["v0"] * sl.tau)
         ranges.append((min(kept) * std, max(kept) * std))
     return cp.svi_surface_json(slices, ranges), cal
+
+
+# A valid slice at one year, after every slice tested: market-maker-rs needs
+# two slices for a surface, so each slice of A is loaded with this one.
+CONTROL_SLICE = svi.SviSlice(tau=1.0, a=0.04, b=0.1, rho=0.0, m=0.0, sigma=0.1)
+
+
+def representability(binary: Path, slices: list[svi.SviSlice], ranges: list) -> list[dict]:
+    """Amendment 2: each slice loaded into market-maker-rs on its own (with
+    the control slice), one price request at its own expiry. A slice the
+    binary refuses is listed with its parameters and the error; no slice is
+    altered."""
+    out = []
+    for sl, rng in zip(slices, ranges):
+        text = cp.svi_surface_json([sl, CONTROL_SLICE], [rng, (-1.0, 1.0)])
+        req = ",".join(cp.MM_REQUEST_COLUMNS) + "\n0,100.0," + cp.plain_decimal(sl.tau * cp.YEAR_DAYS) + ",call,european,100.0,0.0,0,0\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "s.json").write_text(text)
+            (d / "r.csv").write_text(req)
+            try:
+                cp.mm_run(binary, ["price", "--surface", str(d / "s.json"), "--dynamics", "sticky-moneyness", "--requests", str(d / "r.csv"), "--responses", str(d / "o.csv")])
+            except cp.CounterpartUnavailable as e:
+                # Only a refusal of the surface itself; any other failure
+                # fails the run.
+                if "counterpart: surface:" not in str(e):
+                    raise
+                out.append({"params": {k: repr(v) for k, v in sl.params().items()}, "k_range": [repr(x) for x in rng], "error": str(e)})
+    return out
 
 
 # ---------------------------------------------------------------- coverage
@@ -377,9 +407,15 @@ def main() -> None:
     ref_b = {d: cp.ReferenceCounterpart(cp.SviSurface(b_slices), d, s_ref=cfg["s0"]) for d in cp.DYNAMICS}
     comparison = {d: compare(mm[d], ref_b[d], contract, heston_mkt["s"], cov[d], cfg) for d in cp.DYNAMICS}
     cov_a = {d: coverage(a_slices, a_ranges, heston_mkt["s"], cfg, d) for d in cp.DYNAMICS}
-    mm_a = {d: cp.MarketMakerRsCounterpart(a_text, d, s_ref=cfg["s0"]) for d in cp.DYNAMICS}
-    ref_a = {d: cp.ReferenceCounterpart(cp.SviSurface(a_slices), d, s_ref=cfg["s0"]) for d in cp.DYNAMICS}
-    diagnostic_a = {d: compare(mm_a[d], ref_a[d], contract, heston_mkt["s"], cov_a[d], cfg) for d in cp.DYNAMICS}
+    not_representable = representability(binary, a_slices, a_ranges)
+    if not_representable:
+        diagnostic_a = {"representable": False, "not_representable": not_representable}
+    else:
+        mm_a = {d: cp.MarketMakerRsCounterpart(a_text, d, s_ref=cfg["s0"]) for d in cp.DYNAMICS}
+        ref_a = {d: cp.ReferenceCounterpart(cp.SviSurface(a_slices), d, s_ref=cfg["s0"]) for d in cp.DYNAMICS}
+        diagnostic_a = {"representable": True} | {
+            d: compare(mm_a[d], ref_a[d], contract, heston_mkt["s"], cov_a[d], cfg) for d in cp.DYNAMICS
+        }
     print(f"comparison done, {time.time() - started:.0f} s", flush=True)
 
     premium = float(mm["sticky-moneyness"].price(contract, np.array([cfg["s0"]]), 0.0)[0])
@@ -387,6 +423,7 @@ def main() -> None:
     results = {
         "issue": "arbitrage-rs#43",
         "preregistration_sha256": prereg_sha,
+        "failed_runs": [json.loads(p.read_text()) | {"record_sha256": cp.sha256_file(p)} for p in FAILED_RUNS],
         "config": cfg,
         "config_sha256": sha256_json(cfg),
         "counterpart_config": ccfg,

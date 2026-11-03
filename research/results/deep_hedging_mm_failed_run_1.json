@@ -1,0 +1,21 @@
+{
+  "run": 1,
+  "date": "2026-11-03",
+  "head": "ea7569db27c69553654a82719c97f186bf81912b",
+  "preregistration_sha256": "600e8a5ee5d968ee56bbf915ba5e026ca443ebef80645d43c9f4db7ce78ad735",
+  "binary_sha256": "696948412d7b526268504569e48de3c254f44c639b1133ae8108b5662a5a3abe",
+  "log": "research/results/deep_hedging_mm_failed_run_1.log",
+  "log_sha256": "a9a64b522fb6e8589f4f12cda179d32fdbbb52bf310ad9a02462a1ec5afdc53a",
+  "outcome": "failed: an error stopped the run before any result was written",
+  "printed_before_the_error": "surfaces: B healthy, conformance pass, 108 s",
+  "error": "CounterpartUnavailable: market-maker-rs counterpart failed (2): counterpart: surface: invalid configuration: svi slice: |rho| must be at most 1, got -1.0000000000000002",
+  "where": "loading diagnostic surface A (the M5-06b Python fit) into market-maker-rs",
+  "slices_outside_the_svi_domain": [
+    {"day": 1, "rho": "-1.0000000000000002", "rho_bits": "bff0000000000001"},
+    {"day": 4, "rho": "-1.0000000000000002", "rho_bits": "bff0000000000001"},
+    {"day": 9, "rho": "-1.0000000000000002", "rho_bits": "bff0000000000001"},
+    {"day": 10, "rho": "-1.0000000000000002", "rho_bits": "bff0000000000001"},
+    {"day": 13, "rho": "-1.0000000000000002", "rho_bits": "bff0000000000001"}
+  ],
+  "results_seen": "none: the comparison on B, the hedging and the decision were not written or printed; only the line above was"
+}

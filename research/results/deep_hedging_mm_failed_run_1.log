@@ -1,0 +1,18 @@
+surfaces: B healthy, conformance pass, 108 s
+Traceback (most recent call last):
+  File "/Users/joaquin/tmp/worktrees/arbitrage-rs/mm-counterpart/experiments/deep_hedging_mm.py", line 523, in <module>
+    main()
+  File "/Users/joaquin/tmp/worktrees/arbitrage-rs/mm-counterpart/experiments/deep_hedging_mm.py", line 382, in main
+    diagnostic_a = {d: compare(mm_a[d], ref_a[d], contract, heston_mkt["s"], cov_a[d], cfg) for d in cp.DYNAMICS}
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/joaquin/tmp/worktrees/arbitrage-rs/mm-counterpart/experiments/deep_hedging_mm.py", line 266, in compare
+    got = checked_outputs("market-maker-rs", mm.greeks(contract, st, float(t)), st.size, days_left)
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/joaquin/tmp/worktrees/arbitrage-rs/mm-counterpart/experiments/counterpart.py", line 578, in greeks
+    r = self._evaluate(contract, spot, as_of_days)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/joaquin/tmp/worktrees/arbitrage-rs/mm-counterpart/experiments/counterpart.py", line 547, in _evaluate
+    mm_run(self.binary, args)
+  File "/Users/joaquin/tmp/worktrees/arbitrage-rs/mm-counterpart/experiments/counterpart.py", line 445, in mm_run
+    raise CounterpartUnavailable(f"market-maker-rs counterpart failed ({out.returncode}): {out.stderr.strip()}")
+counterpart.CounterpartUnavailable: market-maker-rs counterpart failed (2): counterpart: surface: invalid configuration: svi slice: |rho| must be at most 1, got -1.0000000000000002

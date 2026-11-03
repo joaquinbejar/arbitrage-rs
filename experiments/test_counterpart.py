@@ -409,6 +409,17 @@ class MarketMakerRsConformance(Conformance, unittest.TestCase):
                 bound = np.maximum(abs_tol, rel_tol * np.abs(want[k]))
                 self.assertTrue(np.all(np.abs(got[k] - want[k]) <= bound), f"day {day} {k}: {got[k]} vs {want[k]}")
 
+    def test_a_slice_one_ulp_outside_the_svi_domain_is_not_representable(self):
+        import deep_hedging_mm
+
+        good = svi.SviSlice(tau=1 / cp.YEAR_DAYS, a=1e-4, b=0.01, rho=-1.0, m=0.0, sigma=0.05)
+        bad = svi.SviSlice(tau=1 / cp.YEAR_DAYS, a=1e-4, b=0.01, rho=math.nextafter(-1.0, -2.0), m=0.0, sigma=0.05)
+        binary = Path(os.environ[cp.MM_BINARY_ENV])
+        out = deep_hedging_mm.representability(binary, [good, bad], [(-0.1, 0.1)] * 2)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["params"]["rho"], "-1.0000000000000002")
+        self.assertIn("|rho| must be at most 1", out[0]["error"])
+
     def test_sticky_strike_and_sticky_moneyness_read_different_points(self):
         con = cp.Contract(100.0, 3.0, "put")
         s = np.array([95.0, 105.0])
