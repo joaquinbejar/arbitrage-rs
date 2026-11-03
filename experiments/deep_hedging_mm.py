@@ -231,9 +231,27 @@ def coverage(slices: list[svi.SviSlice], ranges: list, s: np.ndarray, cfg: dict,
 # ---------------------------------------------------------------- comparison
 
 
-def compare(mm: cp.MarketMakerRsCounterpart, ref: cp.ReferenceCounterpart, contract, s: np.ndarray, cov: dict, cfg: dict) -> dict:
+def checked_outputs(side: str, out: dict, n: int, days_left: int) -> dict:
+    """The five outputs of one side, each an array of `n` finite floats.
+    Anything else fails the run: a non-finite value is never agreement."""
+    keys = ("price", "delta", "gamma", "vega", "theta")
+    checked = {}
+    for key in keys:
+        if key not in out:
+            raise cp.NumericalFailure(f"{side}: no {key} at {days_left} days")
+        a = np.asarray(out[key], dtype=float)
+        if a.shape != (n,):
+            raise cp.NumericalFailure(f"{side}: {key} has shape {a.shape}, expected ({n},) at {days_left} days")
+        if not np.all(np.isfinite(a)):
+            raise cp.NumericalFailure(f"{side}: {key} is not finite at {days_left} days (first at path {int(np.flatnonzero(~np.isfinite(a))[0])})")
+        checked[key] = a
+    return checked
+
+
+def compare(mm, ref, contract, s: np.ndarray, cov: dict, cfg: dict) -> dict:
     """Every output on every (path, day) row: the largest differences and
-    the rows outside the tolerance, in range and extrapolated apart."""
+    the rows outside the tolerance, for all rows, in range and extrapolated.
+    Both sides are checked finite and of the right shape first."""
     keys = ("price", "delta", "gamma", "vega", "theta")
     parts = ("all", "in_range", "extrapolated")
     acc = {
@@ -245,7 +263,8 @@ def compare(mm: cp.MarketMakerRsCounterpart, ref: cp.ReferenceCounterpart, contr
     for t in range(cfg["steps"]):
         days_left = cfg["steps"] - t
         st = s[:, t]
-        got, want = mm.greeks(contract, st, float(t)), ref.greeks(contract, st, float(t))
+        got = checked_outputs("market-maker-rs", mm.greeks(contract, st, float(t)), st.size, days_left)
+        want = checked_outputs("reference", ref.greeks(contract, st, float(t)), st.size, days_left)
         lo, hi = cov["by_day"][days_left].get("k_range", (-math.inf, math.inf))
         anchor = st if mm.dynamics == "sticky-moneyness" else np.full(st.shape, cfg["s0"])
         k = np.log(cfg["strike"] / anchor)
@@ -265,8 +284,11 @@ def compare(mm: cp.MarketMakerRsCounterpart, ref: cp.ReferenceCounterpart, contr
                 r["max_abs"] = max(r["max_abs"], float(np.max(diff)))
                 r["max_rel"] = max(r["max_rel"], float(np.max(np.where(np.abs(b) > 0, rel, 0.0))))
                 bound = np.maximum(abs_tol, rel_tol * np.abs(b))
-                ratio = diff / bound
-                r["violations"] += int(np.sum(diff > bound))
+                # A non-finite value on either side is a violation: NaN
+                # compares false, so the test is "not within", not "beyond".
+                bad = ~(np.isfinite(a) & np.isfinite(b) & (diff <= bound))
+                ratio = np.where(bad & ~np.isfinite(diff), np.inf, diff / bound)
+                r["violations"] += int(np.sum(bad))
                 r["rows"] += int(np.sum(mask))
                 j = int(np.argmax(ratio))
                 if float(ratio[j]) >= r["max_ratio"]:

@@ -11,6 +11,7 @@ declared here, before any run of the experiment, and are not tuned to it.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import tempfile
@@ -288,6 +289,27 @@ class MarketMakerRsAdapter(unittest.TestCase):
         slices, ranges = cp.slices_from_surface_json(synthetic_svi_json())
         self.assertEqual([sl.params() for sl in slices], [sl.params() for sl in surf.slices])
         self.assertEqual(ranges, [(-10.0, 10.0)] * 3)
+
+    def test_a_non_finite_or_invalid_response_is_a_protocol_failure(self):
+        """A fake binary answers one bad number in each column: NaN, +-inf
+        or text. None of them may become a value."""
+        cols = ("price", "delta", "gamma", "vega", "theta", "total_variance")
+        for col in cols:
+            for bad, why in (("NaN", "not finite"), ("inf", "not finite"), ("-inf", "not finite"), ("abc", "not a number")):
+                with self.subTest(col=col, bad=bad), tempfile.TemporaryDirectory() as tmp:
+                    d = Path(tmp)
+                    cells = {c: "0.5" for c in cols} | {col: bad}
+                    row = ["0", "ok", *[cells[c] for c in cols], "sticky-moneyness", ""]
+                    responses = d / "responses.csv"
+                    responses.write_text(",".join(cp.MM_RESPONSE_COLUMNS) + "\n" + ",".join(row) + "\n")
+                    fake = d / "counterpart"
+                    fake.write_text(f"#!/bin/sh\ncp {responses} \"$(eval echo \\${{$#}})\"\n")
+                    fake.chmod(0o755)
+                    c = cp.MarketMakerRsCounterpart.__new__(cp.MarketMakerRsCounterpart)
+                    c.binary, c.surface_json, c.dynamics = fake, synthetic_svi_json(), "sticky-moneyness"
+                    c.s_ref, c.rate, c.carry, c.vol_shift, c._cache = 100.0, 0.0, 0.0, 0.0, {}
+                    with self.assertRaisesRegex(cp.CounterpartUnavailable, f"{col} '{bad}' is {why}"):
+                        c.greeks(cp.Contract(100.0, 3.0, "call"), np.array([100.0]), 0.0)
 
     def test_plain_decimals_have_no_exponent(self):
         for x, want in ((1e-5, "0.00001"), (100.0, "100.0"), (1e22, "10000000000000000000000"), (0.1, "0.1")):

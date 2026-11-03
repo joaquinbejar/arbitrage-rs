@@ -559,7 +559,15 @@ class MarketMakerRsCounterpart:
             if row[1] != "ok" or row[8] != self.dynamics:
                 raise CounterpartUnavailable(f"response row {i}: status {row[1]!r}, dynamics {row[8]!r}")
             for j, k in enumerate(("price", "delta", "gamma", "vega", "theta", "total_variance")):
-                out[k][i] = float(row[2 + j])
+                try:
+                    x = float(row[2 + j])
+                except ValueError as e:
+                    raise CounterpartUnavailable(f"response row {i}: {k} {row[2 + j]!r} is not a number") from e
+                # The binary never writes a non-finite number: one here is a
+                # protocol failure, never a value.
+                if not math.isfinite(x):
+                    raise CounterpartUnavailable(f"response row {i}: {k} {row[2 + j]!r} is not finite")
+                out[k][i] = x
         self._cache[key] = out
         return out
 
