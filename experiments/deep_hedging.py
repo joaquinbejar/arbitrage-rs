@@ -26,6 +26,7 @@ one CPU thread with deterministic algorithms.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import platform
@@ -179,11 +180,12 @@ def execute(target, holding_lots, s, eps, size_lots, u_reject, cfg, p_reject):
     return new_holding, cash, spread, fee, filled, sent, rejected
 
 
-def simulate(policy, mkt, eps, cfg, p_reject=None, unlimited=False):
+def simulate(policy, mkt, eps, cfg, p_reject=None, unlimited=False, premium=None):
     """Self-financing account: cash -= signed fill * price + fee; the
     inventory moves by the actual fill only. At T the inventory is closed in
     full at the executable price with the fee (unlimited liquidity, no
-    rejection) and the call payoff is paid. PnL = premium + cash - payoff."""
+    rejection) and the call payoff is paid. PnL = premium + cash - payoff;
+    the premium is the Black-Scholes price at sigma unless one is given."""
     p_reject = cfg["p_reject"] if p_reject is None else p_reject
     s = mkt["s"]
     n, steps = s.shape[0], cfg["steps"]
@@ -218,7 +220,8 @@ def simulate(policy, mkt, eps, cfg, p_reject=None, unlimited=False):
     cash += q * price - close_fee
     stats["spread"] += np.abs(q) * s_t * eps
     stats["fee"] += close_fee
-    premium = bs_call(cfg["s0"], steps / year, cfg)
+    if premium is None:
+        premium = bs_call(cfg["s0"], steps / year, cfg)
     payoff = np.maximum(s_t - cfg["strike"], 0.0)
     pnl = premium + cash - payoff
     stats["max_holding"] = max_holding
@@ -354,9 +357,9 @@ def summary(pnl, stats, cfg):
     }
 
 
-def evaluate(policy, mkt, eps, cfg):
-    pnl, stats = simulate(policy, mkt, eps, cfg)
-    ideal, _ = simulate(policy, mkt, eps, cfg, p_reject=0.0, unlimited=True)
+def evaluate(policy, mkt, eps, cfg, premium=None):
+    pnl, stats = simulate(policy, mkt, eps, cfg, premium=premium)
+    ideal, _ = simulate(policy, mkt, eps, cfg, p_reject=0.0, unlimited=True, premium=premium)
     out = summary(pnl, stats, cfg)
     # Counterfactual: the same policy with no rejection and unlimited size,
     # on the same paths. Not added to the costs.
@@ -533,4 +536,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--counterpart",
+        choices=("none", "reference"),
+        default="none",
+        help="none: the M5-06 run, unchanged; reference: the M5-06b run against the reference counterpart",
+    )
+    if parser.parse_args().counterpart == "none":
+        main()
+    else:
+        from deep_hedging_counterpart import main as main_counterpart
+
+        main_counterpart()

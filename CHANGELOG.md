@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one synthetic setting; the report is `research/results/deep_hedging.md`.
   The band's decisions are cross-checked exactly in `tests/hedge.rs`, whose
   fixture `tests/fixtures/deep_hedging_band.csv` is now packaged.
+- Research, outside the crate (M5-06b, #36): a pricing counterpart
+  interface for the deep hedging experiment (`experiments/counterpart.py`),
+  a reference implementation (Black-Scholes-Merton on raw SVI slices
+  fitted to semi-analytic Heston prices), an empty market-maker-rs adapter
+  and a conformance suite. `deep_hedging.py --counterpart reference` reruns
+  the comparison against it; the report,
+  `research/results/deep_hedging_counterpart.md`, is pending counterpart
+  validation.
 
 ## [0.3.0] - 2026-11-02
 
