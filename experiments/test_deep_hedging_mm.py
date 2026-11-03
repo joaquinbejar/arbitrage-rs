@@ -65,3 +65,80 @@ class Compare(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def learned(seed, **over):
+    row = {"seed": seed, "cvar95": 1.25, "mean_pnl": -0.5, "trades": 12, "delta_cvar95_vs_band": {"estimate": -0.1, "ci_low": -0.2, "ci_high": -0.01}}
+    row.update(over)
+    return row
+
+
+def by_eps(rows=None, **entry):
+    rows = rows if rows is not None else [learned(11), learned(12)]
+    e = {"band_w": 0.01, "in_model": {"delta": {"cvar95": 2.0}, "band": {"cvar95": 1.5}, "learned": rows}}
+    e.update(entry)
+    return {"0.0005": e}
+
+
+class InModelComparison(unittest.TestCase):
+    def test_metadata_alone_is_equal_and_counted_per_side(self):
+        new = by_eps([learned(11, weights_sha256="aa"), learned(12, weights_sha256="bb")])
+        r = m.compare_in_model(new, by_eps())
+        self.assertTrue(r["equal"], r)
+        self.assertEqual((r["rows"], r["shared_fields"], r["metadata_fields"]), (2, 10, {"new": 2, "old": 0}))
+
+    def test_weights_sha256_is_checked_against_the_weight_record(self):
+        new = by_eps([learned(11, weights_sha256="aa"), learned(12, weights_sha256="bb")])
+        good = {"0.0005/11": {"sha256": "aa"}, "0.0005/12": {"sha256": "bb"}}
+        self.assertTrue(m.compare_in_model(new, by_eps(), weights=good)["equal"])
+        bad = good | {"0.0005/12": {"sha256": "cc"}}
+        r = m.compare_in_model(new, by_eps(), weights=bad)
+        self.assertFalse(r["equal"])
+        self.assertEqual(len(r["identity_errors"]), 1)
+
+    def test_rows_are_matched_by_seed_not_position(self):
+        r = m.compare_in_model(by_eps([learned(12), learned(11)]), by_eps())
+        self.assertTrue(r["equal"], r)
+
+    def test_every_kind_of_difference_fails(self):
+        cases = {
+            "a differing value": by_eps([learned(11, cvar95=1.26), learned(12)]),
+            "a missing field": by_eps([{k: v for k, v in learned(11).items() if k != "trades"}, learned(12)]),
+            "an unknown extra field": by_eps([learned(11, note="x"), learned(12)]),
+            "bool for int": by_eps([learned(11, trades=True), learned(12)]),
+            "int for float": by_eps([learned(11, cvar95=1), learned(12)]),
+            "a non-finite value": by_eps([learned(11, cvar95=math.nan), learned(12)]),
+            "infinite": by_eps([learned(11, mean_pnl=-math.inf), learned(12)]),
+            "fewer rows": by_eps([learned(11)]),
+            "a duplicated seed": by_eps([learned(11), learned(11)]),
+            "another seed": by_eps([learned(11), learned(13)]),
+            "band_w": by_eps(band_w=0.02),
+            "negative zero": by_eps([learned(11, mean_pnl=-0.0), learned(12)]),
+            "a nested value": by_eps([learned(11, delta_cvar95_vs_band={"estimate": -0.1, "ci_low": -0.2, "ci_high": 0.0}), learned(12)]),
+        }
+        for name, new in cases.items():
+            with self.subTest(name):
+                self.assertFalse(m.compare_in_model(new, by_eps())["equal"])
+        # The reference side: a duplicated seed, a seed only there, and zero
+        # against negative zero.
+        self.assertFalse(m.compare_in_model(by_eps(), by_eps([learned(11), learned(11)]))["equal"])
+        self.assertFalse(m.compare_in_model(by_eps([learned(11)]), by_eps([learned(11), learned(12)]))["equal"])
+        self.assertFalse(m.compare_in_model(by_eps([learned(11, mean_pnl=0.0), learned(12)]), by_eps([learned(11, mean_pnl=-0.0), learned(12)]))["equal"])
+        # Missing on the reference side, and another set of half spreads.
+        self.assertFalse(m.compare_in_model(by_eps(), by_eps([{k: v for k, v in learned(11).items() if k != "trades"}, learned(12)]))["equal"])
+        self.assertFalse(m.compare_in_model(by_eps() | {"0.005": by_eps()["0.0005"]}, by_eps())["equal"])
+
+    def test_run_2_of_43_compared_post_hoc(self):
+        # Post-hoc regression only: run 2's in-model rows equal the
+        # reference run's value by value; it changes neither its gate 6 nor
+        # its outcome (REVISE).
+        from pathlib import Path
+        import json
+
+        results = Path(__file__).resolve().parent.parent / "research" / "results"
+        new = json.loads((results / "deep_hedging_mm.json").read_text())
+        old = json.loads((results / "deep_hedging_counterpart.json").read_text())
+        r = m.compare_in_model(new["by_eps"], old["by_eps"], weights=old["weights"])
+        self.assertTrue(r["equal"], r)
+        self.assertEqual((r["rows"], r["shared_fields"], r["metadata_fields"]), (15, 255, {"new": 15, "old": 0}))
+        self.assertEqual(new["decision"]["outcome"], "revise")

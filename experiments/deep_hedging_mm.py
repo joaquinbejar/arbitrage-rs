@@ -342,6 +342,96 @@ def compare(mm, ref, contract, s: np.ndarray, cov: dict, cfg: dict) -> dict:
     return acc
 
 
+# Fields the harness adds to a learned row that are records, not results:
+# compared by no gate. A closed list: any other extra field fails gate 6.
+METADATA_KEYS = frozenset({"weights_sha256"})
+
+
+def _strict_equal(a, b, path: str, out: dict) -> None:
+    """Records into `out` every difference between two JSON values: types
+    must match exactly (True is not 1, 1 is not 1.0), floats must be finite
+    and bitwise equal (the replay is deterministic, so -0.0 is not 0.0),
+    dicts must have the same keys and lists the same length."""
+    if type(a) is not type(b):
+        out["differing"].append(f"{path}: type {type(a).__name__} != {type(b).__name__}")
+    elif isinstance(a, float):
+        if not (math.isfinite(a) and math.isfinite(b)):
+            out["nonfinite"].append(path)
+        elif struct.pack(">d", a) != struct.pack(">d", b):
+            out["differing"].append(f"{path}: {a!r} != {b!r}")
+    elif isinstance(a, dict):
+        for k in sorted(set(a) - set(b)):
+            out["extra"].append(f"{path}.{k}")
+        for k in sorted(set(b) - set(a)):
+            out["missing"].append(f"{path}.{k}")
+        for k in sorted(set(a) & set(b)):
+            _strict_equal(a[k], b[k], f"{path}.{k}", out)
+    elif isinstance(a, list):
+        if len(a) != len(b):
+            out["differing"].append(f"{path}: length {len(a)} != {len(b)}")
+        else:
+            for i, (x, y) in enumerate(zip(a, b, strict=True)):
+                _strict_equal(x, y, f"{path}[{i}]", out)
+    elif a != b:
+        out["differing"].append(f"{path}: {a!r} != {b!r}")
+
+
+def compare_in_model(new: dict, old: dict, weights: dict | None = None) -> dict:
+    """Gate 6: the in-model rows of a run (`by_eps`) against the reference
+    run's, value by value. The half spreads must be the same set; band_w and
+    the delta and band rows must be strictly equal; the learned rows are
+    matched by seed (unique on each side, the same set), not by position,
+    and compared field by field leaving out only METADATA_KEYS, counted per
+    side. Equal iff there is no difference, no missing or extra field (other
+    than metadata), no non-finite value and no identity error.
+    `weights_sha256`, metadata for the comparison, is still checked against
+    `weights` (the reference run's record, by "eps/seed") when given: a
+    mismatch is an identity error."""
+    out = {"differing": [], "missing": [], "extra": [], "nonfinite": [], "identity": []}
+    rows = shared = 0
+    metadata = {"new": 0, "old": 0}
+    if set(new) != set(old):
+        out["identity"].append(f"half spreads {sorted(new)} != {sorted(old)}")
+    for eps in sorted(set(new) & set(old)):
+        a, b = new[eps], old[eps]
+        _strict_equal(a.get("band_w"), b.get("band_w"), f"{eps}.band_w", out)
+        for part in ("delta", "band"):
+            _strict_equal(a["in_model"].get(part), b["in_model"].get(part), f"{eps}.in_model.{part}", out)
+        la, lb = a["in_model"].get("learned", []), b["in_model"].get("learned", [])
+        sa = [r.get("seed") for r in la]
+        sb = [r.get("seed") for r in lb]
+        if len(sa) != len(set(sa)) or len(sb) != len(set(sb)) or set(sa) != set(sb) or len(sa) != len(sb):
+            out["identity"].append(f"{eps}: learned seeds {sa} against {sb}")
+            continue
+        by_seed = {r["seed"]: r for r in lb}
+        for r in la:
+            o = by_seed[r["seed"]]
+            rows += 1
+            metadata["new"] += len(METADATA_KEYS & set(r))
+            metadata["old"] += len(METADATA_KEYS & set(o))
+            if weights is not None and "weights_sha256" in r:
+                want = weights.get(f"{eps}/{r['seed']}", {}).get("sha256")
+                if r["weights_sha256"] != want:
+                    out["identity"].append(f"{eps}: seed {r['seed']} weights_sha256 {r['weights_sha256']} is not {want}")
+            ra = {k: v for k, v in r.items() if k not in METADATA_KEYS}
+            rb = {k: v for k, v in o.items() if k not in METADATA_KEYS}
+            shared += len(set(ra) & set(rb))
+            _strict_equal(ra, rb, f"{eps}.in_model.learned[seed {r['seed']}]", out)
+    report = {
+        "rows": rows,
+        "shared_fields": shared,
+        "metadata_fields": metadata,
+        "differing_fields": len(out["differing"]),
+        "missing_fields": len(out["missing"]),
+        "extra_fields": len(out["extra"]),
+        "nonfinite_fields": len(out["nonfinite"]),
+        "identity_errors": out["identity"],
+        "examples": {k: v[:20] for k, v in out.items() if k != "identity"},
+    }
+    report["equal"] = not any(out.values())
+    return report
+
+
 def in_range_paths(cov: dict, s: np.ndarray, cfg: dict, dynamics: str) -> np.ndarray:
     """The paths whose every (path, day) row is in range under `dynamics`."""
     keep = np.ones(s.shape[0], dtype=bool)
@@ -494,11 +584,12 @@ def main() -> None:
         results["by_eps"][key] = entry
         print(f"eps {key}: band w {best_w:g}, {time.time() - started:.0f} s", flush=True)
 
-    results["in_model_matches_m5_06b"] = all(
-        results["by_eps"][k]["in_model"] == reference_run["by_eps"][k]["in_model"]
-        and results["by_eps"][k]["band_w"] == reference_run["by_eps"][k]["band_w"]
-        for k in results["by_eps"]
+    # Compared as written: the JSON round trip turns numpy scalars into the
+    # JSON types the reference run was read with.
+    results["in_model_comparison"] = compare_in_model(
+        json.loads(json.dumps(results["by_eps"])), reference_run["by_eps"], weights=reference_run["weights"]
     )
+    results["in_model_matches_m5_06b"] = results["in_model_comparison"]["equal"]
     # The conclusion on the in-range paths alone (gate 7), with the same
     # paired bootstrap at the primary half spread.
     eps = cfg["primary_eps"]
