@@ -283,6 +283,15 @@ def render(res: dict) -> str:
     f = lambda d: f"{d['estimate']:.3f} [{d['ci_low']:.3f}, {d['ci_high']:.3f}]"  # noqa: E731
     for lr in on["learned"]:
         lines.append(f"| {lr['seed']} | {f(lr['delta_cvar95_vs_band'])} | {f(lr['delta_cvar95_vs_band_ideal_execution'])} |")
+    if dset["synthetic"]:
+        loss = [lr["cvar95_vs_ideal_execution"] for lr in on["learned"]]
+        lines += [
+            "",
+            "Observation for the captured run, not a finding: here the learned controls lose "
+            f"{min(loss):.2f} to {max(loss):.2f} of CVaR95 to execution limits (the last column), against "
+            f"{on['band']['cvar95_vs_ideal_execution']:.2f} for the band; how the frozen controls interact with a "
+            "real queue model's capacity is what the captured run has to show.",
+        ]
     lines += [
         "",
         "## Kept apart",

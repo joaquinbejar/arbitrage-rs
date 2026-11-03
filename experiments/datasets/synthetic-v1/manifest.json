@@ -30,5 +30,6 @@
   "steps": 30,
   "synthetic": true,
   "tick": 0.01,
+  "timestamp_unit": "s",
   "version": "1"
 }

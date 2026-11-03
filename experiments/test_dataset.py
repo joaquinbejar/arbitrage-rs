@@ -134,6 +134,31 @@ class Validator(unittest.TestCase):
         refresh_hashes(self.d)
         self.assertViolation("0 < bid <= ask")
 
+    def test_steps_must_be_step_days_apart(self):
+        # A three-day gap from step 5 of path 0: still strictly increasing.
+        def gap(lines):
+            for i in range(1, 32):
+                cells = lines[i].split(",")
+                if int(cells[1]) >= 5:
+                    cells[2] = str(int(cells[2]) + 2 * 86400)
+                lines[i] = ",".join(cells)
+            return lines
+
+        edit_csv(self.d, "paths.csv", gap)
+        refresh_hashes(self.d)
+        self.assertViolation("not step_days")
+
+    def test_the_timestamp_unit_is_declared(self):
+        self.manifest(lambda m: m.update(timestamp_unit="ms"))
+        self.assertViolation("timestamp_unit must be s")
+        self.manifest(lambda m: m.pop("timestamp_unit"))
+        self.assertViolation("missing timestamp_unit")
+
+    def test_prices_are_on_the_tick(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 4, "2501.195"))
+        refresh_hashes(self.d)
+        self.assertViolation("is not a multiple of the tick")
+
     def test_a_duplicate_key(self):
         edit_csv(self.d, "execution.csv", lambda l: l[:2] + [l[1]] + l[2:])
         refresh_hashes(self.d)

@@ -97,6 +97,7 @@ def main() -> None:
         "contract": {"strike": "atm-at-step-0", "expiry_days": float(steps), "kind": "call", "style": "european"},
         "steps": steps,
         "step_days": 1.0,
+        "timestamp_unit": "s",
         "queue_model": {
             "id": "synthetic-exogenous-capacity",
             "version": "1",

@@ -21,11 +21,16 @@ impact, and the manifest must declare those limits.
 `validate` lists every violation without changing anything; `load` refuses
 an invalid dataset. Parsing is strict: integers are plain decimal digits
 (no `1.0`, no `True`), numbers are finite decimals (no `nan`, no `inf`).
+Timestamps are integers in `timestamp_unit` (only `"s"`, seconds, is
+supported), and consecutive steps of a path are exactly `step_days` days
+apart. Prices are exact multiples of `tick`, checked in decimal on the CSV
+text, not in binary floating point.
 """
 
 from __future__ import annotations
 
 import csv
+import decimal
 import hashlib
 import json
 import math
@@ -55,6 +60,7 @@ MANIFEST_FIELDS = {
     "contract": ("dict", True),
     "steps": ("positive_int", True),
     "step_days": ("positive_number", True),
+    "timestamp_unit": ("str", True),
     "queue_model": ("dict", True),
 }
 FILES = ("paths.csv", "execution.csv")
@@ -154,6 +160,8 @@ def _manifest_violations(m) -> list[str]:
         lim = q.get("limits")
         if not (isinstance(lim, list) and lim and all(_check_type(x, "str") for x in lim)):
             out.append("manifest: queue_model.limits must be a non-empty list of strings")
+    if m.get("timestamp_unit") not in (None, "s"):
+        out.append("manifest: timestamp_unit must be s (seconds)")
     if m.get("fee_asset") not in (None, "quote"):
         out.append("manifest: fee_asset must be quote")
     return out
@@ -217,6 +225,16 @@ def _parse(directory: Path):
     if len(hashes) < len(FILES) or not _check_type(manifest.get("steps"), "positive_int"):
         return manifest, None, out, hashes
     steps = manifest["steps"]
+    tick = None
+    if _check_type(manifest.get("tick"), "positive_number"):
+        tick = decimal.Decimal(repr(manifest["tick"]))
+    step_seconds = None
+    if _check_type(manifest.get("step_days"), "positive_number") and manifest.get("timestamp_unit") == "s":
+        x = decimal.Decimal(repr(manifest["step_days"])) * 86400
+        if x == x.to_integral_value():
+            step_seconds = int(x)
+        else:
+            out.append(f"manifest: step_days {manifest['step_days']} is not a whole number of seconds")
 
     book = {}
     rows = _read_csv(directory / "paths.csv", PATHS_COLUMNS, out) or []
@@ -232,6 +250,10 @@ def _parse(directory: Path):
             continue
         if not 0.0 < bid <= ask:
             out.append(f"{where}: needs 0 < bid <= ask, got {bid}, {ask}")
+        if tick is not None:
+            for col in ("bid", "ask"):
+                if decimal.Decimal(r[col]) % tick != 0:
+                    out.append(f"{where}: {col} {r[col]} is not a multiple of the tick {tick}")
         if step > steps:
             out.append(f"{where}: step {step} beyond steps {steps}")
             continue
@@ -271,6 +293,12 @@ def _parse(directory: Path):
         ts = [book[(p, s)][0] for s in range(steps + 1) if (p, s) in book]
         if any(b <= a for a, b in zip(ts, ts[1:])):
             out.append(f"paths.csv: timestamps of path {p} are not strictly increasing")
+        if step_seconds is not None and len(ts) == steps + 1:
+            for s, (a, b) in enumerate(zip(ts, ts[1:])):
+                if b - a != step_seconds:
+                    out.append(
+                        f"paths.csv: path {p} steps {s}-{s + 1} are {b - a} s apart, not step_days ({step_seconds} s)"
+                    )
     for (p, s), (fb, fs, _) in execution.items():
         if (p, s) in book:
             _, _, _, bs, as_ = book[(p, s)]

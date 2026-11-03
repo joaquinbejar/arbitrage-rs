@@ -1,6 +1,6 @@
 {
   "dataset": {
-    "manifest_sha256": "52ad661cdb84cbbcbb01d6360c7e74f8e25ff25a026304e57666f7032823de25",
+    "manifest_sha256": "a1afbd9443301c0cd77b392c07c826c59a9331c4644f7084e39d02b1717e8036",
     "name": "synthetic-v1",
     "paths": 64,
     "queue_model": {
@@ -901,7 +901,7 @@
     "source": "research/results/deep_hedging.json"
   },
   "run": {
-    "git_commit": "c048d45b5cd52d212ae04d9d7b707eb162ed25e7",
+    "git_commit": "959f87bbf0a2065b6ad5c69752e279d090f45325",
     "machine": "arm64",
     "numpy": "2.5.4",
     "python": "3.12.16",
