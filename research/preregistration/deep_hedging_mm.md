@@ -167,10 +167,13 @@ extrapolation.
 
 ## Amendment 2 (2026-11-03, after failed run 1)
 
-Run 1, at head `ea7569d` with this file at sha256 `600e8a5e…d735`, stopped
-on an error before writing any result. Its record is
-`research/results/deep_hedging_mm_failed_run_1.{json,log}`, and it stays
-in the report.
+Run 1, at head `ea7569d` with this file at sha256 `600e8a5e…d735`, was
+aborted by an error at 108 s (exit code 1), before writing any result.
+There is no result artifact. Its record, with the hashes of the manifest,
+the lock, surface B and the log, is
+`research/results/deep_hedging_mm_failed_run_1.json`. The log is the
+exact, unedited stdout and stderr of the run, sha256 `a9a64b52…c53a`. The
+record stays in the report, next to the outcome of the new run.
 
 - **What happened.** market-maker-rs refused to load diagnostic surface A,
   the M5-06b Python fit: "svi slice: |rho| must be at most 1, got
@@ -180,26 +183,36 @@ in the report.
   outside the raw SVI domain `|rho| <= 1`, at the active `rho = -1`
   constraint. Python accepted them; market-maker-rs refuses them and does
   not clamp.
-- **What was seen.** Before the error the run printed only
-  "surfaces: B healthy, conformance pass". No value of the comparison on
-  B, of the hedging or of the decision was written or printed, so none
-  was seen.
+- **What was seen.** The log is the whole output of the run: the line
+  "surfaces: B healthy, conformance pass, 108 s" (surface B's status and
+  the conformance gate), then the traceback. No value of the comparison
+  on B, of the hedging, of the in-range subset or of the decision was
+  written or printed. The comparison on B ran to completion before the
+  abort, but it was not saved; it is not evidence and is not reused.
 
-This amendment changes only diagnostic A:
+This amendment changes only the availability of diagnostic A:
 
 - The run tests each slice of A by loading it into market-maker-rs on
   its own. A surface needs two slices, so each one goes with a fixed valid
   control slice at one year (`a = 0.04, b = 0.1, rho = 0, m = 0,
   sigma = 0.1`), and one request is priced at the tested slice's own
-  expiry. Only a refusal of the surface counts as "not representable";
-  any other failure fails the run.
+  expiry.
+- Only the known failure is caught. A slice counts as "not
+  representable" when its `rho` is outside `[-1, 1]` and the binary
+  refuses it for exactly that reason ("svi slice: |rho| must be at most
+  1"). Its typed reason is "rho outside [-1, 1]", recorded with its day
+  and parameters.
+- Any other refusal of A still aborts the run. So does every error in B,
+  in a required row, in the protocol or identity, and every non-finite
+  value.
 - When every slice loads, A is compared as before.
-- When some slice does not load, A is reported as "not representable in
-  market-maker-rs" with each refused slice's parameters and the error.
-  The comparison of A is then not made, and the run goes on. A is a
-  diagnostic and never enters the decision.
+- When some slice is not representable, A is reported as "not
+  representable in market-maker-rs" with each such slice's day,
+  parameters, reason and error. The comparison of A is then not made,
+  and the run goes on. A is a diagnostic and never enters the decision.
 
-Surface A is the M5-06b fit exactly as it was, with no fix to the Python
-fit in this run. Nothing else changes: surface B, the gates, the
+Surface A is the M5-06b fit exactly as it was: no slice is clipped,
+widened or replaced, and a repaired Python fit does not enter this run.
+The original M5-06b artifacts stay as they are. Nothing else changes: surface B, the gates, the
 tolerances, the seeds, the manifest and the binary all stay as they are.
 

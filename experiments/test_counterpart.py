@@ -419,6 +419,11 @@ class MarketMakerRsConformance(Conformance, unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["params"]["rho"], "-1.0000000000000002")
         self.assertIn("|rho| must be at most 1", out[0]["error"])
+        self.assertEqual((out[0]["reason"], out[0]["rho_bits"]), ("rho outside [-1, 1]", "bff0000000000001"))
+        # Any other refusal is not caught: a negative b aborts.
+        other = svi.SviSlice(tau=1 / cp.YEAR_DAYS, a=1e-4, b=-0.01, rho=0.0, m=0.0, sigma=0.05)
+        with self.assertRaises(cp.CounterpartUnavailable):
+            deep_hedging_mm.representability(binary, [other], [(-0.1, 0.1)])
 
     def test_sticky_strike_and_sticky_moneyness_read_different_points(self):
         con = cp.Contract(100.0, 3.0, "put")

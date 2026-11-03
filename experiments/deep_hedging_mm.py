@@ -60,6 +60,7 @@ import json
 import math
 import os
 import platform
+import struct
 import subprocess
 import sys
 import tempfile
@@ -115,7 +116,7 @@ REFERENCE_RUN = RESULTS / "deep_hedging_counterpart.json"
 SURFACE_B_QUOTES = RESULTS / "deep_hedging_mm_surface_b.csv"
 SURFACE_B_FILE = RESULTS / "deep_hedging_mm_surface_b.json"
 PREREGISTRATION = ROOT / "research" / "preregistration" / "deep_hedging_mm.md"
-PREREGISTRATION_SHA256 = "ec0c4b5e69717c1625915024883d28ec47e9dc24742b5431164ad564341fb15b"
+PREREGISTRATION_SHA256 = "64346ef1a2734f3fddfe5ae1d7e78287ede63439abfc0c5c8240581eaaa404f9"
 FAILED_RUNS = [RESULTS / "deep_hedging_mm_failed_run_1.json"]
 
 
@@ -213,11 +214,21 @@ def representability(binary: Path, slices: list[svi.SviSlice], ranges: list) -> 
             try:
                 cp.mm_run(binary, ["price", "--surface", str(d / "s.json"), "--dynamics", "sticky-moneyness", "--requests", str(d / "r.csv"), "--responses", str(d / "o.csv")])
             except cp.CounterpartUnavailable as e:
-                # Only a refusal of the surface itself; any other failure
-                # fails the run.
-                if "counterpart: surface:" not in str(e):
+                # Amendment 2 catches only the known failure: rho outside
+                # [-1, 1], refused by the binary for that reason. Anything
+                # else aborts the run.
+                if not (abs(sl.rho) > 1.0 and "svi slice: |rho| must be at most 1" in str(e)):
                     raise
-                out.append({"params": {k: repr(v) for k, v in sl.params().items()}, "k_range": [repr(x) for x in rng], "error": str(e)})
+                out.append(
+                    {
+                        "day": round(sl.tau * cp.YEAR_DAYS),
+                        "reason": "rho outside [-1, 1]",
+                        "params": {k: repr(v) for k, v in sl.params().items()},
+                        "rho_bits": struct.pack(">d", sl.rho).hex(),
+                        "k_range": [repr(x) for x in rng],
+                        "error": str(e),
+                    }
+                )
     return out
 
 
