@@ -1,0 +1,217 @@
+"""Dataset validator and empirical runner checks (M5-06c, #37).
+
+Run with the conformance suite from the repository root:
+
+    experiments/.venv/bin/python -m unittest discover -s experiments -p 'test_*.py' -v
+
+Each corruption test copies `experiments/datasets/synthetic-v1`, breaks one
+rule, refreshes the manifest hashes (except in the hash test) and checks
+that the validator names that rule.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+import numpy as np
+
+import dataset as ds
+import empirical
+from deep_hedging import CONFIG, ROOT
+
+SYNTHETIC = ROOT / "experiments" / "datasets" / "synthetic-v1"
+
+
+def refresh_hashes(d: Path) -> None:
+    m = json.loads((d / "manifest.json").read_text())
+    m["files"] = {f: ds.sha256_file(d / f) for f in ds.FILES}
+    (d / "manifest.json").write_text(json.dumps(m))
+
+
+def edit_csv(d: Path, name: str, fn) -> None:
+    lines = (d / name).read_text().splitlines()
+    (d / name).write_text("\n".join(fn(lines)) + "\n")
+
+
+def edit_field(lines, row, col, value):
+    cells = lines[row].split(",")
+    cells[col] = value
+    lines[row] = ",".join(cells)
+    return lines
+
+
+class Validator(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name) / "ds"
+        shutil.copytree(SYNTHETIC, self.d)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def manifest(self, fn):
+        m = json.loads((self.d / "manifest.json").read_text())
+        fn(m)
+        (self.d / "manifest.json").write_text(json.dumps(m))
+
+    def assertViolation(self, needle):
+        v = ds.validate(self.d)
+        self.assertTrue(any(needle in x for x in v), f"{needle!r} not in {v[:5]}")
+        with self.assertRaises(ds.DatasetInvalid):
+            ds.load(self.d)
+
+    def test_the_synthetic_dataset_is_valid_and_validation_changes_nothing(self):
+        before = {f.name: f.read_bytes() for f in SYNTHETIC.iterdir()}
+        self.assertEqual(ds.validate(SYNTHETIC), [])
+        data = ds.load(SYNTHETIC)
+        self.assertEqual({f.name: f.read_bytes() for f in SYNTHETIC.iterdir()}, before)
+        self.assertEqual(data.bid.shape, (64, 31))
+        self.assertEqual(data.fillable_buy.shape, (64, 30))
+        self.assertTrue(data.manifest["synthetic"])
+
+    def test_a_file_that_does_not_match_its_hash(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 5, "711"))
+        self.assertViolation("does not match the manifest")
+
+    def test_a_missing_manifest_field(self):
+        self.manifest(lambda m: m.pop("queue_model"))
+        self.assertViolation("missing queue_model")
+
+    def test_an_unknown_manifest_field(self):
+        self.manifest(lambda m: m.update(extra=1))
+        self.assertViolation("unknown field extra")
+
+    def test_a_boolean_is_not_a_number(self):
+        self.manifest(lambda m: m.update(lot=True))
+        self.assertViolation("lot must be")
+
+    def test_a_synthetic_dataset_without_a_seed(self):
+        self.manifest(lambda m: m.update(seed=None))
+        self.assertViolation("must declare its integer seed")
+
+    def test_a_queue_model_without_limits(self):
+        self.manifest(lambda m: m["queue_model"].update(limits=[]))
+        self.assertViolation("queue_model.limits")
+
+    def test_an_unsupported_contract(self):
+        self.manifest(lambda m: m["contract"].update(style="american"))
+        self.assertViolation("contract.style")
+
+    def test_a_wrong_header(self):
+        edit_csv(self.d, "execution.csv", lambda l: [l[0].replace("reject", "rejected")] + l[1:])
+        refresh_hashes(self.d)
+        self.assertViolation("header must be")
+
+    def test_strict_integers(self):
+        for bad in ("1.0", "True", "-1", "1e3"):
+            with self.subTest(bad=bad):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 5, bad))
+                refresh_hashes(self.d)
+                self.assertViolation("is not a non-negative integer")
+
+    def test_strict_numbers(self):
+        for bad in ("nan", "inf", "True", "", "1,0"):
+            with self.subTest(bad=bad):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                if bad == "1,0":
+                    edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 3, "1,0"))
+                    needle = "expected 7 fields"
+                else:
+                    edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 3, bad))
+                    needle = "is not a finite decimal number"
+                refresh_hashes(self.d)
+                self.assertViolation(needle)
+
+    def test_a_crossed_book(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 3, "2600.00"))
+        refresh_hashes(self.d)
+        self.assertViolation("0 < bid <= ask")
+
+    def test_a_duplicate_key(self):
+        edit_csv(self.d, "execution.csv", lambda l: l[:2] + [l[1]] + l[2:])
+        refresh_hashes(self.d)
+        self.assertViolation("duplicate key")
+
+    def test_a_missing_execution_row_breaks_the_join(self):
+        edit_csv(self.d, "execution.csv", lambda l: l[:5] + l[6:])
+        refresh_hashes(self.d)
+        self.assertViolation("no 1:1 join")
+
+    def test_timestamps_must_increase_within_a_path(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 2, 2, "1767225600"))
+        refresh_hashes(self.d)
+        self.assertViolation("not strictly increasing")
+
+    def test_capacity_above_the_quoted_size(self):
+        edit_csv(self.d, "execution.csv", lambda l: edit_field(l, 1, 2, "99999999"))
+        refresh_hashes(self.d)
+        self.assertViolation("fillable_buy")
+
+    def test_reject_is_zero_or_one(self):
+        edit_csv(self.d, "execution.csv", lambda l: edit_field(l, 1, 4, "2"))
+        refresh_hashes(self.d)
+        self.assertViolation("reject must be 0 or 1")
+
+    def test_an_execution_row_at_expiry_is_not_a_decision(self):
+        edit_csv(self.d, "execution.csv", lambda l: l + ["0,30,1,1,0"])
+        refresh_hashes(self.d)
+        self.assertViolation("is not a decision step")
+
+
+class Runner(unittest.TestCase):
+    def test_end_to_end_on_the_synthetic_dataset_issues_no_decision(self):
+        res = empirical.run(SYNTHETIC)
+        self.assertEqual(res["label"], empirical.SYNTHETIC_LABEL)
+        self.assertIsNone(res["decision"])
+        self.assertEqual(len(res["on_dataset"]["learned"]), len(CONFIG["train_seeds"]))
+        res["_json"] = "x.json"
+        self.assertIn("not empirical evidence", empirical.render(res))
+
+    def test_the_dataset_must_match_the_trained_configuration(self):
+        m = json.loads((SYNTHETIC / "manifest.json").read_text())
+        self.assertEqual(empirical.compatible(m, CONFIG), [])
+        for field, value in (("steps", 29), ("lot", 1e-3), ("fee_bps", 1.0), ("step_days", 0.5)):
+            with self.subTest(field=field):
+                self.assertNotEqual(empirical.compatible(m | {field: value}, CONFIG), [])
+
+    def test_decisions_never_see_future_rows_or_the_execution_row_of_their_step(self):
+        data = ds.load(SYNTHETIC)
+        book = empirical.rebased(data, CONFIG)
+        nets = empirical.frozen_nets(CONFIG)
+        policy = empirical.learned_policy(nets[0][2], CONFIG)
+        t0 = 12
+        base = []
+        empirical.simulate(policy, book, data, CONFIG, trace=base)
+        # Change the execution rows from t0 on and the book after t0.
+        fb, fs, rej = data.fillable_buy.copy(), data.fillable_sell.copy(), data.reject.copy()
+        fb[:, t0:], fs[:, t0:], rej[:, t0:] = 0, 0, 1
+        future = {k: v.copy() for k, v in book.items()}
+        for k in future:
+            future[k][:, t0 + 1 :] *= 1.1
+        changed = ds.Dataset(**{**data.__dict__, "fillable_buy": fb, "fillable_sell": fs, "reject": rej})
+        other = []
+        empirical.simulate(policy, future, changed, CONFIG, trace=other)
+        for t in range(t0 + 1):
+            np.testing.assert_array_equal(base[t], other[t])
+        self.assertFalse(np.array_equal(base[t0 + 1], other[t0 + 1]))
+
+    def test_a_rejected_order_fills_nothing_and_costs_nothing(self):
+        data = ds.load(SYNTHETIC)
+        all_rejected = ds.Dataset(**{**data.__dict__, "reject": np.ones_like(data.reject)})
+        book = empirical.rebased(all_rejected, CONFIG)
+        pnl, stats = empirical.simulate(empirical.delta_policy(CONFIG), book, all_rejected, CONFIG)
+        self.assertEqual(float(np.sum(stats["rebalance_trades"])), 0.0)
+        self.assertEqual(float(np.sum(stats["spread"])), 0.0)
+        self.assertEqual(float(np.sum(stats["fee"])), 0.0)
+        self.assertTrue(np.all(stats["rejected"] > 0))
+
+
+if __name__ == "__main__":
+    unittest.main()
