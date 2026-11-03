@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import unittest
 
@@ -67,6 +68,9 @@ if __name__ == "__main__":
     unittest.main()
 
 
+AA, BB, CC = ("a" * 64, "b" * 64, "c" * 64)
+
+
 def learned(seed, **over):
     row = {"seed": seed, "cvar95": 1.25, "mean_pnl": -0.5, "trades": 12, "delta_cvar95_vs_band": {"estimate": -0.1, "ci_low": -0.2, "ci_high": -0.01}}
     row.update(over)
@@ -88,13 +92,94 @@ class InModelComparison(unittest.TestCase):
         self.assertEqual((r["rows"], r["shared_fields"], r["metadata_fields"]), (2, 10, {"new": 2, "old": 0}))
 
     def test_weights_sha256_is_checked_against_the_weight_record(self):
-        new = by_eps([learned(11, weights_sha256="aa"), learned(12, weights_sha256="bb")])
-        good = {"0.0005/11": {"sha256": "aa"}, "0.0005/12": {"sha256": "bb"}}
+        new = by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=BB)])
+        good = {"0.0005/11": {"sha256": AA}, "0.0005/12": {"sha256": BB}}
         self.assertTrue(m.compare_in_model(new, by_eps(), weights=good)["equal"])
-        bad = good | {"0.0005/12": {"sha256": "cc"}}
+        bad = good | {"0.0005/12": {"sha256": CC}}
         r = m.compare_in_model(new, by_eps(), weights=bad)
         self.assertFalse(r["equal"])
         self.assertEqual(len(r["identity_errors"]), 1)
+
+    def test_with_the_weight_record_every_new_row_needs_a_valid_digest(self):
+        good = {"0.0005/11": {"sha256": AA}, "0.0005/12": {"sha256": BB}}
+        cases = {
+            "both absent": (by_eps(), good),
+            "one absent": (by_eps([learned(11, weights_sha256=AA), learned(12)]), good),
+            "not a string": (by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=1)]), good),
+            "upper case": (by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=BB.upper())]), good),
+            "too short": (by_eps([learned(11, weights_sha256="aa"), learned(12, weights_sha256=BB)]), {"0.0005/11": {"sha256": "aa"}, "0.0005/12": {"sha256": BB}}),
+            "no record for a seed": (by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=BB)]), {"0.0005/11": {"sha256": AA}}),
+            "a record without sha256": (by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=BB)]), good | {"0.0005/12": {"file": "x"}}),
+            "a record that is not an object": (by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=BB)]), good | {"0.0005/12": BB}),
+            "weights not an object": (by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=BB)]), [good]),
+        }
+        for name, (new, weights) in cases.items():
+            with self.subTest(name):
+                r = m.compare_in_model(new, by_eps(), weights=weights)
+                self.assertFalse(r["equal"], r)
+                self.assertTrue(r["identity_errors"], r)
+
+    def test_a_reference_digest_is_checked_when_present(self):
+        good = {"0.0005/11": {"sha256": AA}, "0.0005/12": {"sha256": BB}}
+        new = by_eps([learned(11, weights_sha256=AA), learned(12, weights_sha256=BB)])
+        right = by_eps([learned(11, weights_sha256=AA), learned(12)])
+        r = m.compare_in_model(new, right, weights=good)
+        self.assertTrue(r["equal"], r)
+        self.assertEqual(r["metadata_fields"], {"new": 2, "old": 1})
+        for digest in (CC, 7, "zz"):
+            with self.subTest(digest):
+                wrong = by_eps([learned(11, weights_sha256=digest), learned(12)])
+                self.assertFalse(m.compare_in_model(new, wrong, weights=good)["equal"])
+
+    def test_required_fields_absent_on_both_sides_are_missing(self):
+        def without(path):
+            e = by_eps()
+            d = e["0.0005"]
+            for k in path[:-1]:
+                d = d[k]
+            del d[path[-1]]
+            return e
+
+        for path in (("band_w",), ("in_model",), ("in_model", "delta"), ("in_model", "band"), ("in_model", "learned")):
+            with self.subTest(path):
+                r = m.compare_in_model(without(path), without(path))
+                self.assertFalse(r["equal"], r)
+                self.assertEqual(r["missing_fields"], 2, r)
+        both = by_eps()
+        del both["0.0005"]["in_model"]["delta"], both["0.0005"]["in_model"]["band"]
+        r = m.compare_in_model(both, copy.deepcopy(both))
+        self.assertFalse(r["equal"], r)
+        self.assertEqual(sorted(r["examples"]["missing"]), ["new:0.0005.in_model.band", "new:0.0005.in_model.delta", "old:0.0005.in_model.band", "old:0.0005.in_model.delta"])
+
+    def test_malformed_input_is_reported_and_never_raises(self):
+        def entry(**over):
+            e = by_eps()
+            e["0.0005"]["in_model"].update(over)
+            return e
+
+        cases = {
+            "by_eps a list": [by_eps()],
+            "by_eps None": None,
+            "an entry None": {"0.0005": None},
+            "an entry a list": {"0.0005": [1]},
+            "in_model a list": by_eps(in_model=[1]),
+            "in_model None": by_eps(in_model=None),
+            "learned a dict": entry(learned={"11": learned(11)}),
+            "learned None": entry(learned=None),
+            "learned empty": entry(learned=[]),
+            "a row a list": entry(learned=[[11], learned(12)]),
+            "a row None": entry(learned=[None, learned(12)]),
+            "no seed": entry(learned=[{k: v for k, v in learned(11).items() if k != "seed"}, learned(12)]),
+            "an unhashable seed": entry(learned=[learned([11]), learned(12)]),
+            "a dict seed": entry(learned=[learned({"s": 11}), learned(12)]),
+            "a bool seed": entry(learned=[learned(True), learned(12)]),
+            "a float seed": entry(learned=[learned(11.0), learned(12)]),
+            "a string seed": entry(learned=[learned("11"), learned(12)]),
+        }
+        for name, bad in cases.items():
+            for new, old in ((bad, by_eps()), (by_eps(), bad), (bad, copy.deepcopy(bad))):
+                with self.subTest(name):
+                    self.assertFalse(m.compare_in_model(new, old)["equal"])
 
     def test_rows_are_matched_by_seed_not_position(self):
         r = m.compare_in_model(by_eps([learned(12), learned(11)]), by_eps())

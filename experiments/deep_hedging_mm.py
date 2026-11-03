@@ -376,71 +376,160 @@ def _strict_equal(a, b, path: str, out: dict) -> None:
         out["differing"].append(f"{path}: {a!r} != {b!r}")
 
 
+IN_MODEL_REQUIRED = ("delta", "band", "learned")
+
+
+def _is_sha256(v) -> bool:
+    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+
+
+def _learned_by_seed(side: str, eps: str, e, out: dict) -> dict | None:
+    """The shape of one side's half spread entry, checked before any value
+    is read. Every required field it lacks (band_w, in_model and, inside
+    in_model, delta, band and learned) is reported as missing on that side;
+    a value of the wrong type, an empty learned list, a row that is not an
+    object, a row without a seed, a seed that is not an int and a repeated
+    seed are identity errors. Returns the learned rows by seed, or None
+    when they cannot be matched."""
+    where = f"{side}:{eps}"
+    if not isinstance(e, dict):
+        out["identity"].append(f"{where}: entry is {type(e).__name__}, not an object")
+        return None
+    for need in ("band_w", "in_model"):
+        if need not in e:
+            out["missing"].append(f"{where}.{need}")
+    if "in_model" not in e:
+        return None
+    im = e["in_model"]
+    if not isinstance(im, dict):
+        out["identity"].append(f"{where}.in_model is {type(im).__name__}, not an object")
+        return None
+    for need in IN_MODEL_REQUIRED:
+        if need not in im:
+            out["missing"].append(f"{where}.in_model.{need}")
+    if "learned" not in im:
+        return None
+    rows = im["learned"]
+    if not isinstance(rows, list):
+        out["identity"].append(f"{where}.in_model.learned is {type(rows).__name__}, not a list")
+        return None
+    if not rows:
+        out["identity"].append(f"{where}: no learned row")
+        return None
+    by_seed: dict = {}
+    ok = True
+    for i, r in enumerate(rows):
+        at = f"{where}.in_model.learned[{i}]"
+        if not isinstance(r, dict):
+            out["identity"].append(f"{at} is {type(r).__name__}, not an object")
+            ok = False
+        elif "seed" not in r:
+            out["missing"].append(f"{at}.seed")
+            ok = False
+        elif type(r["seed"]) is not int:
+            out["identity"].append(f"{at}.seed is {type(r['seed']).__name__}, not an int")
+            ok = False
+        elif r["seed"] in by_seed:
+            out["identity"].append(f"{where}: seed {r['seed']} repeated")
+            ok = False
+        else:
+            by_seed[r["seed"]] = r
+    return by_seed if ok else None
+
+
+def _check_weights_sha256(side: str, eps: str, seed: int, row: dict, weights: dict, out: dict) -> None:
+    """With the weight record given, a row's weights_sha256 must be a
+    lowercase hex sha256 equal to the record's for "eps/seed", which must
+    itself exist and be one. Every failure is an identity error."""
+    where = f"{side}:{eps}.in_model.learned[seed {seed}].weights_sha256"
+    rec = weights.get(f"{eps}/{seed}")
+    want = rec.get("sha256") if isinstance(rec, dict) else None
+    if "weights_sha256" not in row:
+        out["identity"].append(f"{where} absent although the weight record is given")
+    elif not _is_sha256(want):
+        out["identity"].append(f"{where}: no valid weight record for {eps}/{seed}")
+    elif not _is_sha256(row["weights_sha256"]):
+        out["identity"].append(f"{where} {row['weights_sha256']!r} is not a sha256 digest")
+    elif row["weights_sha256"] != want:
+        out["identity"].append(f"{where} {row['weights_sha256']} is not {want}")
+
+
 def compare_in_model(new: dict, old: dict, weights: dict | None = None) -> dict:
     """Gate 6: the in-model rows of a run (`by_eps`) against the reference
-    run's, value by value. The half spreads must be the same non-empty set;
-    band_w and every field of in_model must be strictly equal (a field on
-    one side only is extra or missing); the learned rows, which must exist,
-    are
-    matched by seed (unique on each side, the same set), not by position,
-    and compared field by field leaving out only METADATA_KEYS, counted per
-    side. Equal iff there is no difference, no missing or extra field (other
-    than metadata), no non-finite value and no identity error.
+    run's, value by value. Never raises on malformed input: every problem
+    is reported and makes the comparison unequal.
+    - The half spreads must be the same non-empty set.
+    - On each side, every entry must have band_w and in_model, and
+      in_model must have delta, band and a non-empty list of learned rows,
+      each an object with an int seed, unique on that side
+      (`_learned_by_seed`). A required field absent on both sides is still
+      missing, never equal.
+    - band_w and every field of in_model are strictly equal (`_strict_equal`);
+      a field on one side only is extra or missing.
+    - The learned rows are matched by seed (the same set on both sides), not
+      by position, and compared field by field leaving out only
+      METADATA_KEYS, counted per side.
+    - When `weights` (the reference run's record, by "eps/seed") is given,
+      every new row must carry weights_sha256 and it must match the record;
+      a reference row that carries one is checked the same way
+      (`_check_weights_sha256`).
+    Equal iff there is at least one row and no difference, no missing or
+    extra field, no non-finite value and no identity error.
     The other fields of a half spread's entry (the out-of-model markets,
     such as heston_<dynamics>) are results of the run, not a reproduction,
-    and are outside gate 6 by design.
-    `weights_sha256`, metadata for the comparison, is still checked against
-    `weights` (the reference run's record, by "eps/seed") when given: a
-    mismatch is an identity error."""
+    and are outside gate 6 by design."""
     out = {"differing": [], "missing": [], "extra": [], "nonfinite": [], "identity": []}
     rows = shared = 0
     metadata = {"new": 0, "old": 0}
-    if not new or not old:
+    for side, v in (("new", new), ("old", old)):
+        if not isinstance(v, dict):
+            out["identity"].append(f"{side}: by_eps is {type(v).__name__}, not an object")
+    if weights is not None and not isinstance(weights, dict):
+        out["identity"].append(f"weights is {type(weights).__name__}, not an object")
+        weights = {}
+    new_eps = set(new) if isinstance(new, dict) else set()
+    old_eps = set(old) if isinstance(old, dict) else set()
+    if not new_eps or not old_eps:
         out["identity"].append("nothing to compare: no half spread on one side")
-    if set(new) != set(old):
-        out["identity"].append(f"half spreads {sorted(new)} != {sorted(old)}")
-    for eps in sorted(set(new) & set(old)):
+    if new_eps != old_eps:
+        out["identity"].append(f"half spreads {sorted(new_eps, key=str)} != {sorted(old_eps, key=str)}")
+    for eps in sorted(new_eps & old_eps, key=str):
         a, b = new[eps], old[eps]
-        for side, e in (("new", a), ("old", b)):
-            for need in ("band_w", "in_model"):
-                if need not in e:
-                    out["identity"].append(f"{eps}: {side} has no {need}")
-        if "in_model" not in a or "in_model" not in b:
+        la = _learned_by_seed("new", eps, a, out)
+        lb = _learned_by_seed("old", eps, b, out)
+        if not (isinstance(a, dict) and isinstance(b, dict)):
             continue
-        _strict_equal(a.get("band_w"), b.get("band_w"), f"{eps}.band_w", out)
-        # Every in_model field is compared; only the learned rows are
-        # matched by seed. A field added on either side is extra or missing.
-        ia, ib = a["in_model"], b["in_model"]
-        for k in sorted(set(ia) - set(ib)):
-            out["extra"].append(f"{eps}.in_model.{k}")
-        for k in sorted(set(ib) - set(ia)):
-            out["missing"].append(f"{eps}.in_model.{k}")
-        for k in sorted((set(ia) & set(ib)) - {"learned"}):
-            _strict_equal(ia[k], ib[k], f"{eps}.in_model.{k}", out)
-        if "learned" not in ia or "learned" not in ib:
+        if "band_w" in a and "band_w" in b:
+            _strict_equal(a["band_w"], b["band_w"], f"{eps}.band_w", out)
+        ia, ib = a.get("in_model"), b.get("in_model")
+        if isinstance(ia, dict) and isinstance(ib, dict):
+            # Every in_model field is compared; only the learned rows are
+            # matched by seed. A field added on either side is extra or
+            # missing.
+            for k in sorted(set(ia) - set(ib), key=str):
+                out["extra"].append(f"{eps}.in_model.{k}")
+            for k in sorted(set(ib) - set(ia), key=str):
+                out["missing"].append(f"{eps}.in_model.{k}")
+            for k in sorted((set(ia) & set(ib)) - {"learned"}, key=str):
+                _strict_equal(ia[k], ib[k], f"{eps}.in_model.{k}", out)
+        if la is None or lb is None:
             continue
-        la, lb = ia["learned"], ib["learned"]
-        if not la:
-            out["identity"].append(f"{eps}: no learned row")
-        sa = [r.get("seed") for r in la]
-        sb = [r.get("seed") for r in lb]
-        if len(sa) != len(set(sa)) or len(sb) != len(set(sb)) or set(sa) != set(sb) or len(sa) != len(sb):
-            out["identity"].append(f"{eps}: learned seeds {sa} against {sb}")
+        if set(la) != set(lb):
+            out["identity"].append(f"{eps}: learned seeds {sorted(la)} against {sorted(lb)}")
             continue
-        by_seed = {r["seed"]: r for r in lb}
-        for r in la:
-            o = by_seed[r["seed"]]
+        for seed in sorted(la):
+            r, o = la[seed], lb[seed]
             rows += 1
             metadata["new"] += len(METADATA_KEYS & set(r))
             metadata["old"] += len(METADATA_KEYS & set(o))
-            if weights is not None and "weights_sha256" in r:
-                want = weights.get(f"{eps}/{r['seed']}", {}).get("sha256")
-                if r["weights_sha256"] != want:
-                    out["identity"].append(f"{eps}: seed {r['seed']} weights_sha256 {r['weights_sha256']} is not {want}")
+            if weights is not None:
+                _check_weights_sha256("new", eps, seed, r, weights, out)
+                if "weights_sha256" in o:
+                    _check_weights_sha256("old", eps, seed, o, weights, out)
             ra = {k: v for k, v in r.items() if k not in METADATA_KEYS}
             rb = {k: v for k, v in o.items() if k not in METADATA_KEYS}
             shared += len(set(ra) & set(rb))
-            _strict_equal(ra, rb, f"{eps}.in_model.learned[seed {r['seed']}]", out)
+            _strict_equal(ra, rb, f"{eps}.in_model.learned[seed {seed}]", out)
     report = {
         "rows": rows,
         "shared_fields": shared,

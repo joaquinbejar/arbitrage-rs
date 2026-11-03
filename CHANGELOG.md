@@ -15,11 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Research, outside the crate: gate 6 of `experiments/deep_hedging_mm.py`
   (the in-model rows equal the reference run's) compares values, not whole
   records. Every in_model field is compared (a field on one side only fails,
-  and an empty comparison never passes); learned rows are matched by seed, and fields are compared with
-  strict types, floats bit for bit. Only the fields listed in `METADATA_KEYS`
-  (`weights_sha256`) are left out, counted per side; any other extra,
-  missing, differing or non-finite field fails; `weights_sha256` is still
-  checked against the reference run's weight record. The evidence goes into
+  and an empty comparison never passes); learned rows are matched by seed,
+  and fields are compared with strict types, floats bit for bit. Each side
+  must have band_w and in_model with delta, band and a non-empty list of
+  learned rows with unique int seeds: a required field absent on both sides
+  is missing, never equal, and malformed input is reported, never raised.
+  Only the fields listed in `METADATA_KEYS` (`weights_sha256`) are left
+  out, counted per side; any other extra, missing, differing or non-finite
+  field fails. With the reference run's weight record given, every new row
+  must carry a `weights_sha256` equal to the record's (a reference row that
+  carries one is checked too). The evidence goes into
   the results (`in_model_comparison`). This applies to future runs only:
   run 2 of #43 stays as written, REVISE, and is not regenerated.
 
