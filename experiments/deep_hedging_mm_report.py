@@ -126,7 +126,35 @@ def main() -> None:
         f"commit `{r['run']['git_commit']}`.",
         "",
     ]
+    out += post_run_gate6(r)
     (RESULTS / "deep_hedging_mm.md").write_text("\n".join(out))
+
+
+def post_run_gate6(r: dict) -> list[str]:
+    """A diagnostic written after the run, which changes no gate: gate 6
+    compared this run's in-model rows with M5-06b's as whole dicts, and
+    each learned row here carries an extra `weights_sha256` key. Compare
+    the values with that key left out."""
+    old = json.loads((RESULTS / "deep_hedging_counterpart.json").read_text())
+    same, rows = True, 0
+    for k, entry in r["by_eps"].items():
+        o = old["by_eps"][k]
+        same &= entry["band_w"] == o["band_w"]
+        same &= entry["in_model"]["delta"] == o["in_model"]["delta"] and entry["in_model"]["band"] == o["in_model"]["band"]
+        for a, b in zip(entry["in_model"]["learned"], o["in_model"]["learned"], strict=True):
+            same &= {x: v for x, v in a.items() if x != "weights_sha256"} == b
+            rows += 1
+    return [
+        "## After the run: gate 6",
+        "",
+        "Gate 6 failed, and this run's outcome is REVISE as preregistered. Its cause was found after the run and "
+        "changes neither the gate nor the outcome: each learned row of this run carries an extra `weights_sha256` "
+        "key, so the comparison of whole rows with M5-06b's fails.",
+        "",
+        f"With that key left out, every in-model value equals M5-06b's: band width, delta, band and {rows} learned "
+        f"rows ({'yes' if same else '**no**'}).",
+        "",
+    ]
 
 
 if __name__ == "__main__":

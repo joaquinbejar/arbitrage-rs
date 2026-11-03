@@ -130,3 +130,9 @@ On the paths that stay in range every day (gate 7):
 Premium at t = 0 (sticky moneyness): market-maker-rs on B 2.2378132055, reference on B 2.2378132055, reference surface of M5-06b 2.2393929359.
 
 In-model rows equal M5-06b: False. Run: 175.7 s, python 3.12.16, numpy 2.5.4, torch 2.15.0, arm64, commit `079f698687487ee7d91b8b82232bee493d955cd1`.
+
+## After the run: gate 6
+
+Gate 6 failed, and this run's outcome is REVISE as preregistered. Its cause was found after the run and changes neither the gate nor the outcome: each learned row of this run carries an extra `weights_sha256` key, so the comparison of whole rows with M5-06b's fails.
+
+With that key left out, every in-model value equals M5-06b's: band width, delta, band and 15 learned rows (yes).
