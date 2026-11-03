@@ -15,16 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Research, outside the crate: run 3 of #43, a new held-out evaluation
   after run 2 (`research/preregistration/deep_hedging_mm_v2.md`,
   `experiments/deep_hedging_mm_run3.py`). Nothing has run. The seeds are
-  not in the code: the reviewers approve the code commit, the
+  not in the code: two independent approvals cover the code commit, the
   preregistration and a launch manifest template with two null seed slots;
   the maintainer then draws both seeds with `secrets` under a fill rule
   (no forbidden seed, disjoint bootstrap ranges). The run takes the four
   approved values as arguments and refuses to generate anything unless
   the tree, the template and the final manifest match them byte for byte,
   with strict types. Attempts and results are written once and never
-  replaced, the log carries no outcome, and one restart is allowed only
-  after an infrastructure interruption, reproducing the first attempt's
-  data.
+  replaced, the log carries no outcome, every thread count is pinned to
+  one, and one restart is allowed only after an infrastructure
+  interruption, within an hour, reproducing the first attempt's data.
 
 ### Fixed
 

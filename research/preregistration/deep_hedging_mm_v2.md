@@ -20,7 +20,7 @@ stages (see "Binding"), so nothing is circular. The run is
 
 The author of this file and of the code does not choose the seeds. There
 are two seed slots, `eval_seed` and `bootstrap_seed`, filled by the
-maintainer after both reviewers' GOs (see "Binding").
+maintainer after both approvers' GOs (see "Binding").
 
 - **How they are drawn.** Each is drawn with a CSPRNG,
   `secrets.randbelow(2**64 - 299)` (uniform on [0, 2^64 − 300]), by the
@@ -107,14 +107,16 @@ maintainer after both reviewers' GOs (see "Binding").
      `COUNTERPART_CONFIG`, `MM_CONFIG`, so the train seeds, sizes,
      horizon, seeds and criterion thresholds); the Python, numpy and torch
      versions, the machine and the thread settings (one torch thread,
-     deterministic algorithms); the forbidden seeds. Its two seed fields
-     are `null`. `T` is the sha256 of its bytes.
+     deterministic algorithms, and `OMP_NUM_THREADS`,
+     `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS` and `VECLIB_MAXIMUM_THREADS`
+     set to 1 when the process starts); the forbidden seeds. Its two seed
+     fields are `null`. `T` is the sha256 of its bytes.
    - The template is in canonical form (sorted keys, two space indent,
      ASCII, one final LF); it cannot record `C`, since it is part of `C`.
-2. **The GOs.** A reviewer's GO is the first message from that reviewer on
-   the bus that says GO and names `C`, `H_P` and `T`. A GO withdrawn before
-   the authorization cancels that GO; a new version needs a new `C`, `H_P`,
-   `T` and new GOs.
+2. **The GOs.** Two independent approvers each give a GO: the first
+   message from that approver on the bus that says GO and names `C`, `H_P`
+   and `T`. A GO withdrawn before the authorization cancels that GO; a new
+   version needs a new `C`, `H_P`, `T` and new GOs.
 3. **The authorization.** After both GOs, the maintainer runs `fill`,
    which changes only the two seed fields, and posts in one message the
    final manifest's exact bytes, its sha256 `L`, the draw method and count,
@@ -135,7 +137,8 @@ maintainer after both reviewers' GOs (see "Binding").
      no NaN or infinity;
    - the template's seeds are exactly two nulls; every other field of the
      template equals, with strict types, what the run finds in the tree
-     and the environment;
+     and the environment, and pins one thread everywhere and deterministic
+     algorithms;
    - the final manifest has exactly the template's fields and equals it,
      with strict types (a bool is not an int, an int not a float), in
      every field except the seeds; the seeds satisfy the fill rule.
@@ -163,7 +166,7 @@ One unattended process with the pinned settings. In this order:
 6. Gate 6 (`compare_in_model`) against the reference run.
 7. The in-range subset at the primary half spread (gate 7).
 8. The criterion, the gates and the outcome. The results are written to a
-   temporary file in the results directory and linked to
+   temporary file in the attempt's directory and linked to
    `research/results/deep_hedging_mm_run3.json` in one step, which fails if
    that path exists: the results appear complete or not at all, and are
    never replaced. Then the decision is printed.
@@ -211,14 +214,19 @@ Otherwise the outcome is REVISE, or REJECT under the criterion's own rule.
   before the results exist, the process ends for one of these causes,
   shown by the system and not by anyone's account:
   - a `MemoryError`, or an `OSError` with errno `ENOSPC`, `EIO` or
-    `EDQUOT`, in the attempt's exception record (which the run writes);
+    `EDQUOT`, in the attempt's exception record. The run writes that
+    record for any exception after the execution manifest exists, the
+    stage log's creation included; when it cannot (a full disk), the
+    traceback printed on stderr is copied verbatim into the failure
+    record instead;
   - a kill by the operating system's out-of-memory handler, or a host
-    restart or power loss, shown by a system record (the out-of-memory
-    log, the boot record) that is copied into the attempt's failure
-    record.
+    restart or power loss, shown by a system record: a verbatim excerpt of
+    the out-of-memory log, the system journal or the boot record, copied
+    into the attempt's failure record, which both approvers read before
+    the restart.
   A stop by an operator is not one. The run may then be restarted once,
-  within 1 hour, with `--restart`, from the same commit with the same
-  approvals:
+  with `--restart`, from the same commit with the same approvals, within
+  1 hour of attempt 1's last record (the run refuses a later restart):
   - attempt 1 must be complete on record (its execution manifest and stage
     log, and its exception record or failure record), and is kept
     verbatim;

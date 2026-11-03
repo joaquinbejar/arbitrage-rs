@@ -3,6 +3,7 @@ cases. No test generates data from a seed run 3 may use."""
 
 import errno
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ from deep_hedging import CONFIG
 
 GOOD = {"eval_seed": 10**12, "bootstrap_seed": 10**15}
 FORBIDDEN = r3.forbidden_seeds(CONFIG)
+ENV = {"torch_threads": 1, "deterministic_algorithms": True, "thread_env": {k: "1" for k in r3.THREAD_ENV}}
 
 
 def pins(**over):
@@ -23,6 +25,7 @@ def pins(**over):
         "preregistration": {"path": r3.PREREGISTRATION_REL, "sha256": None},
         "files": {"experiments/x.py": "0" * 64},
         "config": {"n": 1, "flag": True, "x": 0.5},
+        "environment": ENV,
         "forbidden_seeds": FORBIDDEN,
     }
     p.update(over)
@@ -176,6 +179,17 @@ class Binding(unittest.TestCase):
             with self.subTest(over), self.assertRaises(r3.LaunchError):
                 self.repo(template_over=over).verify()
 
+    def test_the_template_must_pin_one_thread_everywhere(self):
+        for env in (
+            ENV | {"torch_threads": 4},
+            ENV | {"deterministic_algorithms": False},
+            ENV | {"thread_env": {k: None for k in r3.THREAD_ENV}},
+            ENV | {"thread_env": {k: "1" for k in r3.THREAD_ENV[:-1]}},
+        ):
+            repo = self.repo(template_over={"environment": env})
+            with self.subTest(env), self.assertRaises(r3.LaunchError):
+                repo.verify(facts=repo.pins | {"environment": env})
+
     def test_seeds_that_break_the_fill_rule_are_refused(self):
         for seeds in ({"eval_seed": CONFIG["data_seed"], "bootstrap_seed": 10**15}, {"eval_seed": True, "bootstrap_seed": 10**15}):
             with self.subTest(seeds), self.assertRaises(r3.LaunchError):
@@ -264,7 +278,7 @@ class Attempts(unittest.TestCase):
 
     def first(self):
         here, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=False)
-        log = r3.StageLog(here / "stage.log", previous, 0.0)
+        log = r3.StageLog(here / "stage.log", previous, 0.0, echo=False)
         log.stage("data", {"x": np.arange(4.0)})
         log.f.close()
         return here
@@ -307,7 +321,7 @@ class Attempts(unittest.TestCase):
             r3.open_attempt(self.attempts, self.out, self.execution | {"host": "other"}, restart=True)
         second, previous = r3.open_attempt(self.attempts, self.out, self.execution | {"started_at": "t1"}, restart=True)
         self.assertEqual(second.name, "attempt-2")
-        log = r3.StageLog(second / "stage.log", previous, 0.0)
+        log = r3.StageLog(second / "stage.log", previous, 0.0, echo=False)
         with self.assertRaises(r3.AttemptError):
             log.stage("data", {"x": np.arange(5.0)})
         log.stage("data", {"x": np.arange(4.0)})
@@ -321,6 +335,15 @@ class Attempts(unittest.TestCase):
         second, _ = r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
         self.assertEqual(second.name, "attempt-2")
 
+    def test_a_restart_after_the_window_is_refused(self):
+        here = self.first()
+        (here / "exception.json").write_text(json.dumps({"type": "MemoryError"}))
+        last = max(p.stat().st_mtime for p in here.iterdir())
+        with self.assertRaises(r3.AttemptError):
+            r3.open_attempt(self.attempts, self.out, self.execution, restart=True, now=last + r3.RESTART_WINDOW_S + 1)
+        second, _ = r3.open_attempt(self.attempts, self.out, self.execution, restart=True, now=last + r3.RESTART_WINDOW_S - 1)
+        self.assertEqual(second.name, "attempt-2")
+
     def test_classification(self):
         self.assertEqual(r3.classify_exception({"type": "MemoryError"}), "MemoryError")
         for e, name in ((errno.ENOSPC, "ENOSPC"), (errno.EIO, "EIO"), (errno.EDQUOT, "EDQUOT")):
@@ -329,13 +352,158 @@ class Attempts(unittest.TestCase):
             self.assertIsNone(r3.classify_exception(rec))
 
     def test_results_are_published_once_and_whole(self):
-        r3.publish_exclusive(self.out, b"one\n")
+        tmp_dir = self.dir / "attempt"
+        tmp_dir.mkdir()
+        r3.publish_exclusive(self.out, b"one\n", tmp_dir)
         with self.assertRaises(FileExistsError):
-            r3.publish_exclusive(self.out, b"two\n")
+            r3.publish_exclusive(self.out, b"two\n", tmp_dir)
         self.assertEqual(self.out.read_bytes(), b"one\n")
-        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["run3.json"])
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["attempt", "run3.json"])
+        self.assertEqual(list(tmp_dir.iterdir()), [])
         with self.assertRaises(FileExistsError):
             r3.write_exclusive(self.out, b"three\n")
+
+    def test_an_interrupted_publication_leaves_its_temporary_file_in_the_attempt(self):
+        tmp_dir = self.dir / "attempt"
+        tmp_dir.mkdir()
+        target = self.dir / "results.json"
+        real_link, real_unlink = os.link, os.unlink
+
+        def interrupted(src, dst):
+            raise KeyboardInterrupt
+
+        os.link, os.unlink = interrupted, lambda p: None
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                r3.publish_exclusive(target, b"x\n", tmp_dir)
+        finally:
+            os.link, os.unlink = real_link, real_unlink
+        self.assertFalse(target.exists())
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["attempt"])
+        self.assertEqual(len(list(tmp_dir.iterdir())), 1)
+
+
+class Lifecycle(unittest.TestCase):
+    """From the execution manifest on, every failure is recorded in the
+    attempt, the stage log's creation included."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.attempts = self.dir / "attempts"
+        self.out = self.dir / "run3.json"
+        self.execution = {"launch": {"code_commit": "c" * 40}, "seeds": GOOD, "host": "h", "started_at": "t0"}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def attempt(self, body, stage_log=None):
+        here, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=False)
+        real = r3.StageLog
+        if stage_log is not None:
+            r3.StageLog = stage_log
+        try:
+            return here, r3.execute_attempt(here, previous, self.out, 0.0, body)
+        finally:
+            r3.StageLog = real
+
+    def record(self, here):
+        return json.loads((here / "exception.json").read_text())
+
+    def test_a_full_disk_when_the_stage_log_is_created(self):
+        def no_space(*a, **k):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        with self.assertRaises(OSError):
+            self.attempt(lambda log: {}, stage_log=no_space)
+        here = self.attempts / "attempt-1"
+        self.assertFalse((here / "stage.log").exists())
+        self.assertEqual(r3.classify_exception(self.record(here)), "ENOSPC")
+        second, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
+        self.assertEqual((second.name, previous), ("attempt-2", {}))
+
+    def test_memory_right_after_the_manifest(self):
+        def body(log):
+            raise MemoryError
+
+        with self.assertRaises(MemoryError):
+            self.attempt(body, stage_log=_quiet)
+        here = self.attempts / "attempt-1"
+        self.assertEqual(r3.classify_exception(self.record(here)), "MemoryError")
+        self.assertIn("checks", [json.loads(x)["stage"] for x in (here / "stage.log").read_text().splitlines()])
+        second, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
+        self.assertEqual(previous, {"checks": {}})
+        self.assertFalse(self.out.exists())
+
+    def test_any_other_failure_is_recorded_and_final(self):
+        def body(log):
+            raise ValueError("a fit outside the domain")
+
+        with self.assertRaises(ValueError):
+            self.attempt(body, stage_log=_quiet)
+        self.assertEqual(self.record(self.attempts / "attempt-1")["type"], "ValueError")
+        with self.assertRaises(r3.AttemptError):
+            r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
+
+    def test_a_failure_record_for_an_unwritable_exception_record(self):
+        here, _ = r3.open_attempt(self.attempts, self.out, self.execution, restart=False)
+        (here / "failure.json").write_text(json.dumps({"cause": "ENOSPC", "system_record": "OSError: [Errno 28] No space left on device"}))
+        second, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
+        self.assertEqual((second.name, previous), ("attempt-2", {}))
+
+    def test_a_completed_attempt_publishes_once(self):
+        here, results = self.attempt(lambda log: {"decision": {"outcome": "revise"}}, stage_log=_quiet)
+        self.assertEqual(json.loads(self.out.read_text()), results)
+        self.assertFalse((here / "exception.json").exists())
+        self.assertEqual([json.loads(x)["stage"] for x in (here / "stage.log").read_text().splitlines()], ["checks", "results"])
+        with self.assertRaises(r3.AttemptError):
+            r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
+
+
+_STAGE_LOG = r3.StageLog
+
+
+def _quiet(path, previous, started):
+    return _STAGE_LOG(path, previous, started, echo=False)
+
+
+@unittest.skipUnless(os.environ.get(r3.cp.MM_BINARY_ENV), "needs the market-maker-rs counterpart binary")
+class EndToEnd(unittest.TestCase):
+    """run() through execute_attempt on a small configuration, with test
+    seeds and the pinned binary: every stage, the schema, the gates and
+    one published result. The numbers are not looked at."""
+
+    def test_the_whole_run_on_a_small_configuration(self):
+        import torch
+
+        torch.set_num_threads(1)
+        torch.use_deterministic_algorithms(True)
+        cfg = CONFIG | {"n_val": 256, "n_test": 256, "bootstrap": 20}
+        final = {"seeds": {"eval_seed": 101, "bootstrap_seed": 202}}
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            attempts, out = d / "attempts", d / "run3.json"
+            execution = {"launch": {}, "seeds": final["seeds"], "started_at": "t0"}
+            here, previous = r3.open_attempt(attempts, out, execution, restart=False)
+            results = r3.execute_attempt(here, previous, out, 0.0, lambda log: r3.run(final, {"attempt": 1}, log, 0.0, cfg=cfg))
+            stages = [json.loads(x)["stage"] for x in (here / "stage.log").read_text().splitlines()]
+            published = json.loads(out.read_text())
+        self.assertEqual(
+            stages,
+            ["checks", "data_gbm", "data_heston", "surfaces", "coverage_and_agreement", *[f"eps_{e:g}" for e in cfg["eps_list"]], "gate_6", "gate_7", "results"],
+        )
+        self.assertEqual(published, json.loads(json.dumps(results)))
+        self.assertEqual(results["seeds"], final["seeds"])
+        self.assertEqual(set(results["decision"]["gates"]), {
+            "1_conformance_passed", "2_surface_b_not_failed_and_frozen", "3_out_of_domain_within_bound", "4_every_required_row_priced",
+            "5_all_panels_agree", "6_in_model_matches_reference", "7_in_range_subset_no_veto",
+        })
+        self.assertIn(results["decision"]["outcome"], {"adopt", "revise", "reject"})
+        # 256 test paths are not the reference run's 32768: gate 6 must say so.
+        self.assertFalse(results["in_model_matches_reference"])
+        self.assertIn("in_model_comparison", results)
+        self.assertTrue(all(len(results["by_eps"][f"{e:g}"]["heston_sticky-strike"]["learned"]) == len(cfg["train_seeds"]) for e in cfg["eps_list"]))
+        self.assertNotIn(str(Path.home()), json.dumps(results))
 
 
 class Streams(unittest.TestCase):
@@ -382,6 +550,7 @@ class Template(unittest.TestCase):
         self.assertEqual(template["seeds"], {"eval_seed": None, "bootstrap_seed": None})
         self.assertEqual(template["environment"]["torch_threads"], 1)
         self.assertIs(template["environment"]["deterministic_algorithms"], True)
+        self.assertEqual(template["environment"]["thread_env"], {k: "1" for k in r3.THREAD_ENV})
 
     def test_facts_cover_the_run(self):
         facts = r3.launch_facts()
@@ -394,8 +563,9 @@ class Template(unittest.TestCase):
     def test_the_environment_is_plain_json(self):
         env = r3.environment()
         self.assertEqual({k: type(v) for k, v in env.items()}, {
-            "python": str, "numpy": str, "torch": str, "machine": str, "torch_threads": int, "deterministic_algorithms": bool,
+            "python": str, "numpy": str, "torch": str, "machine": str, "torch_threads": int, "deterministic_algorithms": bool, "thread_env": dict,
         })
+        self.assertEqual(set(env["thread_env"]), set(r3.THREAD_ENV))
 
     def test_scrubbed_records_hold_no_local_path(self):
         text = r3._scrub(f"{r3.ROOT}/x and {Path.home()}/y")

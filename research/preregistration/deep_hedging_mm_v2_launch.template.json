@@ -283,6 +283,12 @@
     "machine": "arm64",
     "numpy": "2.5.4",
     "python": "3.12.16",
+    "thread_env": {
+      "MKL_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "VECLIB_MAXIMUM_THREADS": "1"
+    },
     "torch": "2.15.0",
     "torch_threads": 1
   },
@@ -298,7 +304,7 @@
     "experiments/deep_hedging_counterpart.py": "f3221d2be443743d574861ab266049e403d2773a767a43adcba89a9c9e436366",
     "experiments/deep_hedging_mm.py": "27b0f4b722cb59cb124c5c771c1a43c1c66007b3db28469857f78c7c42beeced",
     "experiments/deep_hedging_mm_report.py": "d31f49ebd16d663e4ae0ae8897e1b0f7378eadf314a1da3c9780c21b5e5d4e2c",
-    "experiments/deep_hedging_mm_run3.py": "e0f996af7d8a7f9460af9fc5703d87a581220a7152be7724729d93691f0f112c",
+    "experiments/deep_hedging_mm_run3.py": "fe50116a34b7e89d10dea5550bb6677eb5075644a5765a779cb27739f883dd95",
     "experiments/empirical.py": "5d0e16359841435013cb554f54e682d84b96cad03838899ac87ed126f8724503",
     "experiments/heston.py": "070f2a3ee6caa48f660e58473e488c8cf210997260b23edbfd3b6e3160ed4bcd",
     "experiments/make_synthetic_dataset.py": "3013484a843bfd9d0e0b1dfa2ff3395d71c544292ff2e76ef8c67b957b6270d5",
@@ -311,7 +317,7 @@
     "experiments/test_counterpart.py": "09c9ad08224f2f228c19247cb5568cf2a6d4782da3cefea0f0d387c3061f2617",
     "experiments/test_dataset.py": "812d78b205aad6d9650d2d5f575024a76b75d27eec3f5c579c5922e202a262a4",
     "experiments/test_deep_hedging_mm.py": "8f72772d82852d275a670f09c7f74558e86443a6306b61669194cbe5cb62a135",
-    "experiments/test_deep_hedging_mm_run3.py": "39475da7b2a6fd57128636855983b12e9ea43270124427665b4fad5d0766f574",
+    "experiments/test_deep_hedging_mm_run3.py": "8840ebcb56a8ad450f20514abb1e4f7b09a8fa89f381936b24ef235df4987715",
     "experiments/test_svi_domain.py": "13e4323672e90a92a2e1d2f8046840054bc90954704629740cb9f02ccdcce42e"
   },
   "first_preregistration_sha256": "64346ef1a2734f3fddfe5ae1d7e78287ede63439abfc0c5c8240581eaaa404f9",
@@ -334,7 +340,7 @@
   ],
   "preregistration": {
     "path": "research/preregistration/deep_hedging_mm_v2.md",
-    "sha256": "728a6f82baa8636bda6141b97b03f066b7bf82f9133b9070404185ed62fe9cf5"
+    "sha256": "5c81aa6055404b75aa5550f7d2d6be289b0b82ccb1b93df075f0132d523a989d"
   },
   "results_inputs": {
     "research/results/deep_hedging_counterpart.json": "a6891fea3bcb7cab4146a848ba500ef992a73b2943abcb9c7f8528f48a63414d",

@@ -10,14 +10,16 @@ Three commands, from the repository root:
 
     experiments/.venv/bin/python experiments/deep_hedging_mm_run3.py template
     experiments/.venv/bin/python experiments/deep_hedging_mm_run3.py fill
-    MM_COUNTERPART_BIN=<binary> experiments/.venv/bin/python \\
-        experiments/deep_hedging_mm_run3.py run \\
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\
+    VECLIB_MAXIMUM_THREADS=1 MM_COUNTERPART_BIN=<binary> \\
+        experiments/.venv/bin/python experiments/deep_hedging_mm_run3.py run \\
         --code-commit C --preregistration-sha256 H_P \\
         --template-sha256 T --manifest-sha256 L [--restart]
 
 - `template` writes the launch manifest template (`TEMPLATE`) from the
   tree: every pin, the forbidden seeds and two null seed slots. It is
-  committed with the code in commit C.
+  committed with the code in commit C. Run it with the same four thread
+  variables set to 1, since the template pins them.
 - `fill` is the maintainer's: it draws both seeds with `secrets` under the
   fill rule and writes the final manifest (`MANIFEST`), which is committed
   verbatim in a child commit of C that changes nothing else.
@@ -99,6 +101,17 @@ LITERAL_SEEDS = (1, 2, 3, 5, 11, 12, 101, 202, 20261103, 2**64 - 1)
 # the two causes without an exception need a system record.
 INFRA_ERRNOS = {errno.ENOSPC: "ENOSPC", errno.EIO: "EIO", errno.EDQUOT: "EDQUOT"}
 INFRA_SYSTEM_CAUSES = frozenset({"oom-kill", "host-restart"})
+# Thread counts of the numerical libraries under numpy and torch. They act
+# only when set before the process starts, so the launch command sets them
+# to 1, the template pins them, and the run refuses any other value.
+THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
+# The causes a failure record may give, each with its verbatim system
+# record: the two without an exception, and those whose exception record
+# the run could not write itself (a full disk), copied from its stderr.
+FAILURE_RECORD_CAUSES = INFRA_SYSTEM_CAUSES | frozenset(INFRA_ERRNOS.values()) | {"MemoryError"}
+# A restart must begin within this many seconds of the interrupted
+# attempt's last record.
+RESTART_WINDOW_S = 3600
 
 
 class LaunchError(Exception):
@@ -231,6 +244,7 @@ def environment() -> dict:
         "machine": str(platform.machine()),
         "torch_threads": int(torch.get_num_threads()),
         "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
+        "thread_env": {k: os.environ.get(k) for k in THREAD_ENV},
     }
 
 
@@ -317,6 +331,14 @@ def verify_launch(
     diff = _strict_diff(facts_fn(root), pins, "pins")
     if diff:
         raise LaunchError(f"the tree does not match the template's pins: {diff[:10]}")
+    env = pins.get("environment")
+    if not (
+        isinstance(env, dict)
+        and env.get("torch_threads") == 1
+        and env.get("deterministic_algorithms") is True
+        and env.get("thread_env") == {k: "1" for k in THREAD_ENV}
+    ):
+        raise LaunchError(f"the template does not pin one thread everywhere and deterministic algorithms: {env}")
     if pins["preregistration"]["sha256"] != prereg_sha:
         raise LaunchError("the template does not pin the approved preregistration")
     if set(final) != set(template):
@@ -348,11 +370,13 @@ def write_exclusive(path: Path, data: bytes) -> None:
         os.fsync(f.fileno())
 
 
-def publish_exclusive(path: Path, data: bytes) -> None:
-    """Writes to a temporary file in the same directory and links it to
-    `path` in one step: the file exists complete or not at all, and an
-    existing one is never replaced."""
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+def publish_exclusive(path: Path, data: bytes, tmp_dir: Path) -> None:
+    """Writes to a temporary file in `tmp_dir` (the attempt's own
+    directory, on the same filesystem) and links it to `path` in one step:
+    the file exists complete or not at all, an existing one is never
+    replaced, and an interruption leaves its temporary file only inside
+    the attempt."""
+    fd, tmp = tempfile.mkstemp(dir=tmp_dir, prefix=f".{path.name}.")
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
@@ -375,13 +399,14 @@ def _comparable(manifest: dict) -> dict:
     return {k: v for k, v in manifest.items() if k not in ("attempt", "started_at")}
 
 
-def open_attempt(attempts: Path, out: Path, execution: dict, restart: bool) -> tuple[Path, dict | None]:
+def open_attempt(attempts: Path, out: Path, execution: dict, restart: bool, now: float | None = None) -> tuple[Path, dict | None]:
     """The preregistration's file policy. The results must not exist. A
     first attempt needs no attempt on record; a restart needs exactly one,
     interrupted for an infrastructure cause, and the same execution
     manifest apart from the attempt number and the start time. Publishes
     this attempt's execution manifest (the attempt starts there) and
     returns its directory and the earlier attempt's logged stages."""
+    now = time.time() if now is None else now
     if out.exists():
         raise AttemptError(f"{out.name} exists: run 3 has results")
     attempts.mkdir(exist_ok=True)
@@ -397,7 +422,10 @@ def open_attempt(attempts: Path, out: Path, execution: dict, restart: bool) -> t
         first = attempts / "attempt-1"
         try:
             m1 = json.loads((first / "execution_manifest.json").read_text())
-            stages = [json.loads(line) for line in (first / "stage.log").read_text().splitlines() if line]
+            # The stage log is absent when the interruption came before its
+            # creation; then there is no logged array to reproduce.
+            log1 = first / "stage.log"
+            stages = [json.loads(line) for line in log1.read_text().splitlines() if line] if log1.exists() else []
         except (OSError, ValueError) as e:
             raise AttemptError(f"attempt-1 is incomplete: {e}") from None
         exc = first / "exception.json"
@@ -410,15 +438,19 @@ def open_attempt(attempts: Path, out: Path, execution: dict, restart: bool) -> t
                 record = json.loads((first / "failure.json").read_text())
             except (OSError, ValueError):
                 raise AttemptError("attempt-1 has neither an exception record nor a failure record") from None
-            if record.get("cause") not in INFRA_SYSTEM_CAUSES or not record.get("system_record"):
+            if record.get("cause") not in FAILURE_RECORD_CAUSES or not record.get("system_record"):
                 raise AttemptError("attempt-1's failure record shows no infrastructure cause with its system record")
         if _comparable(m1) != _comparable(execution):
             raise AttemptError("the restart's execution manifest differs from attempt-1's")
+        written = [first / n for n in ("execution_manifest.json", "stage.log", "exception.json") if (first / n).exists()]
+        last = max(p.stat().st_mtime for p in written)
+        if now - last > RESTART_WINDOW_S:
+            raise AttemptError(f"the restart is {now - last:.0f} s after attempt-1's last record, beyond {RESTART_WINDOW_S} s")
         previous = {s["stage"]: s.get("arrays", {}) for s in stages}
         number = 2
     here = attempts / f"attempt-{number}"
     here.mkdir()
-    publish_exclusive(here / "execution_manifest.json", canonical_bytes(execution | {"attempt": number}))
+    publish_exclusive(here / "execution_manifest.json", canonical_bytes(execution | {"attempt": number}), here)
     return here, previous
 
 
@@ -426,8 +458,9 @@ class StageLog:
     """Stage names, elapsed seconds and data array hashes, nothing else.
     On a restart, every array hash must equal the interrupted attempt's."""
 
-    def __init__(self, path: Path, previous: dict | None, started: float):
+    def __init__(self, path: Path, previous: dict | None, started: float, echo: bool = True):
         self.f = open(path, "x", buffering=1)
+        self.echo = echo
         self.previous = previous
         self.started = started
 
@@ -438,7 +471,8 @@ class StageLog:
         line = json.dumps({"stage": name, "elapsed_s": round(time.time() - self.started, 1), "arrays": hashes}, sort_keys=True)
         self.f.write(line + "\n")
         os.fsync(self.f.fileno())
-        print(line, flush=True)
+        if self.echo:
+            print(line, flush=True)
 
 
 def array_sha256(a: np.ndarray) -> str:
@@ -483,8 +517,10 @@ def surface_a_changes(cal: dict, run2_cal: dict) -> list[dict]:
 # ---------------------------------------------------------------- run
 
 
-def run(final: dict, binding: dict, log: StageLog, started: float) -> dict:
-    cfg, ccfg, mcfg = CONFIG, COUNTERPART_CONFIG, mm2.MM_CONFIG
+def run(final: dict, binding: dict, log: StageLog, started: float, cfg: dict = CONFIG) -> dict:
+    """Steps 2 to 8 of the preregistration's "Order of the run". `cfg` is
+    CONFIG in the run; tests pass a smaller one."""
+    ccfg, mcfg = COUNTERPART_CONFIG, mm2.MM_CONFIG
     seeds = final["seeds"]
     hcfg = with_bootstrap_seed(cfg, seeds["bootstrap_seed"])
     binary = Path(os.environ.get(cp.MM_BINARY_ENV, ""))
@@ -710,12 +746,22 @@ def command_run(args) -> None:
     except (LaunchError, AttemptError, OSError) as e:
         preflight_failure(args, e)
         raise SystemExit(f"run 3 not started: {e}") from None
-    log = StageLog(here / "stage.log", previous, started)
+    results = execute_attempt(here, previous, OUT, started, lambda log: run(final, binding | {"attempt": int(here.name.split("-")[1])}, log, started))
+    print(json.dumps(results["decision"], indent=2))
+
+
+def execute_attempt(here: Path, previous: dict | None, out: Path, started: float, body) -> dict:
+    """An attempt from the moment its execution manifest exists: everything
+    after it, the stage log's creation included, runs under one handler
+    that records any exception in the attempt (never replacing a file)
+    before it propagates. Publishes the results."""
     try:
+        log = StageLog(here / "stage.log", previous, started)
         log.stage("checks")
-        results = run(final, binding | {"attempt": int(here.name.split("-")[1])}, log, started)
-        publish_exclusive(OUT, (json.dumps(results, indent=2, sort_keys=True) + "\n").encode())
+        results = body(log)
+        publish_exclusive(out, (json.dumps(results, indent=2, sort_keys=True) + "\n").encode(), here)
         log.stage("results")
+        return results
     except BaseException as e:
         record = {
             "type": type(e).__name__,
@@ -727,9 +773,10 @@ def command_run(args) -> None:
         try:
             write_exclusive(here / "exception.json", canonical_bytes(record))
         except OSError:
+            # A full disk: the traceback still reaches stderr, and is the
+            # system record of the failure record (preregistration).
             pass
         raise
-    print(json.dumps(results["decision"], indent=2))
 
 
 def deterministic_settings() -> None:
