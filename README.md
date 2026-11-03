@@ -324,7 +324,8 @@ and translates its prices, inventory and ledgers into these types.
 
 ### Status
 
-`0.3.0` is the current release; it adds budget gating for two-leg plans,
+`0.3.1` is the current release. It changes no library code; `0.3.0`
+added budget gating for two-leg plans,
 unwind admission and inverse perpetual funding, with breaking changes to
 `LegSpec`, `PlanAction::Unwind`, `AdmittedLeg` and `LegExecution` (see the
 changelog). The crate follows semantic versioning: below
