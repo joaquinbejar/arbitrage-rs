@@ -172,6 +172,52 @@ class Validator(unittest.TestCase):
                 ticks = [x for x in v if "multiple of the tick" in x]
                 self.assertEqual(ticks == [], on_tick, v[:5])
 
+    def test_a_manifest_that_is_not_an_object_is_a_violation_not_an_exception(self):
+        (self.d / "manifest.json").write_text("[]")
+        self.assertViolation("not a JSON object")
+
+    def test_a_lot_count_beyond_int64_is_a_violation_not_an_exception(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 5, str(2**63)))
+        refresh_hashes(self.d)
+        self.assertViolation("int64 range")
+
+    def test_a_crossed_book_hidden_by_float_rounding(self):
+        def crossed(lines):
+            lines = edit_field(lines, 1, 3, "100000000000000000000.01")
+            return edit_field(lines, 1, 4, "100000000000000000000.00")
+
+        edit_csv(self.d, "paths.csv", crossed)
+        refresh_hashes(self.d)
+        self.assertViolation("0 < bid <= ask")
+
+    def test_prices_with_huge_exponents_or_float_underflow(self):
+        for value, needle in (("1e-999999", "exponent beyond"), ("1e-350", "underflows to zero")):
+            with self.subTest(value=value):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 3, value))
+                refresh_hashes(self.d)
+                self.assertViolation(needle)
+
+    def test_json_integers_beyond_the_float_range_are_violations(self):
+        for field in ("tick", "lot", "fee_bps", "step_days"):
+            with self.subTest(field=field):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                self.manifest(lambda m: m.update({field: 10**400}))
+                v = ds.validate(self.d)
+                self.assertTrue(any(f"{field} must be" in x and "characters" in x for x in v), v[:3])
+
+    def test_violations_echo_a_bounded_prefix_of_the_value(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 3, "1" * 5000 + ".x"))
+        refresh_hashes(self.d)
+        v = [x for x in ds.validate(self.d) if "paths.csv:2" in x]
+        self.assertTrue(v and all(len(x) < 200 for x in v), v)
+
+    def test_only_the_implemented_rounding_contract_is_accepted(self):
+        self.manifest(lambda m: m.update(rounding="anything-at-all"))
+        self.assertViolation("rounding must be floor-lots")
+
     def test_a_duplicate_key(self):
         edit_csv(self.d, "execution.csv", lambda l: l[:2] + [l[1]] + l[2:])
         refresh_hashes(self.d)
@@ -239,6 +285,45 @@ class Runner(unittest.TestCase):
         for t in range(t0 + 1):
             np.testing.assert_array_equal(base[t], other[t])
         self.assertFalse(np.array_equal(base[t0 + 1], other[t0 + 1]))
+
+    def test_prices_near_the_float_maximum_rebase_finitely(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "ds"
+            shutil.copytree(SYNTHETIC, d)
+            m = json.loads((d / "manifest.json").read_text())
+            m["tick"] = 1e308
+            (d / "manifest.json").write_text(json.dumps(m))
+
+            def at_max(lines):
+                for i in range(1, len(lines)):
+                    lines = edit_field(edit_field(lines, i, 3, "1e308"), i, 4, "1e308")
+                return lines
+
+            edit_csv(d, "paths.csv", at_max)
+            refresh_hashes(d)
+            self.assertEqual(ds.validate(d), [])
+            book = empirical.rebased(ds.load(d), CONFIG)
+            for x in book.values():
+                self.assertTrue(np.all(np.isfinite(x)) and np.all(x == CONFIG["s0"]))
+
+    def test_a_book_that_overflows_when_rebased_is_refused_before_simulating(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "ds"
+            shutil.copytree(SYNTHETIC, d)
+            m = json.loads((d / "manifest.json").read_text())
+            m["tick"] = 1e-300
+            (d / "manifest.json").write_text(json.dumps(m))
+
+            def spread_out(lines):
+                lines = edit_field(edit_field(lines, 1, 3, "1e-300"), 1, 4, "1e-300")
+                return edit_field(edit_field(lines, 2, 3, "1e300"), 2, 4, "1e300")
+
+            edit_csv(d, "paths.csv", spread_out)
+            refresh_hashes(d)
+            self.assertEqual(ds.validate(d), [])
+            with self.assertRaises(ds.DatasetInvalid) as e:
+                empirical.rebased(ds.load(d), CONFIG)
+            self.assertIn("path 0", e.exception.violations[0])
 
     def test_a_rejected_order_fills_nothing_and_costs_nothing(self):
         data = ds.load(SYNTHETIC)

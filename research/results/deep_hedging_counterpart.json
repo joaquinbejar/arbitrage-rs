@@ -3362,7 +3362,7 @@
     "heston_sticky-moneyness": {
       "config_sha256": "059b22e46075ded83c135015dec4b5afa34732f2e27765ab026067f171d5eb81",
       "dynamics": "sticky-moneyness",
-      "implementation_sha256": "f51c1ccb967ac7e0af39d68c6b9ba792c92344c38a91a44abafb60f5735e7249",
+      "implementation_sha256": "5db8d844a4ce78991ed1f8f07615948a871b6ec71d41ecc1fcc10b31ccada9ac",
       "name": "reference-bsm",
       "surface_sha256": "cc69c8a8dee90a8f2139a4e2d008c30a77ed8f89c99d5c508179ba3f8ed4e683",
       "version": "1"
@@ -3370,7 +3370,7 @@
     "heston_sticky-strike": {
       "config_sha256": "949b572d61adf6bd9f8477e7052581d37f97e60b012f135343f778e0f0ad573e",
       "dynamics": "sticky-strike",
-      "implementation_sha256": "f51c1ccb967ac7e0af39d68c6b9ba792c92344c38a91a44abafb60f5735e7249",
+      "implementation_sha256": "5db8d844a4ce78991ed1f8f07615948a871b6ec71d41ecc1fcc10b31ccada9ac",
       "name": "reference-bsm",
       "surface_sha256": "cc69c8a8dee90a8f2139a4e2d008c30a77ed8f89c99d5c508179ba3f8ed4e683",
       "version": "1"
@@ -3378,7 +3378,7 @@
     "in_model": {
       "config_sha256": "059b22e46075ded83c135015dec4b5afa34732f2e27765ab026067f171d5eb81",
       "dynamics": "sticky-moneyness",
-      "implementation_sha256": "f51c1ccb967ac7e0af39d68c6b9ba792c92344c38a91a44abafb60f5735e7249",
+      "implementation_sha256": "5db8d844a4ce78991ed1f8f07615948a871b6ec71d41ecc1fcc10b31ccada9ac",
       "name": "reference-bsm",
       "surface": "flat",
       "surface_sha256": "f75e4649f7cba803ca0574a6a3d435fba40a5346ed0f84db2f5711ddf6b329c0",
@@ -3414,11 +3414,11 @@
     "in_model": null
   },
   "run": {
-    "git_commit": "01e41fb9c9069ae41f3303a2d93243da73254a53",
+    "git_commit": "cd630e6794ebd1d99ce31a2b78e4e886edb9e3de",
     "machine": "arm64",
     "numpy": "2.5.4",
     "python": "3.12.16",
-    "seconds": 507.9,
+    "seconds": 484.9,
     "torch": "2.15.0"
   },
   "weights": {
