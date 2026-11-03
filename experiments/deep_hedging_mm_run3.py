@@ -430,6 +430,44 @@ def last_record_time(manifest: dict, stages: list[dict], exception: dict | None)
     return max(parse_utc(x) for x in stamps)
 
 
+def read_record(path: Path) -> dict | None:
+    """A JSON object record, or None when it is absent or torn (an
+    interrupted write). A torn file is left as it is."""
+    try:
+        obj = json.loads(path.read_bytes().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def read_stage_log(path: Path) -> list[dict]:
+    """The complete lines of an interrupted attempt's stage log. The log is
+    absent when the interruption came before its creation. Each line is
+    written whole with its LF, so only the last one can be torn: a tail
+    without LF is ignored and left in the file. Any complete line that is
+    not a stage record, or a stage logged twice, refuses the restart."""
+    if not path.exists():
+        return []
+    try:
+        raw = path.read_bytes()
+    except OSError as e:
+        raise AttemptError(f"attempt-1's stage log is unreadable: {e}") from None
+    complete = raw.split(b"\n")[:-1]
+    stages, seen = [], set()
+    for i, line in enumerate(complete):
+        try:
+            st = json.loads(line.decode("utf-8"))
+        except ValueError:
+            raise AttemptError(f"attempt-1's stage log line {i + 1} is not a record") from None
+        if not (isinstance(st, dict) and isinstance(st.get("stage"), str) and isinstance(st.get("arrays"), dict) and "at" in st):
+            raise AttemptError(f"attempt-1's stage log line {i + 1} is not a stage record")
+        if st["stage"] in seen:
+            raise AttemptError(f"attempt-1 logged stage {st['stage']} twice")
+        seen.add(st["stage"])
+        stages.append(st)
+    return stages
+
+
 def _comparable(manifest: dict) -> dict:
     return {k: v for k, v in manifest.items() if k not in ("attempt", "started_at")}
 
@@ -457,32 +495,28 @@ def open_attempt(attempts: Path, out: Path, execution: dict, restart: bool, now:
         first = attempts / "attempt-1"
         try:
             m1 = json.loads((first / "execution_manifest.json").read_text())
-            # The stage log is absent when the interruption came before its
-            # creation; then there is no logged array to reproduce.
-            log1 = first / "stage.log"
-            stages = [json.loads(line) for line in log1.read_text().splitlines() if line] if log1.exists() else []
         except (OSError, ValueError) as e:
-            raise AttemptError(f"attempt-1 is incomplete: {e}") from None
-        exc = first / "exception.json"
-        if exc.exists():
-            cause = classify_exception(json.loads(exc.read_text()))
-            if cause is None:
+            raise AttemptError(f"attempt-1 has no readable execution manifest: {e}") from None
+        stages = read_stage_log(first / "stage.log")
+        exception = read_record(first / "exception.json")
+        if exception is not None:
+            if classify_exception(exception) is None:
                 raise AttemptError("attempt-1 ended with an exception that is not an infrastructure cause")
         else:
-            try:
-                record = json.loads((first / "failure.json").read_text())
-            except (OSError, ValueError):
-                raise AttemptError("attempt-1 has neither an exception record nor a failure record") from None
-            if record.get("cause") not in FAILURE_RECORD_CAUSES or not record.get("system_record"):
-                raise AttemptError("attempt-1's failure record shows no infrastructure cause with its system record")
+            # No exception record, or a torn one (kept as it is): only a
+            # failure record with an enumerated cause and its verbatim
+            # system record allows the restart.
+            record = read_record(first / "failure.json")
+            if record is None or record.get("cause") not in FAILURE_RECORD_CAUSES or not record.get("system_record"):
+                raise AttemptError("attempt-1 has no valid exception record and no failure record with an infrastructure cause and its system record")
         if _comparable(m1) != _comparable(execution):
             raise AttemptError("the restart's execution manifest differs from attempt-1's")
-        last = last_record_time(m1, stages, json.loads(exc.read_text()) if exc.exists() else None)
+        last = last_record_time(m1, stages, exception)
         if last > now:
             raise AttemptError(f"attempt-1's last record is in the future ({last - now:.0f} s ahead)")
         if now - last > RESTART_WINDOW_S:
             raise AttemptError(f"the restart is {now - last:.0f} s after attempt-1's last record, beyond {RESTART_WINDOW_S} s")
-        previous = {s["stage"]: s.get("arrays", {}) for s in stages}
+        previous = {st["stage"]: st["arrays"] for st in stages}
         number = 2
     here = attempts / f"attempt-{number}"
     here.mkdir()
@@ -499,6 +533,12 @@ class StageLog:
         self.echo = echo
         self.previous = previous
         self.started = started
+
+    def close(self) -> None:
+        try:
+            self.f.close()
+        except OSError:
+            pass
 
     def stage(self, name: str, arrays: dict | None = None) -> None:
         hashes = {k: array_sha256(v) for k, v in (arrays or {}).items()}
@@ -791,14 +831,18 @@ def execute_attempt(here: Path, previous: dict | None, out: Path, started: float
     after it, the stage log's creation included, runs under one handler
     that records any exception in the attempt (never replacing a file)
     before it propagates. Publishes the results."""
+    log = None
     try:
         log = StageLog(here / "stage.log", previous, started)
         log.stage("checks")
         results = body(log)
         publish_exclusive(out, (json.dumps(results, indent=2, sort_keys=True) + "\n").encode(), here)
         log.stage("results")
+        log.close()
         return results
     except BaseException as e:
+        if log is not None:
+            log.close()
         record = {
             "type": type(e).__name__,
             "errno": getattr(e, "errno", None),
@@ -807,7 +851,7 @@ def execute_attempt(here: Path, previous: dict | None, out: Path, started: float
             "at": utc_stamp(),
         }
         try:
-            write_exclusive(here / "exception.json", canonical_bytes(record))
+            publish_exclusive(here / "exception.json", canonical_bytes(record), here)
         except OSError:
             # A full disk: the traceback still reaches stderr, and is the
             # system record of the failure record (preregistration).

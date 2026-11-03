@@ -304,7 +304,7 @@
     "experiments/deep_hedging_counterpart.py": "f3221d2be443743d574861ab266049e403d2773a767a43adcba89a9c9e436366",
     "experiments/deep_hedging_mm.py": "27b0f4b722cb59cb124c5c771c1a43c1c66007b3db28469857f78c7c42beeced",
     "experiments/deep_hedging_mm_report.py": "d31f49ebd16d663e4ae0ae8897e1b0f7378eadf314a1da3c9780c21b5e5d4e2c",
-    "experiments/deep_hedging_mm_run3.py": "a7695be6fa47d4dd7cc66ea02556784fd727447f53430f4dced6b5d758f83b30",
+    "experiments/deep_hedging_mm_run3.py": "d08053ac135e516ea32d987fb19e9a2ac593d3dbb37cb9263b97aca88b14944c",
     "experiments/empirical.py": "5d0e16359841435013cb554f54e682d84b96cad03838899ac87ed126f8724503",
     "experiments/heston.py": "070f2a3ee6caa48f660e58473e488c8cf210997260b23edbfd3b6e3160ed4bcd",
     "experiments/make_synthetic_dataset.py": "3013484a843bfd9d0e0b1dfa2ff3395d71c544292ff2e76ef8c67b957b6270d5",
@@ -317,7 +317,7 @@
     "experiments/test_counterpart.py": "09c9ad08224f2f228c19247cb5568cf2a6d4782da3cefea0f0d387c3061f2617",
     "experiments/test_dataset.py": "812d78b205aad6d9650d2d5f575024a76b75d27eec3f5c579c5922e202a262a4",
     "experiments/test_deep_hedging_mm.py": "8f72772d82852d275a670f09c7f74558e86443a6306b61669194cbe5cb62a135",
-    "experiments/test_deep_hedging_mm_run3.py": "37f595f24f1138f40fe7eb75ed8016b2691e2f88d23b08a34643d3a5d4e3fb3f",
+    "experiments/test_deep_hedging_mm_run3.py": "d8f39cda321f8c9393e6a2417deeb7649af496423ce7a903639cb3fca9c5b3e9",
     "experiments/test_svi_domain.py": "13e4323672e90a92a2e1d2f8046840054bc90954704629740cb9f02ccdcce42e"
   },
   "first_preregistration_sha256": "64346ef1a2734f3fddfe5ae1d7e78287ede63439abfc0c5c8240581eaaa404f9",
@@ -342,7 +342,7 @@
   ],
   "preregistration": {
     "path": "research/preregistration/deep_hedging_mm_v2.md",
-    "sha256": "ed675b92eb90273fb8c11079ec4fc5ab5c555dba38a01874b342e266183a43c2"
+    "sha256": "0632e0689f583f4814693c7645c6d8aa4ea212777d969da0e3324acf78f2e080"
   },
   "results_inputs": {
     "research/results/deep_hedging_counterpart.json": "a6891fea3bcb7cab4146a848ba500ef992a73b2943abcb9c7f8528f48a63414d",

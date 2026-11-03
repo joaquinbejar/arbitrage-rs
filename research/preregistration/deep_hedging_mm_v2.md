@@ -66,8 +66,9 @@ code rather than in run 3 itself:
 
 - on commit `05e2c9e86258e890101d61b8540871b4d0ca638b`, which differs from
   the code commit only in the dry run's seeds being forbidden, in this
-  section, and in the restart window's anchor (record times instead of
-  file times, so each stage line also carries its UTC time);
+  section, in the restart window's anchor (record times instead of file
+  times, so each stage line also carries its UTC time), and in how a
+  restart reads torn records (below, "Failures");
 - in a scratch clone, through the real launch path (template, a dummy
   final manifest in a child commit, `run` with the four launch arguments
   and the thread variables at 1);
@@ -256,9 +257,14 @@ Otherwise the outcome is REVISE, or REJECT under the criterion's own rule.
   execution manifest's start, the stage lines, the exception record; file
   times do not count). The run refuses a later restart, and a record time
   in the future:
-  - attempt 1 must be complete on record (its execution manifest and stage
-    log, and its exception record or failure record), and is kept
-    verbatim;
+  - attempt 1 must be on record and is kept verbatim: its execution
+    manifest, its stage log if it was created, and its exception record or
+    failure record. The exception record is published whole or not at
+    all; one found torn counts as absent, so only a failure record can
+    then allow the restart. The stage log is written one whole line at a
+    time, so only its last line can be torn: that tail is ignored and
+    kept. Any other line that is not a stage record, or a stage logged
+    twice, makes the interruption final;
   - attempt 2's execution manifest must equal attempt 1's apart from the
     attempt number and the start time, so the commit, approvals, seeds,
     host, environment and binary are the same;

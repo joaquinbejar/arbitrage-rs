@@ -480,6 +480,116 @@ class Lifecycle(unittest.TestCase):
 _STAGE_LOG = r3.StageLog
 
 
+class TornEvidence(unittest.TestCase):
+    """An interrupted write leaves a torn file; it is kept as it is, and
+    never authorizes or blocks a restart by itself."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.attempts = self.dir / "attempts"
+        self.out = self.dir / "run3.json"
+        self.execution = {"launch": {}, "seeds": GOOD, "started_at": r3.utc_stamp()}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def first(self, stages=("data",)):
+        here, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=False)
+        log = _quiet(here / "stage.log", previous, 0.0)
+        for name in stages:
+            log.stage(name, {"x": np.arange(3.0)})
+        log.close()
+        return here
+
+    def restart(self):
+        return r3.open_attempt(self.attempts, self.out, self.execution, restart=True)
+
+    def test_a_torn_exception_record_falls_back_to_the_failure_record(self):
+        here = self.first()
+        (here / "exception.json").write_bytes(b'{"type":')
+        with self.assertRaises(r3.AttemptError):
+            self.restart()
+        (here / "failure.json").write_text(json.dumps({"cause": "ENOSPC", "system_record": "OSError: [Errno 28] No space left on device"}))
+        second, previous = self.restart()
+        self.assertEqual(second.name, "attempt-2")
+        self.assertEqual((here / "exception.json").read_bytes(), b'{"type":')
+
+    def test_a_torn_non_infrastructure_record_is_not_a_cause(self):
+        here = self.first()
+        (here / "exception.json").write_bytes(b'{"type": "ValueError", "at": ')
+        (here / "failure.json").write_text(json.dumps({"cause": "operator", "system_record": "x"}))
+        with self.assertRaises(r3.AttemptError):
+            self.restart()
+
+    def test_a_torn_last_stage_line_is_ignored_and_kept(self):
+        here = self.first(stages=("data", "surfaces"))
+        log = here / "stage.log"
+        tail = b'{"arrays": {"y": "ab'
+        with open(log, "ab") as f:
+            f.write(tail)
+        (here / "exception.json").write_text(json.dumps({"type": "OSError", "errno": errno.ENOSPC, "at": r3.utc_stamp()}))
+        second, previous = self.restart()
+        self.assertEqual(set(previous), {"data", "surfaces"})
+        self.assertTrue(log.read_bytes().endswith(tail))
+
+    def test_a_bad_complete_line_or_a_repeated_stage_is_final(self):
+        for bad in (b"not json\n", b'{"stage": "data"}\n', json.dumps({"stage": "data", "at": r3.utc_stamp(), "arrays": {}}).encode() + b"\n"):
+            with self.subTest(bad):
+                self.tearDown()
+                self.setUp()
+                here = self.first()
+                with open(here / "stage.log", "ab") as f:
+                    f.write(bad)
+                (here / "exception.json").write_text(json.dumps({"type": "MemoryError", "at": r3.utc_stamp()}))
+                with self.assertRaises(r3.AttemptError):
+                    self.restart()
+
+    def test_the_exception_record_is_whole_or_absent_and_the_failure_propagates(self):
+        here, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=False)
+        real_fsync = os.fsync
+        calls = []
+
+        def full_disk(fd):
+            calls.append(fd)
+            if len(calls) >= 2:  # the stage log line is synced; the record temp file is not
+                raise OSError(errno.ENOSPC, "No space left on device")
+            real_fsync(fd)
+
+        def body(log):
+            raise MemoryError
+
+        os.fsync = full_disk
+        try:
+            with self.assertRaises(MemoryError):
+                r3.execute_attempt(here, previous, self.out, 0.0, body)
+        finally:
+            os.fsync = real_fsync
+        self.assertFalse((here / "exception.json").exists())
+        self.assertEqual([p.name for p in here.iterdir() if p.name.startswith(".exception")], [])
+
+    def test_the_stage_log_is_closed_on_every_path(self):
+        opened = []
+
+        def tracked(path, previous, started):
+            log = _quiet(path, previous, started)
+            opened.append(log)
+            return log
+
+        real = r3.StageLog
+        r3.StageLog = tracked
+        try:
+            here, previous = r3.open_attempt(self.attempts, self.out, self.execution, restart=False)
+            r3.execute_attempt(here, previous, self.out, 0.0, lambda log: {"decision": {}})
+            d2 = self.dir / "second"
+            here, previous = r3.open_attempt(d2, d2 / "out.json", self.execution, restart=False)
+            with self.assertRaises(ValueError):
+                r3.execute_attempt(here, previous, d2 / "out.json", 0.0, lambda log: (_ for _ in ()).throw(ValueError("x")))
+        finally:
+            r3.StageLog = real
+        self.assertEqual([log.f.closed for log in opened], [True, True])
+
+
 def _quiet(path, previous, started):
     return _STAGE_LOG(path, previous, started, echo=False)
 
