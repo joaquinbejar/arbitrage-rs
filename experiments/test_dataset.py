@@ -93,6 +93,20 @@ class Validator(unittest.TestCase):
         self.manifest(lambda m: m.update(seed=None))
         self.assertViolation("must declare its integer seed")
 
+    def test_the_seed_is_bounded_to_u64(self):
+        for seed in (2**64, -1, 10**400):
+            with self.subTest(seed=seed):
+                self.manifest(lambda m, seed=seed: m.update(seed=seed))
+                v = [x for x in ds.validate(self.d) if "seed" in x]
+                self.assertTrue(v and all("outside [0, 2**64 - 1]" in x and len(x) < 200 for x in v), v)
+        self.manifest(lambda m: m.update(seed=2**64 - 1))
+        self.assertFalse([x for x in ds.validate(self.d) if "seed" in x])
+
+    def test_steps_above_the_bound_echo_a_bounded_prefix(self):
+        self.manifest(lambda m: m.update(steps=10**400))
+        v = [x for x in ds.validate(self.d) if "steps" in x]
+        self.assertTrue(v and all("above" in x and "characters" in x and len(x) < 200 for x in v), v)
+
     def test_a_queue_model_without_limits(self):
         self.manifest(lambda m: m["queue_model"].update(limits=[]))
         self.assertViolation("queue_model.limits")

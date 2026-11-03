@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   s0 * (x / mid_0), so prices near the float maximum stay finite, and a
   book that is not finite and positive once rebased is refused before
   simulating.
+- Research, outside the crate: the dataset validator bounds a declared
+  `seed` to a u64, like the generator's, and the steps-bound message
+  echoes at most 40 characters of the value.
 
 ## [0.3.1] - 2026-11-03
 

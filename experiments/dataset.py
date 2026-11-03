@@ -75,6 +75,8 @@ ROUNDING = "floor-lots"
 MAX_LOTS = 2**63 - 1
 MAX_EXPONENT = 400
 MAX_STEPS = 100_000
+# The seed is recorded only; bounded like the generator's (a u64).
+MAX_SEED = 2**64 - 1
 
 _INT = re.compile(r"^(0|[1-9][0-9]*)$")
 _NUMBER = re.compile(r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$")
@@ -162,6 +164,9 @@ def _manifest_violations(m) -> list[str]:
             out.append(f"manifest: unknown field {field}")
     if m.get("synthetic") is True and not (isinstance(m.get("seed"), int) and not isinstance(m.get("seed"), bool)):
         out.append("manifest: a synthetic dataset must declare its integer seed")
+    seed = m.get("seed")
+    if isinstance(seed, int) and not isinstance(seed, bool) and not 0 <= seed <= MAX_SEED:
+        out.append(f"manifest: seed {_show(seed)} is outside [0, 2**64 - 1]")
     files = m.get("files")
     if isinstance(files, dict):
         for f in FILES:
@@ -266,7 +271,7 @@ def _parse(directory: Path):
         return manifest, None, out, hashes
     steps = manifest["steps"]
     if steps > MAX_STEPS:
-        out.append(f"manifest: steps {steps} above {MAX_STEPS}")
+        out.append(f"manifest: steps {_show(steps)} above {MAX_STEPS}")
         return manifest, None, out, hashes
     tick = None
     if _check_type(manifest.get("tick"), "positive_number"):
