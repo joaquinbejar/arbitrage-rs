@@ -158,7 +158,16 @@ def solve_box_ls(design: np.ndarray, target: np.ndarray, weight: np.ndarray, g: 
 # g x - h <= FEASIBILITY_TOLERANCE * scale, scale = max(1, max |h|).
 FEASIBILITY_TOLERANCE = 1e-12
 # Indices of the rows of `_constraints`.
-C_FLAT, RHO_UPPER, RHO_LOWER = 0, 1, 2
+C_FLAT, RHO_UPPER, RHO_LOWER, LEE_UPPER, LEE_LOWER, A_LOWER, A_UPPER = range(7)
+
+
+def faces_on(x, active, g: np.ndarray, h: np.ndarray) -> set[int]:
+    """The rows of `_constraints` that hold with equality: those the face
+    has, and those within the solver's feasibility tolerance
+    (g x - h >= -FEASIBILITY_TOLERANCE * scale, scale = max(1, max |h|))."""
+    scale = max(1.0, float(np.max(np.abs(h))))
+    residual = g @ np.asarray(x, dtype=float) - h
+    return {i for i in range(len(h)) if i in active or residual[i] >= -FEASIBILITY_TOLERANCE * scale}
 
 
 def recover_rho(x, active, g: np.ndarray, h: np.ndarray) -> float:
@@ -174,24 +183,56 @@ def recover_rho(x, active, g: np.ndarray, h: np.ndarray) -> float:
     - No bound on, or both (c is then within the tolerance of 0 and the face
       does not identify rho): rho = d / c, and the domain check decides.
 
-    Snapping changes w(k) by exactly (c - |d|) |k - m| / sigma (the term
-    b rho (k - m) with b = c / sigma), which is at most
-    FEASIBILITY_TOLERANCE * scale * |y| with y = (k - m) / sigma: a bound in
-    the solver's coefficient units times |y|, not a bound on w. Non-finite x
-    is an error."""
+    Snapping changes the term b rho (k - m), with b = c / sigma, by
+    (c rho_new - d) (k - m) / sigma, whose magnitude is |c - |d|| |k - m| /
+    sigma: at most FEASIBILITY_TOLERANCE * scale * |y| with y = (k - m) /
+    sigma, a bound in the solver's coefficient units times |y|, not a bound
+    on w. Non-finite x is an error."""
     a, d, c = (float(v) for v in x)
     if not all(math.isfinite(v) for v in (a, d, c)):
         raise ValueError(f"svi fit: non-finite solution {(a, d, c)}")
     if c == 0.0:
         return 0.0
-    scale = max(1.0, float(np.max(np.abs(h))))
-    residual = g @ np.asarray(x, dtype=float) - h
-    on = {i for i in (RHO_UPPER, RHO_LOWER) if i in active or residual[i] >= -FEASIBILITY_TOLERANCE * scale}
+    on = faces_on(x, active, g, h) & {RHO_UPPER, RHO_LOWER}
     if on == {RHO_UPPER}:
         return 1.0
     if on == {RHO_LOWER}:
         return -1.0
     return d / c
+
+
+def recover_parameters(x, active, g: np.ndarray, h: np.ndarray, sigma: float, a_max: float) -> tuple[float, float, float]:
+    """(a, b, rho) from the solution x = (a, d, c) of a face. A parameter on
+    an active bound comes from the constraint itself, by the same rule as
+    `recover_rho` (exactly one face of that parameter on):
+
+    - rho: as `recover_rho`.
+    - b: c / sigma, or 0 when c = 0; on Lee's face of the sign of rho
+      (d + c = 2 sigma for rho >= 0, c - d = 2 sigma for rho <= 0),
+      b = 2 / (1 + |rho|) exactly. w moves by exactly
+      |Δb| |rho (k - m) + sqrt((k - m)^2 + sigma^2)|, with Δb within the
+      tolerance divided by sigma.
+    - a: a >= 0 on gives a = 0, a <= a_max on gives a = a_max, both or
+      neither keeps the solve's a. w moves by exactly |Δa|, within the
+      tolerance.
+    """
+    a_raw, d, c = (float(v) for v in x)
+    rho = recover_rho(x, active, g, h)
+    on = faces_on(x, active, g, h)
+    if c == 0.0:
+        b = 0.0
+    elif (rho >= 0.0 and LEE_UPPER in on) or (rho <= 0.0 and LEE_LOWER in on):
+        b = LEE_SLOPE_BOUND / (1.0 + abs(rho))
+    else:
+        b = c / sigma
+    a_faces = on & {A_LOWER, A_UPPER}
+    if a_faces == {A_LOWER}:
+        a = 0.0
+    elif a_faces == {A_UPPER}:
+        a = a_max
+    else:
+        a = a_raw
+    return a, b, rho
 
 
 def check_slice_domain(sl: "SviSlice", a_max: float) -> None:
@@ -270,11 +311,9 @@ def fit_slice(tau: float, k: np.ndarray, w_obs: np.ndarray, weight: np.ndarray, 
     i = int(np.argmin(np.abs(bms - m)))
     j = int(np.argmin(np.abs(bss - ls)))
     sigma = math.exp(ls)
-    a, d, c = (float(v) for v in x)
-    b = c / sigma
     a_max = float(np.max(w_obs))
     g, h = _constraints(sigma, a_max)
-    rho = recover_rho(x, active, g, h)
+    a, b, rho = recover_parameters(x, active, g, h, sigma, a_max)
     sl = SviSlice(tau=tau, a=a, b=b, rho=rho, m=m, sigma=sigma)
     check_slice_domain(sl, a_max)
     report = {

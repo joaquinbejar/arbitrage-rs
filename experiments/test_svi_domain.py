@@ -94,6 +94,43 @@ class RecoverRho(unittest.TestCase):
                 svi.recover_rho(np.array([0.01, bad, 0.003]), (), g, h)
 
 
+class RecoverParameters(unittest.TestCase):
+    sigma, a_max = 0.1, 0.05
+
+    def recover(self, x, active=()):
+        g, h = svi._constraints(self.sigma, self.a_max)
+        return svi.recover_parameters(np.array(x, dtype=float), active, g, h, self.sigma, self.a_max)
+
+    def test_a_on_its_lower_face_is_zero_exactly(self):
+        for a_raw in (-1e-17, 1e-17, -7.3e-13):
+            a, _, _ = self.recover([a_raw, -0.001, 0.003])
+            self.assertEqual(a, 0.0, a_raw)
+
+    def test_a_on_its_upper_face_is_a_max_exactly(self):
+        for a_raw in (math.nextafter(self.a_max, 1.0), math.nextafter(self.a_max, 0.0)):
+            a, _, _ = self.recover([a_raw, -0.001, 0.003])
+            self.assertEqual(a, self.a_max)
+
+    def test_an_interior_a_is_kept(self):
+        a, _, _ = self.recover([0.01, -0.001, 0.003])
+        self.assertEqual(a, 0.01)
+
+    def test_b_on_lee_face_of_the_sign_of_rho_is_exact(self):
+        # c + |d| = 2 sigma, d = -0.4 c: c / sigma would put b (1 + |rho|)
+        # one ulp above 2.
+        c = 2 * self.sigma / 1.4
+        for sign in (-1.0, 1.0):
+            d = sign * 0.4 * c
+            x = [0.01, d * (1 + 2e-16), c * (1 + 2e-16)]
+            a, b, rho = self.recover(x)
+            self.assertEqual(b, svi.LEE_SLOPE_BOUND / (1 + abs(rho)))
+            self.assertLessEqual(b * (1 + abs(rho)), svi.LEE_SLOPE_BOUND)
+
+    def test_b_off_lee_face_is_c_over_sigma(self):
+        _, b, _ = self.recover([0.01, -0.001, 0.003])
+        self.assertEqual(b, 0.003 / self.sigma)
+
+
 class DomainCheck(unittest.TestCase):
     def slice(self, **kw):
         p = {"tau": 0.1, "a": 0.01, "b": 0.05, "rho": -0.5, "m": 0.0, "sigma": 0.1} | kw
@@ -121,6 +158,17 @@ class Fits(unittest.TestCase):
             self.assertLessEqual(abs(sl.rho), 1.0)
             self.assertEqual(sl.rho, rho, rep)
 
+    def test_fits_of_negative_a_truths_land_on_a_zero_without_error(self):
+        # Raw SVI with a < 0 is common: the fit sits on the a >= 0 face and a
+        # is recovered as 0 exactly, not as a rounded -1e-17.
+        k = np.linspace(-0.3, 0.3, 25)
+        for truth in (
+            svi.SviSlice(tau=30 / 365, a=-0.01, b=0.3, rho=-0.3, m=0.02, sigma=0.2),
+            svi.SviSlice(tau=30 / 365, a=-0.0005, b=0.05, rho=-0.8, m=-0.01, sigma=0.05),
+        ):
+            sl, rep = svi.fit_slice(truth.tau, k, truth.w(k), np.ones_like(k), FIT)
+            self.assertEqual(sl.a, 0.0, rep)
+
     def test_an_interior_fit_keeps_rho_inside(self):
         sl, _ = fit(-0.4)
         self.assertLess(abs(sl.rho), 1.0)
@@ -131,8 +179,9 @@ class Fits(unittest.TestCase):
         # refitted. Days 1 to 16 sit on the rho >= -1 face (the solver
         # reports it active); their stored rho is d / c, up to four ulp from
         # -1 and on five days one ulp below it. They now give -1.0 exactly.
-        # Every other parameter of every slice, and rho on the other days,
-        # is unchanged bit for bit.
+        # No day has an a face or a Lee face on, so a and b come from the
+        # solve as before: every other parameter of every slice, and rho on
+        # the other days, is unchanged bit for bit.
         import calibration
         from deep_hedging_counterpart import COUNTERPART_CONFIG
 

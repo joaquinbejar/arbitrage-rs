@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Research, outside the crate: the Python SVI fit (`experiments/svi.py`)
-  takes rho from the rho bound when that face is active, within the
-  solver's feasibility tolerance (rho = +-1 exactly), instead of d / c,
-  which could land one ulp outside [-1, 1]. A fitted slice is then checked
+  takes a parameter on an active bound from the constraint itself, when
+  exactly one face of that parameter holds within the solver's feasibility
+  tolerance: rho = +-1, a = 0 or a_max, and b = 2 / (1 + |rho|) on Lee's
+  face. Before, rho = d / c could land one ulp outside [-1, 1], and a one
+  ulp below 0. A fitted slice is then checked
   against the whole raw SVI domain and a violation is an error, never
   clamped; a flat slice (c = 0) has rho = 0. Future fits change; the published
   results and artifacts are not regenerated (on the published counterpart
