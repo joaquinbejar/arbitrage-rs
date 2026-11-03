@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   solver's feasibility tolerance (rho = +-1 exactly), instead of d / c,
   which could land one ulp outside [-1, 1]. A fitted slice is then checked
   against the whole raw SVI domain and a violation is an error, never
-  clamped; a flat slice has rho = 0. Future fits change; the published
+  clamped; a flat slice (c = 0) has rho = 0. Future fits change; the published
   results and artifacts are not regenerated (on the published counterpart
   surface, days 1 to 16 sit on the rho = -1 face: their rho becomes -1.0
   exactly, up to four ulp from before, and nothing else changes).

@@ -164,30 +164,32 @@ C_FLAT, RHO_UPPER, RHO_LOWER = 0, 1, 2
 def recover_rho(x, active, g: np.ndarray, h: np.ndarray) -> float:
     """rho from the solution x = (a, d, c) of a face.
 
-    A constraint is active when the face has it, or when it holds with
-    equality within the solver's feasibility tolerance. With c > 0, an active
-    rho bound gives rho exactly (d = c: rho = 1; d = -c: rho = -1), as the
-    constraint itself says; d / c would carry the rounding of the solve, one
-    ulp outside [-1, 1]. Otherwise rho = d / c. With c = 0 within the
-    tolerance (the flat face active, b about 0) rho does not change w by more
-    than the tolerance and is 0. Both rho bounds active with c > 0 is a
-    contradiction and an error."""
+    - c = 0 exactly (a flat slice, b = 0): rho does not enter w; it is 0.
+    - Otherwise a rho bound is on when the face has it, or when it holds with
+      equality within the solver's feasibility tolerance (g x - h >=
+      -FEASIBILITY_TOLERANCE * scale, scale = max(1, max |h|)).
+    - Exactly one bound on: rho is that bound, 1 or -1 exactly, as the
+      constraint says; d / c would carry the rounding of the solve, one ulp
+      outside [-1, 1].
+    - No bound on, or both (c is then within the tolerance of 0 and the face
+      does not identify rho): rho = d / c, and the domain check decides.
+
+    Snapping changes w(k) by exactly (c - |d|) |k - m| / sigma (the term
+    b rho (k - m) with b = c / sigma), which is at most
+    FEASIBILITY_TOLERANCE * scale * |y| with y = (k - m) / sigma: a bound in
+    the solver's coefficient units times |y|, not a bound on w. Non-finite x
+    is an error."""
     a, d, c = (float(v) for v in x)
     if not all(math.isfinite(v) for v in (a, d, c)):
         raise ValueError(f"svi fit: non-finite solution {(a, d, c)}")
+    if c == 0.0:
+        return 0.0
     scale = max(1.0, float(np.max(np.abs(h))))
     residual = g @ np.asarray(x, dtype=float) - h
-    on = {i for i in range(len(h)) if i in active or residual[i] >= -FEASIBILITY_TOLERANCE * scale}
-    if c == 0.0 or C_FLAT in on:
-        # c = 0 within the tolerance: both rho bounds hold trivially and rho
-        # moves w by at most the tolerance; it is 0 by convention.
-        return 0.0
-    upper, lower = RHO_UPPER in on, RHO_LOWER in on
-    if upper and lower:
-        raise ValueError(f"svi fit: both rho bounds active with c = {c!r} > 0")
-    if upper:
+    on = {i for i in (RHO_UPPER, RHO_LOWER) if i in active or residual[i] >= -FEASIBILITY_TOLERANCE * scale}
+    if on == {RHO_UPPER}:
         return 1.0
-    if lower:
+    if on == {RHO_LOWER}:
         return -1.0
     return d / c
 

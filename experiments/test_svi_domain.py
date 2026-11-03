@@ -44,33 +44,51 @@ class RecoverRho(unittest.TestCase):
         x = np.array([0.01, -c * (1 - 1e-6), c])
         self.assertEqual(svi.recover_rho(x, (), g, h), x[1] / x[2])
 
-    def test_inside_the_tolerance_is_snapped_and_moves_w_by_less_than_it(self):
-        g, h = self.gh()
-        c = 0.003
-        x = np.array([0.01, -c * (1 - 1e-14), c])
-        rho = svi.recover_rho(x, (), g, h)
-        self.assertEqual(rho, -1.0)
-        k = np.linspace(-1.0, 1.0, 11)
-        b = c / self.sigma
-        snapped = svi.SviSlice(tau=0.1, a=0.01, b=b, rho=rho, m=0.0, sigma=self.sigma).w(k)
-        raw = svi.SviSlice(tau=0.1, a=0.01, b=b, rho=x[1] / x[2], m=0.0, sigma=self.sigma).w(k)
-        scale = max(1.0, float(np.max(np.abs(h))))
-        self.assertLessEqual(float(np.max(np.abs(snapped - raw))), svi.FEASIBILITY_TOLERANCE * scale)
+    def test_inside_the_tolerance_is_snapped_and_moves_w_by_its_stated_bound(self):
+        # Snapping changes w by (c - |d|) |k - m| / sigma exactly: check it
+        # on a spread of sigma, k and gaps inside the tolerance.
+        rng = np.random.default_rng(5)
+        for _ in range(200):
+            sigma = float(10 ** rng.uniform(-3, 0))
+            g, h = svi._constraints(sigma, self.a_max)
+            scale = max(1.0, float(np.max(np.abs(h))))
+            c = float(10 ** rng.uniform(-6, -1))
+            gap = float(rng.uniform(0, 1)) * svi.FEASIBILITY_TOLERANCE * scale
+            sign = rng.choice([-1.0, 1.0])
+            x = np.array([0.01, sign * (c - gap), c])
+            rho = svi.recover_rho(x, (), g, h)
+            self.assertEqual(rho, sign)
+            k = np.linspace(-2.0, 2.0, 41)
+            m = 0.0
+            b = c / sigma
+            snapped = svi.SviSlice(tau=0.1, a=0.01, b=b, rho=rho, m=m, sigma=sigma).w(k)
+            raw = svi.SviSlice(tau=0.1, a=0.01, b=b, rho=x[1] / x[2], m=m, sigma=sigma).w(k)
+            bound = (c - abs(x[1])) * np.abs(k - m) / sigma
+            # The term that changes, b (rho - d / c) (k - m), is the stated
+            # bound up to the rounding of d / c (2 eps in rho); the full w
+            # differs by it plus the rounding of evaluating w twice.
+            term = np.abs(b * (rho - x[1] / x[2]) * (k - m))
+            eps = np.finfo(float).eps
+            slack = 2 * eps * b * np.abs(k - m)
+            self.assertTrue(np.all(term <= bound + slack))
+            noise = 4 * eps * np.maximum(np.abs(raw), np.abs(snapped))
+            self.assertTrue(np.all(np.abs(snapped - raw) <= bound + slack + noise))
 
     def test_interior_rho_is_d_over_c(self):
         g, h = self.gh()
         x = np.array([0.01, -0.0015, 0.003])
         self.assertEqual(svi.recover_rho(x, (), g, h), -0.5)
 
-    def test_a_flat_slice_has_rho_zero(self):
+    def test_only_exactly_zero_c_is_flat(self):
         g, h = self.gh()
-        for c in (0.0, 1e-20):
-            self.assertEqual(svi.recover_rho(np.array([0.01, 0.0, c]), (), g, h), 0.0)
+        self.assertEqual(svi.recover_rho(np.array([0.01, 0.0, 0.0]), (), g, h), 0.0)
+        # A tiny positive c on the upper face is not flat: rho = 1.
+        self.assertEqual(svi.recover_rho(np.array([0.01, 9e-13, 9e-13]), (), g, h), 1.0)
+        # Both bounds within the tolerance: rho is not identified, d / c kept.
+        self.assertEqual(svi.recover_rho(np.array([0.01, 1e-13, 4e-13]), (), g, h), 0.25)
 
-    def test_both_rho_bounds_with_c_positive_and_non_finite_are_errors(self):
+    def test_non_finite_solutions_are_errors(self):
         g, h = self.gh()
-        with self.assertRaises(ValueError):
-            svi.recover_rho(np.array([0.01, 0.003, 0.003]), (svi.RHO_UPPER, svi.RHO_LOWER), g, h)
         for bad in (math.nan, math.inf):
             with self.assertRaises(ValueError):
                 svi.recover_rho(np.array([0.01, bad, 0.003]), (), g, h)
