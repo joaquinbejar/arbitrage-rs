@@ -41,6 +41,29 @@ def main() -> None:
         f"- Surface B: {r['surface_b']['status']}, file sha256 `{r['surface_b']['file_sha256']}`, quotes sha256 "
         f"`{r['surface_b']['quotes_sha256']}`",
         "",
+        "## Earlier runs",
+        "",
+    ]
+    for f in r["failed_runs"]:
+        out += [
+            f"- Run {f['run']} ({f['date']}, head `{f['head']}`, preregistration `{f['preregistration_sha256']}`): "
+            f"{f['outcome']}. Error: {f['error']}. Log `{f['log']}`, sha256 `{f['log_sha256']}`. Results seen: "
+            f"{f['results_seen']}",
+            "  Slices outside the SVI domain: "
+            + ", ".join(f"day {x['day']} rho {x['rho']} (bits {x['rho_bits']})" for x in f["slices_outside_the_svi_domain"]),
+        ]
+    a = r["diagnostic_a"]
+    out += [
+        "",
+        "## Diagnostic surface A (the M5-06b Python fit)",
+        "",
+        "Representable in market-maker-rs: " + ("yes; compared below in the JSON." if a["representable"] else "**no**. Not compared (amendment 2)."),
+    ]
+    if not a["representable"]:
+        out += ["", "| day | reason | rho | rho bits |", "|---|---|---|---|"]
+        out += [f"| {x['day']} | {x['reason']} | {x['params']['rho']} | {x['rho_bits']} |" for x in a["not_representable"]]
+    out += [
+        "",
         "## Gates",
         "",
         "| gate | holds |",
