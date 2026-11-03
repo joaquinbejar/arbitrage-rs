@@ -52,7 +52,7 @@ def main() -> None:
             "  Slices outside the SVI domain: "
             + ", ".join(f"day {x['day']} rho {x['rho']} (bits {x['rho_bits']})" for x in f["slices_outside_the_svi_domain"]),
         ]
-    a = r["diagnostic_a"]
+    a = r["diagnostic_a"]["comparison"]
     out += [
         "",
         "## Diagnostic surface A (the M5-06b Python fit)",
