@@ -115,7 +115,7 @@ REFERENCE_RUN = RESULTS / "deep_hedging_counterpart.json"
 SURFACE_B_QUOTES = RESULTS / "deep_hedging_mm_surface_b.csv"
 SURFACE_B_FILE = RESULTS / "deep_hedging_mm_surface_b.json"
 PREREGISTRATION = ROOT / "research" / "preregistration" / "deep_hedging_mm.md"
-PREREGISTRATION_SHA256 = "TO-BE-FIXED"
+PREREGISTRATION_SHA256 = "600e8a5ee5d968ee56bbf915ba5e026ca443ebef80645d43c9f4db7ce78ad735"
 
 
 # ---------------------------------------------------------------- surfaces
@@ -236,8 +236,12 @@ def compare(mm: cp.MarketMakerRsCounterpart, ref: cp.ReferenceCounterpart, contr
     the rows outside the tolerance, in range and extrapolated apart."""
     keys = ("price", "delta", "gamma", "vega", "theta")
     parts = ("all", "in_range", "extrapolated")
-    acc = {part: {k: {"max_abs": 0.0, "max_rel": 0.0, "violations": 0, "rows": 0} for k in keys} for part in parts}
+    acc = {
+        part: {k: {"max_abs": 0.0, "max_rel": 0.0, "violations": 0, "rows": 0, "max_ratio": 0.0, "max_ratio_at": None} for k in keys}
+        for part in parts
+    }
     max_vega_extrapolated = 0.0
+    max_price_extrapolated = 0.0
     for t in range(cfg["steps"]):
         days_left = cfg["steps"] - t
         st = s[:, t]
@@ -248,6 +252,7 @@ def compare(mm: cp.MarketMakerRsCounterpart, ref: cp.ReferenceCounterpart, contr
         ext = (k < lo) | (k > hi)
         if np.any(ext):
             max_vega_extrapolated = max(max_vega_extrapolated, float(np.max(np.abs(want["vega"][ext]))))
+            max_price_extrapolated = max(max_price_extrapolated, float(np.max(np.abs(want["price"][ext]))))
         for part, mask in (("all", np.ones_like(ext)), ("in_range", ~ext), ("extrapolated", ext)):
             if not np.any(mask):
                 continue
@@ -259,9 +264,17 @@ def compare(mm: cp.MarketMakerRsCounterpart, ref: cp.ReferenceCounterpart, contr
                 r = acc[part][key]
                 r["max_abs"] = max(r["max_abs"], float(np.max(diff)))
                 r["max_rel"] = max(r["max_rel"], float(np.max(np.where(np.abs(b) > 0, rel, 0.0))))
-                r["violations"] += int(np.sum(diff > np.maximum(abs_tol, rel_tol * np.abs(b))))
+                bound = np.maximum(abs_tol, rel_tol * np.abs(b))
+                ratio = diff / bound
+                r["violations"] += int(np.sum(diff > bound))
                 r["rows"] += int(np.sum(mask))
+                j = int(np.argmax(ratio))
+                if float(ratio[j]) >= r["max_ratio"]:
+                    path = int(np.flatnonzero(mask)[j])
+                    r["max_ratio"] = float(ratio[j])
+                    r["max_ratio_at"] = {"days_to_expiry": days_left, "path": path, "mm": float(a[j]), "ref": float(b[j])}
     acc["max_vega_extrapolated"] = max_vega_extrapolated
+    acc["max_price_extrapolated"] = max_price_extrapolated
     acc["agrees"] = {part: all(acc[part][k]["violations"] == 0 for k in keys) for part in parts}
     return acc
 

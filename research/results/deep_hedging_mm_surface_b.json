@@ -183,7 +183,7 @@
     ],
     "crate": "market-maker-rs",
     "git_dirty": "false",
-    "git_sha": "0e1e00d683ad7946b75d8e90e2112b2ea69964e4",
+    "git_sha": "010e8183734b4cae489c230c071a94cc20a1f7c6",
     "protocol": "market-maker-rs-counterpart/1",
     "version": "0.6.1",
     "year_days": 365

@@ -369,6 +369,24 @@ class MarketMakerRsConformance(Conformance, unittest.TestCase):
         with self.assertRaises(cp.NumericalFailure):  # e^{-r tau} underflows
             hot.greeks(cp.Contract(100.0, 3.0, "call"), np.array([100.0]), 0.0)
 
+    def test_wings_price_alike_on_both_sides(self):
+        """Three points a day outside each slice's k range of surface B (the
+        frozen run surface), priced by the binary and by the reference on
+        the same slices, within the agreement tolerances."""
+        path = Path(__file__).resolve().parent.parent / "research" / "results" / "deep_hedging_mm_surface_b.json"
+        text = path.read_text()
+        slices, ranges = cp.slices_from_surface_json(text)
+        mm = cp.MarketMakerRsCounterpart(text, "sticky-moneyness", s_ref=100.0)
+        ref = cp.ReferenceCounterpart(cp.SviSurface(slices), "sticky-moneyness", s_ref=100.0)
+        for day, (lo, hi) in enumerate(ranges, start=1):
+            con = cp.Contract(100.0, float(day), "call")
+            # k = ln(K / S): spots that put k below, above and far above the range.
+            s = 100.0 * np.exp(-np.array([lo - 0.02, hi + 0.02, hi + 0.2]))
+            got, want = mm.greeks(con, s, 0.0), ref.greeks(con, s, 0.0)
+            for k, (abs_tol, rel_tol) in cp.AGREEMENT_TOLERANCES.items():
+                bound = np.maximum(abs_tol, rel_tol * np.abs(want[k]))
+                self.assertTrue(np.all(np.abs(got[k] - want[k]) <= bound), f"day {day} {k}: {got[k]} vs {want[k]}")
+
     def test_sticky_strike_and_sticky_moneyness_read_different_points(self):
         con = cp.Contract(100.0, 3.0, "put")
         s = np.array([95.0, 105.0])

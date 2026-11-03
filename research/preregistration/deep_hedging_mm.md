@@ -31,7 +31,9 @@ after the run without the change showing.
   a diagnostic only.
 - **The binary** is the one `experiments/mm_counterpart_manifest.json`
   pins: sha256, market-maker-rs commit, clean tree, build command,
-  toolchain and host.
+  toolchain, host and the sha256 of `experiments/mm_counterpart.Cargo.lock`.
+  market-maker-rs does not commit a lock file, so `mm_build.py` copies
+  this one into the checkout and builds `--locked` to it.
 - `vol_shift` is 0 throughout the run. It is recorded in every
   counterpart's `config_sha256`; the conformance suite alone uses nonzero
   shifts, for vega by finite differences.
@@ -41,10 +43,18 @@ after the run without the change showing.
 Both implementations evaluate the raw SVI formula of each slice at any
 `k`, so outside the calibrated range a slice follows its own wings.
 
-- market-maker-rs `SviSurface::total_variance` does not reject a `k`
-  outside `k_range`; its `region()` labels the point `Extrapolated`
-  (`src/options/surface/svi.rs`, "Interpolation and extrapolation").
-- Python `SviSurface` uses the same formula for every `k`.
+- In market-maker-rs, `k_range` is metadata about the calibrated support,
+  not a bound on evaluation. `SviSurface::total_variance` brackets `tau`
+  and calls `SviSlice::eval(k)` on the slices for any finite `k`, inside
+  or outside `k_range`; only `region()` labels a point `Extrapolated`
+  (`src/options/surface/svi.rs`, "Interpolation and extrapolation"). The
+  binary therefore prices those rows with no flag.
+- Python `SviSurface.total_variance` evaluates `SviSlice.w`, `w_k` and
+  `w_kk` (`experiments/svi.py`): the same formula on the same slices.
+- The harness labels a row as extrapolated by comparing its `k` with the
+  `k_range` in the surface file. The test
+  `test_wings_price_alike_on_both_sides` checks three points per day
+  outside `k_range` against the reference.
 - Between expiries both are linear in `w`.
 - No range is widened in the harness, and no rejection is relabelled.
 
@@ -115,8 +125,9 @@ below `min_price` and below the 28-decimal resolution of the quotes
 
   The tolerances are the same in three panels: the whole population,
   in-range rows and extrapolated rows. The report shows the extrapolated
-  share by day and dynamics, and the largest vega there, in its headline
-  table. Small vega never excuses a difference.
+  share by day and dynamics, and the largest vega and price there, in its
+  headline table. These are context only, never a filter: small vega
+  never excuses a difference.
 
 ## Decision
 
@@ -140,7 +151,11 @@ REVISE.
 3. At most 1 % of the rows are out of domain, under each dynamics.
 4. Every required row is priced. An error stops the run, so this gate
    holds by construction whenever the run produces a report.
-5. All three panels agree within the tolerances, under both dynamics.
+5. All three panels agree, under both dynamics: 0 violations. Every row
+   and every output must satisfy `|mm - ref| <= max(abs_tol, rel_tol |ref|)`.
+   The report gives, per panel and dynamics, the number of violations
+   (which must be 0), the largest ratio `|mm - ref| / max(abs_tol,
+   rel_tol |ref|)`, and the row where that ratio occurs.
 6. The in-model rows equal M5-06b's.
 7. **The conclusion holds on the in-range subset alone.** On the paths
    that stay in range on every day, with the same paired bootstrap, no
