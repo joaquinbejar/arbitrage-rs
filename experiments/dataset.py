@@ -21,6 +21,8 @@ impact, and the manifest must declare those limits.
 `validate` lists every violation without changing anything; `load` refuses
 an invalid dataset. Parsing is strict: integers are plain decimal digits
 (no `1.0`, no `True`), numbers are finite decimals (no `nan`, no `inf`).
+The manifest's `rounding` must be `"floor-lots"` (orders floored to whole
+lots, prices on the tick), the only contract the runner implements.
 Timestamps are integers in `timestamp_unit` (only `"s"`, seconds, is
 supported), and consecutive steps of a path are exactly `step_days` days
 apart. Prices are exact multiples of `tick`, checked in exact rational arithmetic
@@ -65,6 +67,14 @@ MANIFEST_FIELDS = {
     "queue_model": ("dict", True),
 }
 FILES = ("paths.csv", "execution.csv")
+# The only rounding contract the runner implements: orders floored to whole
+# lots, prices on the tick.
+ROUNDING = "floor-lots"
+# Lot counts are stored as int64; decimal exponents beyond this bound are
+# refused before any exact arithmetic, so the Fractions stay small.
+MAX_LOTS = 2**63 - 1
+MAX_EXPONENT = 400
+MAX_STEPS = 100_000
 
 _INT = re.compile(r"^(0|[1-9][0-9]*)$")
 _NUMBER = re.compile(r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$")
@@ -93,7 +103,9 @@ class Dataset:
 
     @property
     def mid(self) -> np.ndarray:
-        return 0.5 * (self.bid + self.ask)
+        """bid + (ask - bid) / 2: finite whenever bid and ask are, unlike
+        (bid + ask) / 2, which overflows near the float maximum."""
+        return self.bid + 0.5 * (self.ask - self.bid)
 
 
 def sha256_file(path: Path) -> str:
@@ -161,6 +173,8 @@ def _manifest_violations(m) -> list[str]:
         lim = q.get("limits")
         if not (isinstance(lim, list) and lim and all(_check_type(x, "str") for x in lim)):
             out.append("manifest: queue_model.limits must be a non-empty list of strings")
+    if m.get("rounding") not in (None, ROUNDING):
+        out.append(f"manifest: rounding must be {ROUNDING} (orders floored to whole lots, prices on the tick)")
     if m.get("timestamp_unit") not in (None, "s"):
         out.append("manifest: timestamp_unit must be s (seconds)")
     if m.get("fee_asset") not in (None, "quote"):
@@ -184,16 +198,24 @@ def _read_csv(path: Path, columns: list[str], out: list[str]):
     return rows
 
 
-def _int(value: str, where: str, out: list[str]):
+def _int(value: str, where: str, out: list[str], bound: int | None = None):
     if not _INT.match(value):
         out.append(f"{where}: {value!r} is not a non-negative integer")
         return None
-    return int(value)
+    x = int(value)
+    if bound is not None and x > bound:
+        out.append(f"{where}: {value} is above the int64 range of lot counts")
+        return None
+    return x
 
 
 def _num(value: str, where: str, out: list[str]):
-    if not _NUMBER.match(value):
+    m = _NUMBER.match(value)
+    if not m:
         out.append(f"{where}: {value!r} is not a finite decimal number")
+        return None
+    if m.group(3) and abs(int(m.group(3)[1:])) > MAX_EXPONENT:
+        out.append(f"{where}: {value!r} has an exponent beyond {MAX_EXPONENT}")
         return None
     x = float(value)
     if not math.isfinite(x):
@@ -213,6 +235,8 @@ def _parse(directory: Path):
     except json.JSONDecodeError as e:
         return None, None, [f"manifest: not JSON ({e})"], {}
     out += _manifest_violations(manifest)
+    if not isinstance(manifest, dict):
+        return None, None, out, {}
     hashes = {}
     for f in FILES:
         p = directory / f
@@ -226,6 +250,9 @@ def _parse(directory: Path):
     if len(hashes) < len(FILES) or not _check_type(manifest.get("steps"), "positive_int"):
         return manifest, None, out, hashes
     steps = manifest["steps"]
+    if steps > MAX_STEPS:
+        out.append(f"manifest: steps {steps} above {MAX_STEPS}")
+        return manifest, None, out, hashes
     tick = None
     if _check_type(manifest.get("tick"), "positive_number"):
         tick = Fraction(repr(manifest["tick"]))
@@ -243,19 +270,21 @@ def _parse(directory: Path):
         where = f"paths.csv:{n}"
         pid, step, ts = _int(r["path_id"], where, out), _int(r["step"], where, out), _int(r["timestamp"], where, out)
         bid, ask = _num(r["bid"], where, out), _num(r["ask"], where, out)
-        bs, as_ = _int(r["bid_size"], where, out), _int(r["ask_size"], where, out)
+        bs, as_ = _int(r["bid_size"], where, out, MAX_LOTS), _int(r["ask_size"], where, out, MAX_LOTS)
         if None in (pid, step, ts, bid, ask, bs, as_):
             continue
         if (pid, step) in book:
             out.append(f"{where}: duplicate key (path {pid}, step {step})")
             continue
-        if not 0.0 < bid <= ask:
-            out.append(f"{where}: needs 0 < bid <= ask, got {bid}, {ask}")
+        # Exact comparison on the CSV text: floats could hide a crossed book.
+        exact = {col: Fraction(r[col]) for col in ("bid", "ask")}
+        if not 0 < exact["bid"] <= exact["ask"]:
+            out.append(f"{where}: needs 0 < bid <= ask, got {r['bid']}, {r['ask']}")
+        elif not bid > 0.0:
+            out.append(f"{where}: bid {r['bid']} underflows to zero as a float")
         elif tick is not None:
-            # Both prices are positive and finite as floats here, so their
-            # decimal exponents are bounded and the Fractions stay small.
             for col in ("bid", "ask"):
-                if Fraction(r[col]) % tick != 0:
+                if exact[col] % tick != 0:
                     out.append(f"{where}: {col} {r[col]} is not a multiple of the tick {manifest['tick']!r}")
         if step > steps:
             out.append(f"{where}: step {step} beyond steps {steps}")
@@ -266,7 +295,7 @@ def _parse(directory: Path):
     rows = _read_csv(directory / "execution.csv", EXECUTION_COLUMNS, out) or []
     for n, r in rows:
         where = f"execution.csv:{n}"
-        vals = [_int(r[c], where, out) for c in EXECUTION_COLUMNS]
+        vals = [_int(r[c], where, out, MAX_LOTS) for c in EXECUTION_COLUMNS]
         if None in vals:
             continue
         pid, step, fb, fs, rej = vals

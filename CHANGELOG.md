@@ -16,7 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counterpart rejects boolean or non-numeric spots and `as_of_days`
   (the check ran after the cast to float and never fired); the M5-06b
   report states where the SVI fit is on or near rho = -1; the dataset
-  validator prints the tick as declared in the manifest.
+  validator prints the tick as declared in the manifest. The validator
+  also lists, instead of raising, a manifest that is not an object and lot
+  counts beyond int64; it compares prices exactly (a crossed book could
+  hide behind float rounding), refuses decimal exponents beyond 400 and
+  prices that underflow to zero, and accepts only the implemented rounding
+  contract (`floor-lots`). The mid is bid + (ask - bid) / 2 and the rebase
+  s0 * (x / mid_0), so prices near the float maximum stay finite, and a
+  book that is not finite and positive once rebased is refused before
+  simulating.
 
 ## [0.3.1] - 2026-11-03
 

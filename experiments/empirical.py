@@ -81,8 +81,23 @@ def compatible(manifest: dict, cfg: dict) -> list[str]:
 
 
 def rebased(data: ds.Dataset, cfg: dict) -> dict:
-    scale = cfg["s0"] / data.mid[:, :1]
-    return {"bid": data.bid * scale, "ask": data.ask * scale, "mid": data.mid * scale}
+    """Each path scaled so that its first mid is s0: s0 * (x / mid_0), the
+    quotient first so that no intermediate overflows needlessly. A book
+    that is not finite and positive after the transformation is refused
+    before any simulation."""
+    mid = data.mid
+    mid0 = mid[:, :1]
+    # Overflow is checked explicitly below, so numpy's warning is not needed.
+    with np.errstate(over="ignore", invalid="ignore"):
+        book = {name: cfg["s0"] * (x / mid0) for name, x in (("bid", data.bid), ("ask", data.ask), ("mid", mid))}
+    bad = [
+        f"rebased {name} of path {p} is not finite and positive"
+        for name, x in book.items()
+        for p in np.flatnonzero(~np.all(np.isfinite(x) & (x > 0.0), axis=1))
+    ]
+    if bad:
+        raise ds.DatasetInvalid(bad)
+    return book
 
 
 def simulate(policy, book, data: ds.Dataset, cfg: dict, ideal: bool = False, trace: list | None = None):

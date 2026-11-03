@@ -93,7 +93,7 @@ def main() -> None:
         "lot": sp["lot"],
         "fee_bps": 2.0,
         "fee_asset": "quote",
-        "rounding": "orders floored to whole lots; prices on the tick",
+        "rounding": "floor-lots",
         "contract": {"strike": "atm-at-step-0", "expiry_days": float(steps), "kind": "call", "style": "european"},
         "steps": steps,
         "step_days": 1.0,

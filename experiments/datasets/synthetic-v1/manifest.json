@@ -23,7 +23,7 @@
     ],
     "version": "1"
   },
-  "rounding": "orders floored to whole lots; prices on the tick",
+  "rounding": "floor-lots",
   "seed": 20261103,
   "source": "SYNTHETIC: experiments/make_synthetic_dataset.py, not captured data",
   "step_days": 1.0,
