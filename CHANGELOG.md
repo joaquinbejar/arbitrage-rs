@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Research, outside the crate: gate 6 of `experiments/deep_hedging_mm.py`
   (the in-model rows equal the reference run's) compares values, not whole
-  records. Learned rows are matched by seed, and fields are compared with
+  records. Every in_model field is compared (a field on one side only fails,
+  and an empty comparison never passes); learned rows are matched by seed, and fields are compared with
   strict types, floats bit for bit. Only the fields listed in `METADATA_KEYS`
   (`weights_sha256`) are left out, counted per side; any other extra,
   missing, differing or non-finite field fails; `weights_sha256` is still

@@ -378,26 +378,50 @@ def _strict_equal(a, b, path: str, out: dict) -> None:
 
 def compare_in_model(new: dict, old: dict, weights: dict | None = None) -> dict:
     """Gate 6: the in-model rows of a run (`by_eps`) against the reference
-    run's, value by value. The half spreads must be the same set; band_w and
-    the delta and band rows must be strictly equal; the learned rows are
+    run's, value by value. The half spreads must be the same non-empty set;
+    band_w and every field of in_model must be strictly equal (a field on
+    one side only is extra or missing); the learned rows, which must exist,
+    are
     matched by seed (unique on each side, the same set), not by position,
     and compared field by field leaving out only METADATA_KEYS, counted per
     side. Equal iff there is no difference, no missing or extra field (other
     than metadata), no non-finite value and no identity error.
+    The other fields of a half spread's entry (the out-of-model markets,
+    such as heston_<dynamics>) are results of the run, not a reproduction,
+    and are outside gate 6 by design.
     `weights_sha256`, metadata for the comparison, is still checked against
     `weights` (the reference run's record, by "eps/seed") when given: a
     mismatch is an identity error."""
     out = {"differing": [], "missing": [], "extra": [], "nonfinite": [], "identity": []}
     rows = shared = 0
     metadata = {"new": 0, "old": 0}
+    if not new or not old:
+        out["identity"].append("nothing to compare: no half spread on one side")
     if set(new) != set(old):
         out["identity"].append(f"half spreads {sorted(new)} != {sorted(old)}")
     for eps in sorted(set(new) & set(old)):
         a, b = new[eps], old[eps]
+        for side, e in (("new", a), ("old", b)):
+            for need in ("band_w", "in_model"):
+                if need not in e:
+                    out["identity"].append(f"{eps}: {side} has no {need}")
+        if "in_model" not in a or "in_model" not in b:
+            continue
         _strict_equal(a.get("band_w"), b.get("band_w"), f"{eps}.band_w", out)
-        for part in ("delta", "band"):
-            _strict_equal(a["in_model"].get(part), b["in_model"].get(part), f"{eps}.in_model.{part}", out)
-        la, lb = a["in_model"].get("learned", []), b["in_model"].get("learned", [])
+        # Every in_model field is compared; only the learned rows are
+        # matched by seed. A field added on either side is extra or missing.
+        ia, ib = a["in_model"], b["in_model"]
+        for k in sorted(set(ia) - set(ib)):
+            out["extra"].append(f"{eps}.in_model.{k}")
+        for k in sorted(set(ib) - set(ia)):
+            out["missing"].append(f"{eps}.in_model.{k}")
+        for k in sorted((set(ia) & set(ib)) - {"learned"}):
+            _strict_equal(ia[k], ib[k], f"{eps}.in_model.{k}", out)
+        if "learned" not in ia or "learned" not in ib:
+            continue
+        la, lb = ia["learned"], ib["learned"]
+        if not la:
+            out["identity"].append(f"{eps}: no learned row")
         sa = [r.get("seed") for r in la]
         sb = [r.get("seed") for r in lb]
         if len(sa) != len(set(sa)) or len(sb) != len(set(sb)) or set(sa) != set(sb) or len(sa) != len(sb):
@@ -428,7 +452,7 @@ def compare_in_model(new: dict, old: dict, weights: dict | None = None) -> dict:
         "identity_errors": out["identity"],
         "examples": {k: v[:20] for k, v in out.items() if k != "identity"},
     }
-    report["equal"] = not any(out.values())
+    report["equal"] = rows > 0 and not any(out.values())
     return report
 
 

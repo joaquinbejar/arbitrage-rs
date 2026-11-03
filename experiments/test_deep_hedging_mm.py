@@ -124,6 +124,16 @@ class InModelComparison(unittest.TestCase):
         self.assertFalse(m.compare_in_model(by_eps(), by_eps([learned(11), learned(11)]))["equal"])
         self.assertFalse(m.compare_in_model(by_eps([learned(11)]), by_eps([learned(11), learned(12)]))["equal"])
         self.assertFalse(m.compare_in_model(by_eps([learned(11, mean_pnl=0.0), learned(12)]), by_eps([learned(11, mean_pnl=-0.0), learned(12)]))["equal"])
+        # An in_model field on one side only, on either side.
+        extra = by_eps()
+        extra["0.0005"]["in_model"]["new_behavioral_result"] = {"cvar95": 999.0}
+        self.assertFalse(m.compare_in_model(extra, by_eps())["equal"])
+        self.assertFalse(m.compare_in_model(by_eps(), extra)["equal"])
+        # Nothing to compare never passes.
+        self.assertFalse(m.compare_in_model({}, {})["equal"])
+        self.assertFalse(m.compare_in_model(by_eps([]), by_eps([]))["equal"])
+        no_in_model = {"0.0005": {"band_w": 0.01}}
+        self.assertFalse(m.compare_in_model(no_in_model, no_in_model)["equal"])
         # Missing on the reference side, and another set of half spreads.
         self.assertFalse(m.compare_in_model(by_eps(), by_eps([{k: v for k, v in learned(11).items() if k != "trades"}, learned(12)]))["equal"])
         self.assertFalse(m.compare_in_model(by_eps() | {"0.005": by_eps()["0.0005"]}, by_eps())["equal"])
