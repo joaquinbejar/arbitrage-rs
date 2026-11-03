@@ -256,7 +256,7 @@ def _parse(directory: Path):
             # decimal exponents are bounded and the Fractions stay small.
             for col in ("bid", "ask"):
                 if Fraction(r[col]) % tick != 0:
-                    out.append(f"{where}: {col} {r[col]} is not a multiple of the tick {tick}")
+                    out.append(f"{where}: {col} {r[col]} is not a multiple of the tick {manifest['tick']!r}")
         if step > steps:
             out.append(f"{where}: step {step} beyond steps {steps}")
             continue

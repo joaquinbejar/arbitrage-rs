@@ -131,6 +131,11 @@ class Conformance:
             for bad in (np.array([np.nan]), np.array([-1.0]), np.array([0.0]), np.array([np.inf])):
                 with self.assertRaises(cp.InvalidInput, msg=label):
                     c.greeks(con, bad, 0.0)
+            for bad in (np.array([True]), [True, False], np.array(["100"])):
+                with self.assertRaises(cp.InvalidInput, msg=label):
+                    c.greeks(con, bad, 0.0)
+            with self.assertRaises(cp.InvalidInput, msg=label):
+                c.greeks(con, np.array([100.0]), True)
             with self.assertRaises(cp.InvalidInput, msg=label):
                 c.greeks(con, np.array([100.0]), expiry + 1.0)
             with self.assertRaises(cp.InvalidInput, msg=label):

@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Research, outside the crate (#36, #37): the reference pricing
+  counterpart rejects boolean or non-numeric spots and `as_of_days`
+  (the check ran after the cast to float and never fired); the M5-06b
+  report states where the SVI fit is on or near rho = -1; the dataset
+  validator prints the tick as declared in the manifest.
+
 ## [0.3.1] - 2026-11-03
 
 No change to the library API or behaviour; this release packages the

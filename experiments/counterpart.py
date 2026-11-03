@@ -225,11 +225,17 @@ class ReferenceCounterpart:
 
     def _inputs(self, contract: Contract, spot, as_of_days):
         contract.check()
-        s = np.asarray(spot, dtype=float)
-        if s.dtype == bool or not np.all(np.isfinite(s)) or np.any(s <= 0.0):
+        raw = np.asarray(spot)
+        # Checked before any cast: a boolean is not a price.
+        if raw.dtype.kind not in "iuf":
+            raise InvalidInput(f"spot must be numeric, got dtype {raw.dtype}")
+        s = raw.astype(float)
+        if not np.all(np.isfinite(s)) or np.any(s <= 0.0):
             raise InvalidInput("spot must be finite and positive")
         if not (np.isscalar(as_of_days) or np.ndim(as_of_days) == 0):
             raise InvalidInput("as_of_days must be one scalar per call")
+        if np.asarray(as_of_days).dtype.kind not in "iuf":
+            raise InvalidInput(f"as_of_days must be numeric, got {as_of_days!r}")
         t = float(as_of_days)
         if not math.isfinite(t):
             raise InvalidInput("as_of_days must be finite")

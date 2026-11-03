@@ -95,8 +95,9 @@ of volatility, by expiry (days) and strike (ATM standard deviations):
 | 25 | 9.8 | 0.4 | −5.4 | −5.6 | 1.3 | 6.9 | −6.1 | 4.7 | −5.9 |
 | 30 | 11.3 | 0.6 | −6.2 | −6.7 | 1.8 | 7.7 | −6.2 | 5.4 | −6.7 |
 
-The ATM volatility falls from 0.1999 (1 day) to 0.1958 (30 days). Up to
-20 days the fit sits on the SVI boundary ρ = −1: raw SVI cannot follow the
+The ATM volatility falls from 0.1999 (1 day) to 0.1958 (30 days). The fit
+sits on or near the SVI boundary ρ = −1 at short expiries (exactly −1 up to
+16 days, −0.999 to −0.901 from 17 to 22 days): raw SVI cannot follow the
 short-dated Heston skew exactly, and the residual grows with the expiry and
 in the left wing, at most 11 bp of volatility. Every slice is in the json
 with its parameters, residuals and active constraints.
