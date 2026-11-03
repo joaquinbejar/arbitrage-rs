@@ -1,0 +1,35 @@
+{
+  "contract": {
+    "expiry_days": 30.0,
+    "kind": "call",
+    "strike": "atm-at-step-0",
+    "style": "european"
+  },
+  "currency": "USD",
+  "fee_asset": "quote",
+  "fee_bps": 2.0,
+  "files": {
+    "execution.csv": "9be5e9f2fc67a2e0663ef55f46b752e00e6e48e811eb35e2f2ccc7542317b1b6",
+    "paths.csv": "7fbf08ec1044a31e21bfa175e6c6bb7697f5518b294c6882cd07bec18d89daab"
+  },
+  "lot": 0.0001,
+  "name": "synthetic-v1",
+  "queue_model": {
+    "id": "synthetic-exogenous-capacity",
+    "limits": [
+      "capacity per side is exogenous: a fraction of the quoted size, independent of the order",
+      "no queue position, latency or market impact is modelled",
+      "rejections are independent draws, not venue behaviour"
+    ],
+    "version": "1"
+  },
+  "rounding": "orders floored to whole lots; prices on the tick",
+  "seed": 20261103,
+  "source": "SYNTHETIC: experiments/make_synthetic_dataset.py, not captured data",
+  "step_days": 1.0,
+  "steps": 30,
+  "synthetic": true,
+  "tick": 0.01,
+  "timestamp_unit": "s",
+  "version": "1"
+}

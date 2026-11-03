@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the comparison against it; the report,
   `research/results/deep_hedging_counterpart.md`, is pending counterpart
   validation.
+- Research, outside the crate (M5-06c, #37): a dataset interface and
+  schema validator (`experiments/dataset.py`) and an empirical runner
+  (`experiments/empirical.py`) that tests the frozen deep hedging controls
+  on a dataset's book and queue-model capacities without retraining. It
+  is checked on a synthetic dataset (`experiments/datasets/synthetic-v1`),
+  a pipeline check that supports no empirical claim.
 
 ## [0.3.0] - 2026-11-02
 

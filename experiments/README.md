@@ -90,3 +90,26 @@ there.
   reason, never a number.
 - The binary's version and the configuration it ran with are reported, so
   the run can pin them.
+
+## Empirical test on a dataset (M5-06c)
+
+`empirical.py` runs the frozen controls of M5-06 (the `research/models/`
+weights, checked against their sha256) on a dataset's book and execution
+capacities, without retraining. The dataset format, the validator and
+the information set are described in `dataset.py`; the mapping onto the
+trained controls, the execution rules and the sections of the report in
+`empirical.py`.
+
+```sh
+experiments/.venv/bin/python experiments/empirical.py --dataset experiments/datasets/<name>
+```
+
+It validates the dataset first (every violation is listed and the run
+stops), then writes `research/results/deep_hedging_dataset_<name>.{json,md}`.
+No decision is issued: for a captured dataset the criterion is
+pre-registered with the dataset before the run.
+
+The only dataset today is `experiments/datasets/synthetic-v1`, written by
+`make_synthetic_dataset.py` from one seed. It is **synthetic**: its report
+is a pipeline check, not empirical evidence. Captured data waits on the
+book reconstruction and queue limits of market-maker-rs#77.
