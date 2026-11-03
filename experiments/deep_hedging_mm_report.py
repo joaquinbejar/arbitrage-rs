@@ -52,6 +52,14 @@ def main() -> None:
             "  Slices outside the SVI domain: "
             + ", ".join(f"day {x['day']} rho {x['rho']} (bits {x['rho_bits']})" for x in f["slices_outside_the_svi_domain"]),
         ]
+    norm_path = RESULTS / "deep_hedging_mm_failed_run_1_log_normalisation.json"
+    if norm_path.is_file():
+        n = json.loads(norm_path.read_text())
+        out += [
+            f"  The committed log is a normalised copy, sha256 `{n['normalised_sha256']}`: {n['transformation']} "
+            f"({n['occurrences']} occurrences). The original, sha256 `{n['original_sha256']}` (the hash the record "
+            "cites), is kept outside the repository.",
+        ]
     a = r["diagnostic_a"]["comparison"]
     out += [
         "",
