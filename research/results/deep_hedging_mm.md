@@ -131,8 +131,13 @@ Premium at t = 0 (sticky moneyness): market-maker-rs on B 2.2378132055, referenc
 
 In-model rows equal M5-06b: False. Run: 175.7 s, python 3.12.16, numpy 2.5.4, torch 2.15.0, arm64, commit `079f698687487ee7d91b8b82232bee493d955cd1`.
 
-## After the run: gate 6
+## After the run: the cause of gate 6
 
-Gate 6 failed, and this run's outcome is REVISE as preregistered. Its cause was found after the run and changes neither the gate nor the outcome: each learned row of this run carries an extra `weights_sha256` key, so the comparison of whole rows with M5-06b's fails.
+This section was written after the run. It changes neither gate 6 nor the outcome, which stays **REVISE** as preregistered.
 
-With that key left out, every in-model value equals M5-06b's: band width, delta, band and 15 learned rows (yes).
+Gate 6 compares this run's in-model rows with M5-06b's as whole records. Compared key by key over the 15 in-model learned rows (3 half spreads × 5 seeds):
+- 255 shared keys, with 0 differing values and 0 missing keys;
+- 15 extra keys, all named `weights_sha256`. They are this run's record of the weights it loaded; their values equal the set of 15 weight sha256 recorded in M5-06b: yes.
+- The band width, delta and band rows of every half spread are equal: yes.
+
+Gate 6 therefore fails on a field the harness added, not on a value. Even so, "ADOPT except for gate 6" is **not** a preregistered result. Claiming ADOPT needs a new preregistered experiment, authorized separately, with gate 6 comparing values and ignoring metadata keys, declared before any new run. The gate 6 fix goes in a separate change and does not regenerate this run.

@@ -134,25 +134,44 @@ def post_run_gate6(r: dict) -> list[str]:
     """A diagnostic written after the run, which changes no gate: gate 6
     compared this run's in-model rows with M5-06b's as whole dicts, and
     each learned row here carries an extra `weights_sha256` key. Compare
-    the values with that key left out."""
+    them key by key, value by value."""
     old = json.loads((RESULTS / "deep_hedging_counterpart.json").read_text())
-    same, rows = True, 0
+    rows = keys = value_diffs = missing = 0
+    extra = []
+    scalars_equal = True
     for k, entry in r["by_eps"].items():
         o = old["by_eps"][k]
-        same &= entry["band_w"] == o["band_w"]
-        same &= entry["in_model"]["delta"] == o["in_model"]["delta"] and entry["in_model"]["band"] == o["in_model"]["band"]
+        scalars_equal &= entry["band_w"] == o["band_w"]
+        scalars_equal &= entry["in_model"]["delta"] == o["in_model"]["delta"] and entry["in_model"]["band"] == o["in_model"]["band"]
         for a, b in zip(entry["in_model"]["learned"], o["in_model"]["learned"], strict=True):
-            same &= {x: v for x, v in a.items() if x != "weights_sha256"} == b
             rows += 1
+            missing += len(set(b) - set(a))
+            for x in set(a) - set(b):
+                extra.append((x, a[x]))
+            for x in set(a) & set(b):
+                keys += 1
+                value_diffs += a[x] != b[x]
+    weight_hashes = {w["sha256"] for w in old["weights"].values()}
+    extra_names = sorted({x for x, _ in extra})
+    extra_are_weights = {v for _, v in extra} == weight_hashes
     return [
-        "## After the run: gate 6",
+        "## After the run: the cause of gate 6",
         "",
-        "Gate 6 failed, and this run's outcome is REVISE as preregistered. Its cause was found after the run and "
-        "changes neither the gate nor the outcome: each learned row of this run carries an extra `weights_sha256` "
-        "key, so the comparison of whole rows with M5-06b's fails.",
+        "This section was written after the run. It changes neither gate 6 nor the outcome, which stays **REVISE** "
+        "as preregistered.",
         "",
-        f"With that key left out, every in-model value equals M5-06b's: band width, delta, band and {rows} learned "
-        f"rows ({'yes' if same else '**no**'}).",
+        f"Gate 6 compares this run's in-model rows with M5-06b's as whole records. Compared key by key over the "
+        f"{rows} in-model learned rows (3 half spreads × 5 seeds):",
+        f"- {keys} shared keys, with {value_diffs} differing values and {missing} missing keys;",
+        f"- {len(extra)} extra keys, all named {', '.join(f'`{n}`' for n in extra_names)}. They are this run's "
+        "record of the weights it loaded; their values equal the set of 15 weight sha256 recorded in M5-06b: "
+        f"{'yes' if extra_are_weights else '**no**'}.",
+        f"- The band width, delta and band rows of every half spread are equal: {'yes' if scalars_equal else '**no**'}.",
+        "",
+        "Gate 6 therefore fails on a field the harness added, not on a value. Even so, \"ADOPT except for gate 6\" "
+        "is **not** a preregistered result. Claiming ADOPT needs a new preregistered experiment, authorized "
+        "separately, with gate 6 comparing values and ignoring metadata keys, declared before any new run. The "
+        "gate 6 fix goes in a separate change and does not regenerate this run.",
         "",
     ]
 
