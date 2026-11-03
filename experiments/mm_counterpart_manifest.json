@@ -1,0 +1,10 @@
+{
+  "binary_sha256": "a72821781e68296543824db4a27c2af5bbb2e47b183dc417aa74266d9908ac8f",
+  "build_command": "COUNTERPART_GIT_SHA=0e1e00d683ad7946b75d8e90e2112b2ea69964e4 COUNTERPART_GIT_DIRTY=false cargo build --release --locked --features options --example counterpart",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "crate_version": "0.6.1",
+  "host": "aarch64-apple-darwin",
+  "market_maker_rs_commit": "0e1e00d683ad7946b75d8e90e2112b2ea69964e4",
+  "protocol": "market-maker-rs-counterpart/1",
+  "toolchain": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
+}

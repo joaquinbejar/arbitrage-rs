@@ -12,7 +12,10 @@ declared here, before any run of the experiment, and are not tuned to it.
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -238,33 +241,143 @@ class ReferenceConformance(Conformance, unittest.TestCase):
         np.testing.assert_allclose(g["delta"], cp._norm_cdf(d1), rtol=0, atol=1e-15)
 
 
-class MarketMakerRsConformance(Conformance, unittest.TestCase):
-    @unittest.skip("pending market-maker-rs#95/#96: no counterpart to run yet")
-    def test_payoff_at_expiry(self):
-        pass
 
-    @unittest.skip("pending market-maker-rs#95/#96: no counterpart to run yet")
-    def test_put_call_parity(self):
-        pass
 
-    @unittest.skip("pending market-maker-rs#95/#96: no counterpart to run yet")
-    def test_greeks_against_finite_differences_of_the_same_price(self):
-        pass
+def flat_as_svi_json(sigma: float, days: int) -> str:
+    """A flat surface as SVI slices with b = 0 (w = sigma^2 tau, one slice a
+    day) and the constant-vol policy below the first day: exactly the
+    reference's FlatSurface on (0, days]."""
+    slices = [
+        svi.SviSlice(tau=d / cp.YEAR_DAYS, a=sigma * sigma * d / cp.YEAR_DAYS, b=0.0, rho=0.0, m=0.0, sigma=0.1)
+        for d in range(1, days + 1)
+    ]
+    return cp.svi_surface_json(slices, [(-10.0, 10.0)] * len(slices), short_expiry="constant-vol")
 
-    @unittest.skip("pending market-maker-rs#95/#96: no counterpart to run yet")
-    def test_invalid_inputs_are_explicit(self):
-        pass
 
-    @unittest.skip("pending market-maker-rs#95/#96: no counterpart to run yet")
-    def test_identity_names_implementation_configuration_and_surface(self):
-        pass
+def synthetic_svi_json() -> str:
+    surf = synthetic_svi_surface()
+    return cp.svi_surface_json(surf.slices, [(-10.0, 10.0)] * len(surf.slices))
 
-    def test_adapter_is_unavailable_and_never_returns_a_number(self):
-        a = cp.MarketMakerRsCounterpart()
-        self.assertIsNone(a.identity()["version"])
-        for call in (a.price, a.greeks, a.surface_params):
+
+def mm_available() -> str | None:
+    """Why the market-maker-rs counterpart cannot run here, or None."""
+    try:
+        cp.mm_identity(Path(os.environ.get(cp.MM_BINARY_ENV, "")))
+    except cp.CounterpartError as e:
+        return str(e)
+    return None
+
+
+class MarketMakerRsAdapter(unittest.TestCase):
+    """What the adapter guarantees without a binary."""
+
+    def test_no_binary_is_unavailable_and_never_a_number(self):
+        with self.assertRaises(cp.CounterpartUnavailable):
+            cp.MarketMakerRsCounterpart(synthetic_svi_json(), "sticky-moneyness", 100.0, binary="/nonexistent/counterpart")
+
+    def test_a_binary_that_is_not_the_manifest_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "counterpart"
+            fake.write_text("#!/bin/sh\necho '{}'\n")
+            fake.chmod(0o755)
             with self.assertRaises(cp.CounterpartUnavailable):
-                call(cp.Contract(100.0, 30.0, "call"), np.array([100.0]), 0.0)
+                cp.MarketMakerRsCounterpart(synthetic_svi_json(), "sticky-moneyness", 100.0, binary=str(fake))
+
+    def test_surface_files_round_trip_bit_for_bit(self):
+        surf = synthetic_svi_surface()
+        slices, ranges = cp.slices_from_surface_json(synthetic_svi_json())
+        self.assertEqual([sl.params() for sl in slices], [sl.params() for sl in surf.slices])
+        self.assertEqual(ranges, [(-10.0, 10.0)] * 3)
+
+    def test_plain_decimals_have_no_exponent(self):
+        for x, want in ((1e-5, "0.00001"), (100.0, "100.0"), (1e22, "10000000000000000000000"), (0.1, "0.1")):
+            self.assertEqual(cp.plain_decimal(x), want)
+
+
+@unittest.skipIf(mm_available() is not None, f"market-maker-rs counterpart: {mm_available()}")
+class MarketMakerRsConformance(Conformance, unittest.TestCase):
+    """The conformance suite, unchanged, on the market-maker-rs binary that
+    the manifest pins (set MM_COUNTERPART_BIN), on the reference's surfaces."""
+
+    def contracts(self):
+        out = []
+        for dyn in cp.DYNAMICS:
+            out.append(
+                (
+                    f"flat r,q {dyn}",
+                    lambda shift, dyn=dyn: cp.MarketMakerRsCounterpart(
+                        flat_as_svi_json(0.2, 31), dyn, s_ref=100.0, rate=0.03, carry=0.01, vol_shift=shift
+                    ),
+                    30.0,
+                )
+            )
+            out.append(
+                (
+                    f"svi {dyn}",
+                    lambda shift, dyn=dyn: cp.MarketMakerRsCounterpart(
+                        synthetic_svi_json(), dyn, s_ref=100.0, vol_shift=shift
+                    ),
+                    3.0,
+                )
+            )
+        return out
+
+    def as_of_days(self, expiry):
+        return [0.0, expiry - 1.5, expiry - 1.0]
+
+    def fd_theta(self, c, con, s, as_of):
+        """As the reference's: the flat surface is linear in tau everywhere
+        (central); on an SVI node, the segment towards shorter expiries, or
+        the first node's only segment."""
+        h = FD_STEP_DAYS
+        tau_days = con.expiry_days - as_of
+        on_node = abs(tau_days - round(tau_days)) < 1e-12
+        flat = all(sl.b == 0.0 for sl in c.slices)
+        if not on_node or flat:
+            return (c.price(con, s, as_of + h) - c.price(con, s, as_of - h)) / (2 * h)
+        if round(tau_days) == 1:
+            return (c.price(con, s, as_of) - c.price(con, s, as_of - h)) / h
+        return (c.price(con, s, as_of + h) - c.price(con, s, as_of)) / h
+
+    def test_agrees_with_the_reference_on_the_same_surface(self):
+        s = np.array([80.0, 92.0, 99.0, 100.0, 101.0, 108.0, 125.0])
+        cases = [
+            ("flat", flat_as_svi_json(0.2, 31), cp.FlatSurface(0.2), 30.0, (0.0, 14.5, 29.0), 0.03, 0.01),
+            ("svi", synthetic_svi_json(), synthetic_svi_surface(), 3.0, (0.0, 1.5, 2.0), 0.0, 0.0),
+        ]
+        for label, text, ref_surface, expiry, as_ofs, r, q in cases:
+            for dyn in cp.DYNAMICS:
+                mm = cp.MarketMakerRsCounterpart(text, dyn, s_ref=100.0, rate=r, carry=q)
+                ref = cp.ReferenceCounterpart(ref_surface, dyn, s_ref=100.0, rate=r, carry=q)
+                for kind in ("call", "put"):
+                    con = cp.Contract(100.0, expiry, kind)
+                    for as_of in as_ofs:
+                        got, want = mm.greeks(con, s, as_of), ref.greeks(con, s, as_of)
+                        for k, (abs_tol, rel_tol) in cp.AGREEMENT_TOLERANCES.items():
+                            bound = np.maximum(abs_tol, rel_tol * np.abs(want[k]))
+                            bad = np.abs(got[k] - want[k]) > bound
+                            self.assertFalse(
+                                np.any(bad),
+                                f"{label} {dyn} {kind} as_of {as_of} {k}: {got[k][bad][:3]} vs {want[k][bad][:3]}",
+                            )
+
+    def test_error_classes_are_kept_apart(self):
+        c = cp.MarketMakerRsCounterpart(synthetic_svi_json(), "sticky-moneyness", s_ref=100.0)
+        with self.assertRaises(cp.OutOfDomain):  # tau = 4 days, after the last slice
+            c.greeks(cp.Contract(100.0, 4.0, "call"), np.array([100.0]), 0.0)
+        hot = cp.MarketMakerRsCounterpart(synthetic_svi_json(), "sticky-moneyness", s_ref=100.0, rate=1e5)
+        with self.assertRaises(cp.NumericalFailure):  # e^{-r tau} underflows
+            hot.greeks(cp.Contract(100.0, 3.0, "call"), np.array([100.0]), 0.0)
+
+    def test_sticky_strike_and_sticky_moneyness_read_different_points(self):
+        con = cp.Contract(100.0, 3.0, "put")
+        s = np.array([95.0, 105.0])
+        sm = cp.MarketMakerRsCounterpart(synthetic_svi_json(), "sticky-moneyness", s_ref=100.0)
+        ss = cp.MarketMakerRsCounterpart(synthetic_svi_json(), "sticky-strike", s_ref=100.0)
+        w_ss = ss.total_variance(con, s, 0.0)
+        self.assertEqual(w_ss[0], w_ss[1])
+        self.assertNotEqual(sm.total_variance(con, s, 0.0)[0], sm.total_variance(con, s, 0.0)[1])
+        self.assertFalse(np.array_equal(sm.greeks(con, s, 0.0)["delta"], ss.greeks(con, s, 0.0)["delta"]))
 
 
 # ---------------------------------------------------------------- SVI
