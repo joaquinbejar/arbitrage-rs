@@ -107,6 +107,50 @@ class Validator(unittest.TestCase):
         v = [x for x in ds.validate(self.d) if "steps" in x]
         self.assertTrue(v and all("above" in x and "characters" in x and len(x) < 200 for x in v), v)
 
+    def raw_manifest_field(self, field, literal):
+        # json.dumps cannot write integers beyond CPython's digit limit.
+        m = json.loads((self.d / "manifest.json").read_text())
+        m[field] = "__RAW__"
+        (self.d / "manifest.json").write_text(json.dumps(m).replace('"__RAW__"', literal))
+
+    def assertBoundedViolation(self, needle):
+        v = ds.validate(self.d)
+        hits = [x for x in v if needle in x]
+        self.assertTrue(hits and all(len(x) < 200 for x in hits), (needle, [x[:100] for x in v[:5]]))
+        with self.assertRaises(ds.DatasetInvalid):
+            ds.load(self.d)
+
+    def test_manifest_integers_beyond_the_digit_limit_are_violations(self):
+        for field in ("seed", "steps"):
+            with self.subTest(field=field):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                self.raw_manifest_field(field, "1" + "0" * 5000)
+                self.assertBoundedViolation(f"{field} must be")
+
+    def test_csv_literals_beyond_the_digit_limit_are_violations(self):
+        cases = (
+            (5, "1" * 5001, "int64 range"),  # bid_size
+            (5, "1" * 4000, "int64 range"),  # below CPython's limit, still echoed bounded
+            (0, "1" * 5001, "more than 1000 digits"),  # path_id, unbounded integer
+            (4, "1e" + "1" * 5001, "more than 1000 characters"),  # ask
+            (4, "1e-" + "0" * 5000 + "5", "more than 1000 characters"),  # a long exponent text
+            (3, "1" * 300 + "." + "1" * 4800, "more than 1000 characters"),  # bid, exact Fraction path
+            (4, "1e0000000999", "exponent beyond"),  # short text, exponent read after its zeros
+        )
+        for col, value, needle in cases:
+            with self.subTest(col=col, n=len(value)):
+                shutil.rmtree(self.d)
+                shutil.copytree(SYNTHETIC, self.d)
+                edit_csv(self.d, "paths.csv", lambda l, col=col, value=value: edit_field(l, 1, col, value))
+                refresh_hashes(self.d)
+                self.assertBoundedViolation(needle)
+
+    def test_an_exponent_with_leading_zeros_is_read_by_its_value(self):
+        edit_csv(self.d, "paths.csv", lambda l: edit_field(l, 1, 4, "2.5e0003"))
+        refresh_hashes(self.d)
+        self.assertFalse([x for x in ds.validate(self.d) if "exponent" in x or "characters" in x])
+
     def test_a_queue_model_without_limits(self):
         self.manifest(lambda m: m["queue_model"].update(limits=[]))
         self.assertViolation("queue_model.limits")
