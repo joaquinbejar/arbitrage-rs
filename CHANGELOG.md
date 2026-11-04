@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Research, outside the crate: run 3 of #43, a new held-out evaluation
   after run 2 (`research/preregistration/deep_hedging_mm_v2.md`,
-  `experiments/deep_hedging_mm_run3.py`). Nothing has run. The seeds are
-  not in the code: two independent approvals cover the code commit, the
+  `experiments/deep_hedging_mm_run3.py`). Outcome: ADOPT, in this synthetic
+  setting only, and resting on the amended `k` rule (the original rule
+  gives REVISE); see `research/results/deep_hedging_mm_run3.md`. Runs 1 and 2
+  keep their outcomes. The seeds are not in the code: two independent approvals cover the code commit, the
   preregistration and a launch manifest template with two null seed slots;
   the maintainer then draws both seeds with `secrets` under a fill rule
   (no forbidden seed, disjoint bootstrap ranges). The run takes the four
