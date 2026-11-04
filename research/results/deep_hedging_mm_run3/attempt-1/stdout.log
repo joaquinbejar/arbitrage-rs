@@ -1,0 +1,31 @@
+{"arrays": {}, "at": "2026-11-03T18:37:09Z", "elapsed_s": 0.1, "stage": "checks"}
+{"arrays": {"test.s": "35dd25297c8e36dfff14f57dfbf565e7c5121972c6702e711356398f164ec25b", "test.size_lots": "e3780862e310dbfb62f083b9ea110af44fffdb1db2476012b190e8eeb61d94ea", "test.u_reject": "553d87ce784b0037a51af427411ff46e35f048e1302df805b8e63d5041e4c2db", "val.s": "66bb1a62b3ab27fd4e0154a0532bb92a92152537553890f9a4e6cf34c30db752", "val.size_lots": "bd32be4a02b6060a012944ddb970affd738c38a94a2e328e0b441f98e5caa9b2", "val.u_reject": "6c1efd3a627afee8d431e060c04f04e9d5a8ea98a043d121960e15719a7e5214"}, "at": "2026-11-03T18:37:09Z", "elapsed_s": 0.1, "stage": "data_gbm"}
+{"arrays": {"heston.s": "6274aba729814139208b0d1900cf2a7f1018cca8448d21cb10a2ebf63cc2d82f", "heston.size_lots": "067d76a16edd640ed3b30c628271f60061e09b309af9ab54c1fe20a642a4352e", "heston.u_reject": "4aa592e2eb842b5fa732cf4cf4970f6938f886ba37033d62b2c9a980fffe824a"}, "at": "2026-11-03T18:37:09Z", "elapsed_s": 0.2, "stage": "data_heston"}
+{"arrays": {}, "at": "2026-11-03T18:39:01Z", "elapsed_s": 112.4, "stage": "surfaces"}
+{"arrays": {}, "at": "2026-11-03T18:39:28Z", "elapsed_s": 139.7, "stage": "coverage_and_agreement"}
+{"arrays": {}, "at": "2026-11-03T18:39:45Z", "elapsed_s": 156.9, "stage": "eps_0"}
+{"arrays": {}, "at": "2026-11-03T18:40:03Z", "elapsed_s": 174.9, "stage": "eps_0.0005"}
+{"arrays": {}, "at": "2026-11-03T18:40:21Z", "elapsed_s": 192.3, "stage": "eps_0.005"}
+{"arrays": {}, "at": "2026-11-03T18:40:21Z", "elapsed_s": 192.3, "stage": "gate_6"}
+{"arrays": {}, "at": "2026-11-03T18:40:26Z", "elapsed_s": 197.5, "stage": "gate_7"}
+{"arrays": {}, "at": "2026-11-03T18:40:26Z", "elapsed_s": 197.5, "stage": "results"}
+{
+  "criterion": "the reference run's, on surface B with the market-maker-rs counterpart, on the new Heston set; ADOPT also requires every gate",
+  "in_model_all_seeds_better": true,
+  "out_of_model_veto": {
+    "sticky-moneyness": false,
+    "sticky-strike": false
+  },
+  "criterion_outcome": "adopt",
+  "gates": {
+    "1_conformance_passed": true,
+    "2_surface_b_not_failed_and_frozen": true,
+    "3_out_of_domain_within_bound": true,
+    "4_every_required_row_priced": true,
+    "5_all_panels_agree": true,
+    "6_in_model_matches_reference": true,
+    "7_in_range_subset_no_veto": true
+  },
+  "outcome": "adopt",
+  "counterpart_validation": "market-maker-rs"
+}
