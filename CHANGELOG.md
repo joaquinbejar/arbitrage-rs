@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Research, outside the crate: the test of run 3's template reads the tree
+  of the launch commit from git objects, so later changes under
+  `experiments/` no longer fail the Python suite (#51). The template, the
+  pins and the frozen artifacts are untouched, and a test checks that those
+  artifacts have not moved. The reports no longer call the counterpart
+  validation pending, and link to run 3 (#43).
 - Research, outside the crate: gate 6 of `experiments/deep_hedging_mm.py`
   (the in-model rows equal the reference run's) compares values, not whole
   records. Every in_model field is compared (a field on one side only fails,
