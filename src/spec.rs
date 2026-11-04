@@ -57,6 +57,7 @@
 //! | mark of a [`PerpConvention::Inverse`] | the price asset per unit of base; [`ContractValue`] does not carry that asset, so the caller keeps them consistent |
 //! | [`Level`](crate::Level) size in parity and packages | contracts |
 //! | `target_quantity` and [`Level`](crate::Level) size in `basis` and `opportunity` | base units, on base unit lot grids |
+//! | exposure, band, `lot_size` and [`Level`](crate::Level) size in `hedge` | units of the hedge instrument's quantity, as the caller chooses: all in contracts or all in base units, never mixed |
 //! | [`base_quantity`] | base units and unsigned: the caller applies the direction |
 //! | [`ContractTerms::lot`], `InstrumentSpec::lot` | contracts, and a step: not a minimum order size |
 //!
@@ -250,11 +251,20 @@ fn multiplier(spec: &InstrumentSpec) -> Result<Quantity> {
         .option()
         .is_some_and(|terms| terms.exercise() != ExerciseStyle::European)
     {
-        return Err(unsupported(spec, "parity holds for european exercise only"));
+        return Err(unsupported(spec, "only european options have these terms"));
     }
-    match (spec.margining(), spec.size().kind()) {
-        (Margining::Linear, SizeKind::BaseQuantity) => Quantity::new(spec.size().amount()),
-        // As in `perp_convention`, required for the foreign enums.
+    match (spec.kind(), spec.margining(), spec.size().kind()) {
+        (
+            ContractKind::Spot
+            | ContractKind::Future
+            | ContractKind::Perpetual
+            | ContractKind::Option,
+            Margining::Linear,
+            SizeKind::BaseQuantity,
+        ) => Quantity::new(spec.size().amount()),
+        // As in `perp_convention`, required for the foreign enums: a kind, a
+        // margining or a size added there has no terms until it is mapped
+        // here.
         _ => Err(unsupported(
             spec,
             "only a linear contract sized in the underlying has these terms",
