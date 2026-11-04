@@ -2,11 +2,13 @@
 
     python3 research/deep_hedging_mm_run3_report.py
 
-Formatting only: every number comes from the committed results and the
-attempt's records, and the outcome is recomputed from the rows under the
-preregistered rule and must equal the recorded one. It uses the standard
-library alone and lives outside `experiments/`, whose tracked files the
-launch manifest pins.
+Formatting only. The results and the attempt's records supply the numbers,
+apart from these literals in the text: the authorization time and the one
+draw (from the authorization message), and the dry run's commit, seeds and
+duration (from the preregistration, "Dry run"). The outcome is recomputed
+from the rows under the preregistered rule and must equal the recorded one.
+It uses the standard library alone and lives outside `experiments/`, whose
+tracked files the launch manifest pins.
 """
 
 from __future__ import annotations
@@ -58,8 +60,11 @@ def header(r: dict, raw: bytes, m: dict) -> list[str]:
         "Run 3 is a new held-out evaluation after run 2, with no prior access to its paths. The learned hedge keeps its "
         "in-model result, and on a new Heston set no seed is significantly worse than the band under either dynamics. "
         "market-maker-rs and the reference agree on every row within the tolerances. This is the counterpart result that "
-        "the reference run was pending. It says nothing about live markets (see \"Limitations\"), and it rests on the "
-        "amended `k` rule (see \"Not in the decision\").",
+        "the reference run was pending. It says nothing about live markets (see \"Limitations\").",
+        "",
+        "Under the original `k` rule (exclude `k` outside `k_range`, REVISE above 1 %) the outcome would be **"
+        f"{r['original_k_range_rule']['outcome'].upper()}**: {pct(r['original_k_range_rule']['extrapolated_fraction'][DYNAMICS[0]])} of rows "
+        "are extrapolated under sticky moneyness. The preregistered rule is the amended one (see \"Not in the decision\").",
         "",
         "## Protocol",
         "",
@@ -72,9 +77,10 @@ def header(r: dict, raw: bytes, m: dict) -> list[str]:
         f"`eval_seed` {r['seeds']['eval_seed']}, `bootstrap_seed` {r['seeds']['bootstrap_seed']}.",
         f"- Authorized at {AUTHORIZED_AT}; attempt 1 started at {m['started_at']}, inside the one hour window, and finished "
         f"in {r['run_environment']['seconds']} s. One attempt, no restart, no exception record, no preflight failure.",
-        f"- Results sha256 `{hashlib.sha256(raw).hexdigest()}`, committed byte for byte. The file stayed unopened until both "
-        "approvers had confirmed the launch commit and the maintainer gave the go; that is a procedural commitment, which "
-        "the records cannot prove. The stage log carries no outcome.",
+        f"- Results sha256 `{hashlib.sha256(raw).hexdigest()}`, committed byte for byte. The stage log carries no outcome. "
+        "The captured stdout does: as the preregistration provides, it ends with the decision printed after the results "
+        "exist. Neither the results file nor the captured stdout was opened until both approvers had confirmed the launch "
+        "commit and the maintainer gave the go. That is a procedural commitment, which the records cannot prove.",
         f"- market-maker-rs {r['market_maker_rs']['version']} at `{r['market_maker_rs']['git_sha']}`, binary sha256 "
         f"`{r['market_maker_rs']['binary_sha256']}`.",
         "",
@@ -127,7 +133,11 @@ def hedging(r: dict) -> list[str]:
     for name in ("delta", "band"):
         out.append(f"| CVaR95 {name} | " + " | ".join(f"{primary[m][name]['cvar95']:.4f}" for m in ("in_model", *(f"heston_{d}" for d in DYNAMICS))) + " |")
     subset = r["in_range_subset"]
+    prem = r["premium"]
     out += [
+        "",
+        f"Premium at t = 0 (sticky moneyness): market-maker-rs on B {prem['mm_b']:.10f}, reference on B {prem['reference_b']:.10f}, "
+        f"reference run's surface {prem['reference_run']:.10f}.",
         "",
         "The criterion asks only that there is no veto out of model; here every Heston interval is also below 0. In model "
         f"the margin is small: estimates {min(x['delta_cvar95_vs_band']['estimate'] for x in primary['in_model']['learned']):+.4f} to "
@@ -241,7 +251,9 @@ def not_in_decision(r: dict, run2: dict) -> list[str]:
         f"{pct(rule['extrapolated_fraction'][DYNAMICS[1]])} under sticky strike. The first preregistration replaced that rule "
         "with the extrapolation label and gate 7. It did so before any run, but after measuring coverage on the earlier "
         "Heston set and seeing that the original rule would give REVISE; no price had been compared. Run 3 was preregistered "
-        "with the amended rule. **The outcome above rests on that amendment: under the original rule it would be REVISE.**",
+        "with the amended rule. **The outcome above rests on that amendment: under the original rule it would be REVISE.** "
+        "The run 3 preregistration calls this change amendment 1. In the first preregistration it is the section \"The "
+        "amended rule\"; the only amendment heading there is \"Amendment 2\".",
         "",
         "Everything below is **exploratory**: reported for context, outside the preregistered decision, and not a test.",
         "",
@@ -276,6 +288,8 @@ def limitations(r: dict) -> list[str]:
         "implementations there is numerical consistency, not economic validation.",
         "- **The learned controls are frozen and were trained on GBM.** The evaluation covers one option, one hedge "
         "instrument and five seeds, and the band re-hedges to its centre.",
+        "- **The intervals are per seed.** They are paired 95 % intervals with no multiplicity adjustment across seeds and "
+        "markets, and all five seeds share one path set. That matters most for the small in-model margin.",
         "- **The no-look commitments are procedural.** The records show the binding, the single attempt and the hashes; they "
         "cannot show that nobody looked.",
         "",
@@ -284,7 +298,7 @@ def limitations(r: dict) -> list[str]:
         f"python {r['run_environment']['python']}, numpy {r['run_environment']['numpy']}, torch {r['run_environment']['torch']}, "
         f"{r['run_environment']['machine']}, one thread everywhere, deterministic algorithms. The attempt's execution manifest, "
         "stage log (with the sha256 of each data array) and captured stdout are in "
-        "`research/results/deep_hedging_mm_run3/attempt-1/`; its stderr was empty. A rerun with these seeds would reproduce "
+        "`research/results/deep_hedging_mm_run3/attempt-1/`; its stderr, captured at launch, was empty (0 bytes), so no file records it. A rerun with these seeds would reproduce "
         "the same paths and would not be a new evaluation.",
         "",
     ]

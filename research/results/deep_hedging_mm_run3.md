@@ -2,7 +2,9 @@
 
 Outcome: **ADOPT** (criterion adopt, all 7 gates hold), the preregistered result. Its scope is further validation, in this synthetic setting only.
 
-Run 3 is a new held-out evaluation after run 2, with no prior access to its paths. The learned hedge keeps its in-model result, and on a new Heston set no seed is significantly worse than the band under either dynamics. market-maker-rs and the reference agree on every row within the tolerances. This is the counterpart result that the reference run was pending. It says nothing about live markets (see "Limitations"), and it rests on the amended `k` rule (see "Not in the decision").
+Run 3 is a new held-out evaluation after run 2, with no prior access to its paths. The learned hedge keeps its in-model result, and on a new Heston set no seed is significantly worse than the band under either dynamics. market-maker-rs and the reference agree on every row within the tolerances. This is the counterpart result that the reference run was pending. It says nothing about live markets (see "Limitations").
+
+Under the original `k` rule (exclude `k` outside `k_range`, REVISE above 1 %) the outcome would be **REVISE**: 5.31 % of rows are extrapolated under sticky moneyness. The preregistered rule is the amended one (see "Not in the decision").
 
 ## Protocol
 
@@ -11,7 +13,7 @@ Run 3 is a new held-out evaluation after run 2, with no prior access to its path
 - Launch commit `f1a387074aa8b0bc7a03782f3c230186b7f58ef8`, a signed child of C that adds only the final manifest. Two independent approvers confirmed it after the run.
 - Seeds, drawn by the maintainer after both approvals with `secrets.randbelow(2**64 - 299)` in one draw: `eval_seed` 7161644997987983501, `bootstrap_seed` 16423988309481355619.
 - Authorized at 2026-11-03T18:34:28Z; attempt 1 started at 2026-11-03T18:37:09Z, inside the one hour window, and finished in 197.5 s. One attempt, no restart, no exception record, no preflight failure.
-- Results sha256 `a2590b2841128e0f15855bf033d5c12c175799c3b3d47fa58b6f9d8119b33ac1`, committed byte for byte. The file stayed unopened until both approvers had confirmed the launch commit and the maintainer gave the go; that is a procedural commitment, which the records cannot prove. The stage log carries no outcome.
+- Results sha256 `a2590b2841128e0f15855bf033d5c12c175799c3b3d47fa58b6f9d8119b33ac1`, committed byte for byte. The stage log carries no outcome. The captured stdout does: as the preregistration provides, it ends with the decision printed after the results exist. Neither the results file nor the captured stdout was opened until both approvers had confirmed the launch commit and the maintainer gave the go. That is a procedural commitment, which the records cannot prove.
 - market-maker-rs 0.6.1 at `010e8183734b4cae489c230c071a94cc20a1f7c6`, binary sha256 `696948412d7b526268504569e48de3c254f44c639b1133ae8108b5662a5a3abe`.
 
 ## Earlier runs and the dry run
@@ -53,6 +55,8 @@ CVaR95(learned) − CVaR95(band), estimate and paired 95 % interval. Negative fa
 |---|---|---|---|
 | CVaR95 delta | 1.7183 | 2.0239 | 1.9362 |
 | CVaR95 band | 1.7175 | 2.0223 | 1.9350 |
+
+Premium at t = 0 (sticky moneyness): market-maker-rs on B 2.2378132055, reference on B 2.2378132055, reference run's surface 2.2393929359.
 
 The criterion asks only that there is no veto out of model; here every Heston interval is also below 0. In model the margin is small: estimates -0.0391 to -0.0212 against a band CVaR95 of 1.7175, with the tightest upper bound at -0.0057.
 
@@ -131,7 +135,7 @@ Every slice is now representable in market-maker-rs. Agreement with the referenc
 
 ## Not in the decision
 
-- **The original `k` rule gives REVISE.** It excluded `k` outside `k_range` and gave REVISE above 1 %; the extrapolated share is 5.31 % under sticky moneyness and 0.00 % under sticky strike. The first preregistration replaced that rule with the extrapolation label and gate 7. It did so before any run, but after measuring coverage on the earlier Heston set and seeing that the original rule would give REVISE; no price had been compared. Run 3 was preregistered with the amended rule. **The outcome above rests on that amendment: under the original rule it would be REVISE.**
+- **The original `k` rule gives REVISE.** It excluded `k` outside `k_range` and gave REVISE above 1 %; the extrapolated share is 5.31 % under sticky moneyness and 0.00 % under sticky strike. The first preregistration replaced that rule with the extrapolation label and gate 7. It did so before any run, but after measuring coverage on the earlier Heston set and seeing that the original rule would give REVISE; no price had been compared. Run 3 was preregistered with the amended rule. **The outcome above rests on that amendment: under the original rule it would be REVISE.** The run 3 preregistration calls this change amendment 1. In the first preregistration it is the section "The amended rule"; the only amendment heading there is "Amendment 2".
 
 Everything below is **exploratory**: reported for context, outside the preregistered decision, and not a test.
 
@@ -160,8 +164,9 @@ Everything below is **exploratory**: reported for context, outside the preregist
 - **The surface is static.** It is calibrated once at t = 0, and the two dynamics are modelling assumptions.
 - **Extrapolation.** Near expiry under sticky moneyness a large share of rows is outside the calibrated `k` range (the table above). There the prices are analytic SVI wings with no quote behind them. Agreement between the two implementations there is numerical consistency, not economic validation.
 - **The learned controls are frozen and were trained on GBM.** The evaluation covers one option, one hedge instrument and five seeds, and the band re-hedges to its centre.
+- **The intervals are per seed.** They are paired 95 % intervals with no multiplicity adjustment across seeds and markets, and all five seeds share one path set. That matters most for the small in-model margin.
 - **The no-look commitments are procedural.** The records show the binding, the single attempt and the hashes; they cannot show that nobody looked.
 
 ## Reproducibility
 
-python 3.12.16, numpy 2.5.4, torch 2.15.0, arm64, one thread everywhere, deterministic algorithms. The attempt's execution manifest, stage log (with the sha256 of each data array) and captured stdout are in `research/results/deep_hedging_mm_run3/attempt-1/`; its stderr was empty. A rerun with these seeds would reproduce the same paths and would not be a new evaluation.
+python 3.12.16, numpy 2.5.4, torch 2.15.0, arm64, one thread everywhere, deterministic algorithms. The attempt's execution manifest, stage log (with the sha256 of each data array) and captured stdout are in `research/results/deep_hedging_mm_run3/attempt-1/`; its stderr, captured at launch, was empty (0 bytes), so no file records it. A rerun with these seeds would reproduce the same paths and would not be a new evaluation.

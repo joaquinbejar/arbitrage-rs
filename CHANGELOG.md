@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `experiments/deep_hedging_mm_run3.py`). Outcome: ADOPT, in this synthetic
   setting only, and resting on the amended `k` rule (the original rule
   gives REVISE); see `research/results/deep_hedging_mm_run3.md`. Runs 1 and 2
-  keep their outcomes. The seeds are not in the code: two independent approvals cover the code commit, the
-  preregistration and a launch manifest template with two null seed slots;
+  keep their outcomes. The seeds are not in the code: two independent
+  approvals cover the code commit, the preregistration and a launch
+  manifest template with two null seed slots;
   the maintainer then draws both seeds with `secrets` under a fill rule
   (no forbidden seed, disjoint bootstrap ranges). The run takes the four
   approved values as arguments and refuses to generate anything unless
