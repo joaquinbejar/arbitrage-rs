@@ -665,16 +665,118 @@ class Streams(unittest.TestCase):
             self.assertNotEqual(r3.array_sha256(x), r3.array_sha256(y))
 
 
+def _blob(root: Path, commit: str, rel: str) -> bytes:
+    return subprocess.run(["git", "show", f"{commit}:{rel}"], cwd=root, check=True, capture_output=True).stdout
+
+
+def frozen_tree_differences(root: Path, commit: str, template: dict) -> list[str]:
+    """How the tree at `commit` differs from the template's file pins. It
+    reads git objects, never the working tree, so later changes do not
+    count."""
+    tracked = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", commit, "experiments"], cwd=root, check=True, capture_output=True, text=True).stdout
+    names = {p for p in tracked.split("\0") if p}
+    pins = template["files"]
+    out = [f"{p} is at the commit, not in the template" for p in sorted(names - set(pins))]
+    out += [f"{p} is in the template, not at the commit" for p in sorted(set(pins) - names)]
+    out += [f"{p} differs" for p in sorted(names & set(pins)) if r3.sha256_bytes(_blob(root, commit, p)) != pins[p]]
+    return out
+
+
+class FrozenTree(unittest.TestCase):
+    """The template pins the tree the run was launched from. That history
+    is checked from git objects, so `experiments/` can change afterwards."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.git("init", "-q")
+        self.write("experiments/x.py", b"x = 1\n")
+        self.write("experiments/y.py", b"y = 1\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "C")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+        self.template = {"files": {"experiments/x.py": r3.sha256_bytes(b"x = 1\n"), "experiments/y.py": r3.sha256_bytes(b"y = 1\n")}}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def git(self, *args):
+        cmd = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", *args]
+        return subprocess.run(cmd, cwd=self.root, check=True, capture_output=True, text=True).stdout
+
+    def write(self, rel, raw: bytes):
+        p = self.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(raw)
+
+    def test_later_changes_under_experiments_do_not_count(self):
+        self.write("experiments/x.py", b"x = 2\n")
+        self.write("experiments/z.py", b"z = 1\n")
+        (self.root / "experiments/y.py").unlink()
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "later")
+        self.assertEqual(frozen_tree_differences(self.root, self.commit, self.template), [])
+
+    def test_a_difference_at_the_commit_is_reported(self):
+        pins = self.template["files"]
+        cases = {
+            "a changed pin": ({"experiments/x.py": "0" * 64, "experiments/y.py": pins["experiments/y.py"]}, "experiments/x.py differs"),
+            "a file without a pin": ({"experiments/x.py": pins["experiments/x.py"]}, "experiments/y.py is at the commit, not in the template"),
+            "a pin without a file": (pins | {"experiments/z.py": "0" * 64}, "experiments/z.py is in the template, not at the commit"),
+        }
+        for name, (files, want) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(frozen_tree_differences(self.root, self.commit, {"files": files}), [want])
+
+
 class Template(unittest.TestCase):
-    def test_the_committed_template_is_the_tree(self):
-        if not r3.TEMPLATE.exists():
-            self.skipTest("no template yet")
-        template = r3.parse_canonical(r3.TEMPLATE.read_bytes(), "template")
-        facts = r3.launch_facts()
-        # The environment is the run host's, checked at launch; CI runs elsewhere.
-        strip = lambda d: {k: v for k, v in d.items() if k not in ("environment", "seeds")}  # noqa: E731
-        self.assertEqual(r3._strict_diff(strip(facts), strip(template), "template"), [])
+    def launch(self) -> dict:
+        """The launch commits, from the committed execution manifest, or a
+        skip where their objects are absent (a shallow clone)."""
+        manifest = json.loads((r3.ATTEMPTS / "attempt-1" / "execution_manifest.json").read_text())
+        for commit in (manifest["launch"]["code_commit"], manifest["head"]):
+            found = subprocess.run(["git", "cat-file", "-e", f"{commit}^{{commit}}"], cwd=r3.ROOT, capture_output=True, check=False)
+            if found.returncode != 0:
+                self.skipTest(f"commit {commit} is not in this clone")
+        return manifest
+
+    def test_the_template_is_the_tree_of_the_launch_commit(self):
+        manifest = self.launch()
+        commit = manifest["launch"]["code_commit"]
+        raw = _blob(r3.ROOT, commit, r3.TEMPLATE_REL)
+        self.assertEqual(r3.sha256_bytes(raw), manifest["launch"]["template_sha256"])
+        template = r3.parse_canonical(raw, "template")
+        self.assertEqual(frozen_tree_differences(r3.ROOT, commit, template), [])
+        self.assertEqual(r3.sha256_bytes(_blob(r3.ROOT, commit, r3.PREREGISTRATION_REL)), template["preregistration"]["sha256"])
+        self.assertEqual(r3.sha256_bytes(_blob(r3.ROOT, manifest["head"], r3.MANIFEST_REL)), manifest["launch"]["manifest_sha256"])
         self.assertEqual(template["seeds"], {"eval_seed": None, "bootstrap_seed": None})
+        results = json.loads(r3.OUT.read_text())
+        self.assertEqual(r3._strict_diff(template["config"]["config"], results["config"], "config"), [])
+        self.assertEqual(r3._strict_diff(template["config"]["counterpart_config"], results["counterpart_config"], "counterpart_config"), [])
+        self.assertEqual(r3._strict_diff(template["config"]["mm_config"], results["mm_config"], "mm_config"), [])
+        self.assertEqual(template["binary_sha256"], manifest["binary_sha256"])
+        self.assertEqual(template["binary_sha256"], results["manifest"]["binary_sha256"])
+
+    def test_the_frozen_artifacts_have_not_moved(self):
+        # The evidence of the runs, as opposed to the code: these files stay
+        # as they were launched, in the working tree too.
+        manifest = self.launch()
+        template = r3.parse_canonical(_blob(r3.ROOT, manifest["launch"]["code_commit"], r3.TEMPLATE_REL), "template")
+        self.assertEqual(r3.sha256_bytes(r3.TEMPLATE.read_bytes()), manifest["launch"]["template_sha256"])
+        self.assertEqual(r3.sha256_bytes(r3.MANIFEST.read_bytes()), manifest["launch"]["manifest_sha256"])
+        self.assertEqual(r3.sha256_bytes(r3.PREREGISTRATION.read_bytes()), template["preregistration"]["sha256"])
+        self.assertEqual(r3.sha256_bytes(r3.FIRST_PREREGISTRATION.read_bytes()), template["first_preregistration_sha256"])
+        for rel, want in template["results_inputs"].items():
+            with self.subTest(rel):
+                self.assertEqual(r3.sha256_bytes((r3.ROOT / rel).read_bytes()), want)
+        reference = json.loads(r3.mm2.REFERENCE_RUN.read_text())
+        self.assertEqual(set(template["weights"]), set(reference["weights"]))
+        for key, want in template["weights"].items():
+            with self.subTest(key):
+                self.assertEqual(r3.sha256_bytes((r3.ROOT / reference["weights"][key]["file"]).read_bytes()), want)
+
+    def test_the_template_pins_one_thread_everywhere(self):
+        template = r3.parse_canonical(r3.TEMPLATE.read_bytes(), "template")
         self.assertEqual(template["environment"]["torch_threads"], 1)
         self.assertIs(template["environment"]["deterministic_algorithms"], True)
         self.assertEqual(template["environment"]["thread_env"], {k: "1" for k in r3.THREAD_ENV})

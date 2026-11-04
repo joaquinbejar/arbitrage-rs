@@ -1,11 +1,15 @@
 # M5-06b: deep hedging against a pricing counterpart
 
-> **Pending counterpart validation.** The counterpart here is the
-> reference implementation in `experiments/counterpart.py`, not
-> market-maker-rs: its pricing and volatility surface (market-maker-rs#95
-> and #96) do not exist yet. The json records the same status
-> (`counterpart_validation: "pending"`). This issue stays open until the
-> run is repeated against that counterpart.
+> **The counterpart validation is done elsewhere.** The counterpart here is
+> the reference implementation in `experiments/counterpart.py`, not
+> market-maker-rs. Against market-maker-rs, run 1 aborted and run 2 gave
+> REVISE, and both keep those outcomes. Run 3,
+> [`deep_hedging_mm_run3.md`](deep_hedging_mm_run3.md), gave ADOPT, in the
+> synthetic setting only, and under the amended `k` rule (the original rule
+> gives REVISE). The json is kept as written and still records
+> `counterpart_validation: "pending"`. This report's text was updated on
+> 2026-11-04 in this note, the result line and one limitation; no number
+> changed, and the earlier wording is in the git history.
 
 **Outcome against the reference: ADOPT for further validation, synthetic
 setting only.** The pre-registered criterion holds. In model, the result
@@ -116,8 +120,8 @@ At the primary half spread (5 bp):
   if in_model holds and there is a veto under exactly one.
 
 Result: in_model holds (the M5-06 rows), veto(sticky-strike) = false,
-veto(sticky-moneyness) = false: **ADOPT**, pending counterpart
-validation.
+veto(sticky-moneyness) = false: **ADOPT** against the reference. See run 3,
+[`deep_hedging_mm_run3.md`](deep_hedging_mm_run3.md), for the validation.
 
 ## Results out of model (Heston, no retraining)
 
@@ -205,11 +209,9 @@ both the flat (−0.004 [−0.027, 0.018]) and the sticky-strike interval
 
 ## Limitations
 
-- **Pending counterpart validation:** the counterpart is the reference
-  implementation. The decision becomes final only when the run is
-  repeated against market-maker-rs (#95 pricing and Greeks, #96 surface)
-  with its version pinned; the adapter is in place
-  (`MarketMakerRsCounterpart`) and empty.
+- **The counterpart is the reference implementation.** The repeats against
+  market-maker-rs, with its version pinned, are recorded in
+  [`deep_hedging_mm_run3.md`](deep_hedging_mm_run3.md).
 - **The surface is synthetic and Heston-informed:** it shares the
   out-of-model parameters, is calibrated once at t = 0 and never
   recalibrated, and the two dynamics are modelling assumptions, not
