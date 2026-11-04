@@ -42,11 +42,11 @@ delta, the band and the premium taken from a pricing counterpart
 (`counterpart.py`) instead of Black-Scholes at a flat volatility. Without
 the flag the script is the M5-06 run, unchanged. The results are in
 [`research/results/deep_hedging_counterpart.md`](../research/results/deep_hedging_counterpart.md).
-That run used the reference counterpart. The validation against
-market-maker-rs is
-[`research/results/deep_hedging_mm_run3.md`](../research/results/deep_hedging_mm_run3.md):
-ADOPT, in the synthetic setting only, and under the amended `k` rule (the
-original rule gives REVISE).
+That run used the reference counterpart. Against market-maker-rs, run 1
+aborted and run 2 gave REVISE, and both keep those outcomes. Run 3,
+[`research/results/deep_hedging_mm_run3.md`](../research/results/deep_hedging_mm_run3.md),
+gave ADOPT, in the synthetic setting only, and under the amended `k` rule
+(the original rule gives REVISE).
 
 ```sh
 experiments/.venv/bin/python experiments/deep_hedging.py --counterpart reference

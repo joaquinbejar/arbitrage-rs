@@ -754,6 +754,8 @@ class Template(unittest.TestCase):
         self.assertEqual(r3._strict_diff(template["config"]["config"], results["config"], "config"), [])
         self.assertEqual(r3._strict_diff(template["config"]["counterpart_config"], results["counterpart_config"], "counterpart_config"), [])
         self.assertEqual(r3._strict_diff(template["config"]["mm_config"], results["mm_config"], "mm_config"), [])
+        self.assertEqual(template["binary_sha256"], manifest["binary_sha256"])
+        self.assertEqual(template["binary_sha256"], results["manifest"]["binary_sha256"])
 
     def test_the_frozen_artifacts_have_not_moved(self):
         # The evidence of the runs, as opposed to the code: these files stay
