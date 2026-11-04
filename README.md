@@ -320,6 +320,9 @@ More examples are in the crate documentation and in `tests/`.
 |---|---|---|
 | `instruments` | off | The `spec` module: an exact conversion of a `financial_types` instrument specification into `Instrument`, `Currency`, `PerpConvention` and contract terms, with typed refusals. Enables `financial_types/instruments`. |
 
+`instruments` needs `financial_types` 0.3.1 or later: Cargo does not upgrade a
+lockfile at 0.3.0 by itself, so run `cargo update -p financial_types`.
+
 ### Dependency direction
 
 arbitrage-rs depends only on `rust_decimal`, `thiserror` and

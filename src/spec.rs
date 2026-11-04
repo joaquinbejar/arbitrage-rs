@@ -14,6 +14,15 @@
 //! | [`contract_terms`] | contract size and lot, for parity and packages | see below |
 //! | [`base_quantity`] | contracts times the multiplier | see below |
 //!
+//! # Which `financial_types`
+//!
+//! This module needs a `financial_types` with its `instruments` feature, 0.3.1
+//! or later. The dependency stays `"0.3"`: with `instruments` on, Cargo refuses
+//! a version without that feature when it resolves, naming the missing feature,
+//! and without it 0.3.0 is still accepted. A lockfile already at 0.3.0 is not
+//! upgraded by itself: adding `instruments` fails to resolve until
+//! `cargo update -p financial_types` is run.
+//!
 //! # What an [`Instrument`] certifies
 //!
 //! Only its identifier and its expiry. A converted [`Instrument`] says
