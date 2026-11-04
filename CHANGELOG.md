@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Feature `instruments` (off by default; enables
+  `financial_types/instruments`), with the new `spec` module, an exact
+  conversion of a `financial_types` `InstrumentSpec`:
+  `TryFrom<&InstrumentSpec> for Instrument` (identity and expiry only),
+  `currencies`, `perp_convention`, `contract_terms` and `base_quantity`. New
+  `ArbitrageError` variants under the feature: `UnsupportedSpec` and
+  `ExpiryOutOfRange`. No existing kernel changes (#52). `instruments` needs
+  `financial_types` 0.3.1 or later: the dependency stays `"0.3"`, and Cargo
+  refuses 0.3.0 when it resolves. A lockfile at 0.3.0 is not upgraded by
+  itself: run `cargo update -p financial_types`. Without `instruments`, 0.3.0
+  is still accepted.
 - Research, outside the crate: run 3 of #43, a new held-out evaluation
   after run 2 (`research/preregistration/deep_hedging_mm_v2.md`,
   `experiments/deep_hedging_mm_run3.py`). Outcome: ADOPT, in this synthetic

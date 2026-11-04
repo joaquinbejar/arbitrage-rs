@@ -77,6 +77,15 @@
 //! next to them, depend on arbitrage-rs and translate their prices,
 //! inventory and ledgers into its types.
 //!
+//! ## Feature flags
+//!
+//! | Feature | Default | Effect |
+//! |---|---|---|
+//! | `instruments` | off | The `spec` module: an exact conversion of a `financial_types` instrument specification into [`Instrument`], [`Currency`], [`funding::PerpConvention`] and contract terms, with typed refusals. Enables `financial_types/instruments`. |
+//!
+//! `instruments` needs `financial_types` 0.3.1 or later: Cargo does not upgrade
+//! a lockfile at 0.3.0 by itself, so run `cargo update -p financial_types`.
+//!
 //! ## Versioning
 //!
 //! The crate follows semantic versioning. Below `1.0.0`, a minor version bump
@@ -121,6 +130,8 @@ pub mod legs;
 pub mod opportunity;
 pub mod package;
 pub mod parity;
+#[cfg(feature = "instruments")]
+pub mod spec;
 
 mod cost;
 mod instrument;

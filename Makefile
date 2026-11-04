@@ -11,8 +11,17 @@ build:
 
 .PHONY: test
 test:
-	cargo test --all-targets
-	cargo test --doc
+	cargo test --no-default-features --all-targets
+	cargo test --no-default-features --doc
+	cargo test --all-features --all-targets
+	cargo test --all-features --doc
+
+# The library alone, without the dev-dependencies, whose features unify into
+# every test build.
+.PHONY: lib-check
+lib-check:
+	cargo check --no-default-features --lib
+	cargo check --no-default-features --features instruments --lib
 
 .PHONY: fmt
 fmt:
@@ -29,13 +38,15 @@ lint:
 .PHONY: doc
 doc:
 	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 
 .PHONY: msrv
 msrv:
 	cargo +$(MSRV) check --all-targets
+	cargo +$(MSRV) check --all-targets --all-features
 
 .PHONY: pre-push
-pre-push: fmt-check lint test doc msrv
+pre-push: fmt-check lint lib-check test doc msrv
 
 .PHONY: clean
 clean:

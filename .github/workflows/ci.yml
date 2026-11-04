@@ -23,6 +23,8 @@ jobs:
         run: make fmt-check
       - name: Clippy
         run: make lint
+      - name: Library feature sets
+        run: make lib-check
       - name: Tests
         run: make test
       - name: Docs

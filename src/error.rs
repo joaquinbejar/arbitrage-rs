@@ -112,4 +112,30 @@ pub enum ArbitrageError {
         /// The invariant that failed, for example `"must be positive"`.
         reason: &'static str,
     },
+
+    /// An instrument specification has no consistent conversion to the type
+    /// asked for (feature `instruments`).
+    #[cfg(feature = "instruments")]
+    #[error("{instrument}: a {margining:?} {kind:?} specification is refused: {reason}")]
+    UnsupportedSpec {
+        /// Instrument identifier.
+        instrument: String,
+        /// The kind of contract.
+        kind: financial_types::instrument::ContractKind,
+        /// Its margining.
+        margining: financial_types::instrument::Margining,
+        /// Why it is refused.
+        reason: &'static str,
+    },
+
+    /// The expiry of an instrument specification does not fit a
+    /// [`Timestamp`] (feature `instruments`).
+    #[cfg(feature = "instruments")]
+    #[error("{instrument}: expiry {expiry_ms} ms does not fit a timestamp")]
+    ExpiryOutOfRange {
+        /// Instrument identifier.
+        instrument: String,
+        /// The expiry of the specification, in milliseconds since the epoch.
+        expiry_ms: u64,
+    },
 }

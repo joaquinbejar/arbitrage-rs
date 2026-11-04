@@ -34,6 +34,20 @@ thiserror = "2.0"
 
 [dev-dependencies]
 rust_decimal_macros = "1.40"
+# The shared, hand computed instrument fixtures (tests/instrument_fixtures.rs).
+financial_types = { version = "0.3", features = ["fixtures"] }
+
+[features]
+default = []
+# Conversion of a `financial_types` instrument specification into the types
+# the kernels take (the `spec` module). Asking for
+# `financial_types/instruments` is what excludes 0.3.0, which has no such
+# feature, while `financial_types = "0.3"` keeps it valid without this feature.
+instruments = ["financial_types/instruments"]
+
+# docs.rs builds default features only unless told otherwise.
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 missing_docs = "deny"
