@@ -28,12 +28,24 @@ name = "arbitrage_rs"
 path = "src/lib.rs"
 
 [dependencies]
-financial_types = "0.3"
+financial_types = "0.3.1"
 rust_decimal = { version = "1.43", default-features = false, features = ["std"] }
 thiserror = "2.0"
 
 [dev-dependencies]
 rust_decimal_macros = "1.40"
+# The shared, hand computed instrument fixtures (tests/instrument_fixtures.rs).
+financial_types = { version = "0.3.1", features = ["fixtures"] }
+
+[features]
+default = []
+# Conversion of a `financial_types` instrument specification into the types
+# the kernels take (the `spec` module).
+instruments = ["financial_types/instruments"]
+
+# docs.rs builds default features only unless told otherwise.
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 missing_docs = "deny"
