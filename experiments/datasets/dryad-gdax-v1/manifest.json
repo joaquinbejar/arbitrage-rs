@@ -1,0 +1,37 @@
+{
+  "contract": {
+    "expiry_days": 30.0,
+    "kind": "call",
+    "strike": "atm-at-step-0",
+    "style": "european"
+  },
+  "currency": "USD",
+  "fee_asset": "quote",
+  "fee_bps": 2.0,
+  "files": {
+    "execution.csv": "334975c0e3b9a1dd7e018daad913a45c0156d03a4ce509bca51cc25776a0562b",
+    "paths.csv": "0d1ae2aca21a58430331cf0ceb8a20bb072c74acef72860763b51711854b348f"
+  },
+  "lot": 0.0001,
+  "name": "dryad-gdax-v1",
+  "queue_model": {
+    "id": "visible-top-of-book-size",
+    "limits": [
+      "capacity is the visible level 1 size on the side consumed, as an assumption: the archive has no trades, so no fill is observed",
+      "no queue position, latency, hidden liquidity or market impact is modelled; an order takes the touch price whatever its size",
+      "reject is always 0: the archive records no rejections, so this is no evidence that none occurred",
+      "tick, lot and fee are the trained configuration, not venue history: the archive has neither, and the 2 bp fee is an assumption",
+      "the market's BTC-USD listing and the capture timing are not stated in the archive; the minute label is not an exchange time"
+    ],
+    "version": "1"
+  },
+  "rounding": "floor-lots",
+  "seed": null,
+  "source": "Dryad doi:10.5061/dryad.q2bvq83rn, licence CC0, file 2816244, sha256 81cffe292e1f894bd78c3d14a37469c630f85bcefca3b6dc1300fef1e893f195, market gdax, level 1 at 00:00 UTC",
+  "step_days": 1.0,
+  "steps": 30,
+  "synthetic": false,
+  "tick": 0.01,
+  "timestamp_unit": "s",
+  "version": "1"
+}
