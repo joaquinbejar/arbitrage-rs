@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Research, outside the crate: the frozen deep hedging controls on `dryad-gdax-v1`, a dataset built from a CC0 Dryad archive (#44). Outcome: inconclusive, with 13 paths and an assumed capacity; see `research/results/deep_hedging_dataset_dryad-gdax-v1_conclusion.md`.
+
 ## [0.3.2] - 2026-11-05
 
 ### Added
