@@ -26,6 +26,10 @@
 //! - [`parity::evaluate_parity`] (#18): the executable edge of
 //!   put-call parity against a same-expiry future, in both directions, after
 //!   the fees of all three legs;
+//! - [`linear`]: the executable edges of cash and carry (spot against a
+//!   dated future), the perpetual basis against funding, and calendar
+//!   spreads (future against future, or perpetual against future), in both
+//!   directions, after the fees of both legs;
 //! - [`package::PackagePlan`] (#19): a multi-leg package execution
 //!   state machine with legs of different contract sizes, a matched package
 //!   on a common lot grid, a residual per leg and recovery.
@@ -127,6 +131,7 @@ pub mod funding;
 pub mod hedge;
 pub mod hedge_action;
 pub mod legs;
+pub mod linear;
 pub mod opportunity;
 pub mod package;
 pub mod parity;
