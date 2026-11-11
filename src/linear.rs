@@ -149,6 +149,10 @@ pub struct CalendarInput {
     /// The far leg: a future dated after the near leg.
     pub far: LinearLeg,
     /// Simple carry rate of the near leg per unit of time, of any sign.
+    ///
+    /// For a perpetual near leg it should be zero unless the caller means
+    /// margin financing: funding is the perpetual's carry, and a non-zero
+    /// rate adds to it.
     pub carry_rate: Decimal,
     /// Time from the near leg's expiry (or from `as_of` for a perpetual
     /// near leg) to the far expiry, in the unit of `carry_rate`; strictly
@@ -221,7 +225,7 @@ pub struct LinearEdge {
     pub expected_gross: Money,
     /// The fees of both legs.
     pub expected_fees: LinearFees,
-    /// `expected_gross - expected_fees.total`.
+    /// `expected_gross - expected_fees.total`. Only entry fees are counted.
     pub expected_net: Money,
 }
 
@@ -340,6 +344,10 @@ pub fn evaluate_cash_and_carry(input: &CashAndCarryInput) -> Result<LinearEvalua
 /// The basis is assumed to close to zero at exit; the funding is the
 /// venue's rate, supplied by the caller. [`crate::basis`] covers the same
 /// pair with an explicit exit basis, funding schedule and exit fees.
+///
+/// Limitation: the spot leg carries no financing cost here (no carry rate
+/// is applied to it); fold one into the funding inputs or use
+/// [`crate::basis`] when it matters.
 ///
 /// # Errors
 ///

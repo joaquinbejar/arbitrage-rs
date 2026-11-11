@@ -59,6 +59,9 @@ no input makes the old code fail there while the result fits.
 Already under the rule when they were written:
 
 - `parity` (#20): gross, fees, fee total and net;
+- `linear` (#56): gross (with the four-factor carry and funding terms), fees,
+  fee total and net; tests `linear_carry_with_28_places` and
+  `linear_gross_is_exact_when_only_intermediates_overflow`;
 - `package` (#19): executed, remaining, excess, fees, net cash and filled
   notional;
 - `funding`: the cashflow `position * mark * rate` is one wide product,

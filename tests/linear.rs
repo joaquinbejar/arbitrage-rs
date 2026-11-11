@@ -648,3 +648,134 @@ fn calendar_input_validation() {
         Err(ArbitrageError::Expired { .. })
     ));
 }
+
+#[test]
+fn funding_scales_with_the_package() {
+    // The positive funding fixture with 2 XYZ (2 spot, 200 perpetual
+    // contracts). Buy spot at 100.10, sell the perpetual at 100.30:
+    //   gross = 2 * (100.30 - 100.10) + 2 * 100.35 * 0.0001 * 3
+    //         = 0.40 + 0.06021 = 0.46021
+    //   fees  = 2 * 100.10 * 5e-4 = 0.1001 + 2 * 100.30 * 5e-4 = 0.1003
+    //         = 0.2004
+    //   net   = 0.46021 - 0.2004 = 0.25981
+    let mut i = perp_basis((dec!(100.30), dec!(100.40)), dec!(0.0001), dec!(100.35));
+    i.terms.package = q(dec!(2));
+    let ev = evaluate_perp_basis(&i).unwrap();
+    assert_eq!(
+        numbers(&ev.long_near),
+        (
+            dec!(0.46021),
+            [dec!(0.1001), dec!(0.1003), dec!(0.2004)],
+            dec!(0.25981)
+        )
+    );
+    let e = ev.long_near.edge().unwrap();
+    assert_eq!(e.expected_net.currency(), Currency::new("USDC").unwrap());
+    assert_eq!(e.as_of, Timestamp::from_millis(0));
+}
+
+#[test]
+fn near_leg_book_is_checked() {
+    // Half a spot contract at the ask, one needed: buying spot is unavailable.
+    let mut i = cash_and_carry((dec!(101.50), dec!(101.60)));
+    i.spot.book.ask = Some(Level::new(px(dec!(100.10)), q(dec!(0.5))));
+    let ev = evaluate_cash_and_carry(&i).unwrap();
+    assert_eq!(
+        ev.long_near,
+        LinearDirectionEvaluation::Unavailable(LinearUnavailable::InsufficientLiquidity {
+            instrument: i.spot.instrument.clone(),
+            available: q(dec!(0.5)),
+            required: q(dec!(1)),
+        })
+    );
+    // No spot bid: selling spot is unavailable.
+    let mut i = cash_and_carry((dec!(101.50), dec!(101.60)));
+    i.spot.book.bid = None;
+    let ev = evaluate_cash_and_carry(&i).unwrap();
+    assert_eq!(
+        ev.short_near,
+        LinearDirectionEvaluation::Unavailable(LinearUnavailable::MissingQuote {
+            instrument: i.spot.instrument.clone(),
+            side: Action::Sell,
+        })
+    );
+}
+
+#[test]
+fn calendar_far_leg_and_expiry_order() {
+    // Perpetual near leg, far future expiring at NEAR_EXPIRY: expired.
+    let mut i = perp_calendar();
+    i.terms.as_of = Timestamp::from_millis(NEAR_EXPIRY);
+    assert!(matches!(
+        evaluate_calendar(&i),
+        Err(ArbitrageError::Expired { .. })
+    ));
+    // A near leg dated after the far leg.
+    let mut i = calendar();
+    i.near.instrument = Instrument::dated(id("XYZ-F1"), Timestamp::from_millis(FAR_EXPIRY + 1));
+    invalid_input(&evaluate_calendar(&i));
+}
+
+#[test]
+fn tie_returns_long_near() {
+    // Spot and perpetual both 100 / 100, zero funding: each direction has
+    // gross 0 and fees 0.05 + 0.05, so both nets are -0.1.
+    let mut i = perp_basis((dec!(100), dec!(100)), Decimal::ZERO, dec!(100));
+    i.spot.book = book(dec!(100), dec!(100), dec!(10));
+    let ev = evaluate_perp_basis(&i).unwrap();
+    assert_eq!(
+        ev.long_near.edge().unwrap().expected_net.amount(),
+        dec!(-0.1)
+    );
+    assert_eq!(
+        ev.short_near.edge().unwrap().expected_net.amount(),
+        dec!(-0.1)
+    );
+    assert_eq!(
+        ev.executable().unwrap().direction,
+        LinearDirection::LongNearShortFar
+    );
+}
+
+#[test]
+fn linear_carry_with_28_places() {
+    // r = 0.05 + 1e-28 and tau = 0.25 + 1e-28: r * tau = 0.0125 + 3e-29
+    // + 1e-56, whose product with 100.10 has 58 places.
+    let mut i = cash_and_carry((dec!(101.50), dec!(101.60)));
+    i.carry_rate = dec!(0.0500000000000000000000000001);
+    i.time_to_expiry = dec!(0.2500000000000000000000000001);
+    i.terms.edge_dp = 28;
+    let ev = evaluate_cash_and_carry(&i).unwrap();
+    // Buy spot: 1.40 - 100.10 * r * tau
+    //   = 0.14875 - 3.003e-27 - 1.001e-54
+    //   = 0.14874999999999999999999999699699...9
+    // rounded once, half even, to 28 places: ...9970.
+    assert_eq!(
+        numbers(&ev.long_near).0,
+        dec!(0.1487499999999999999999999970)
+    );
+    // Sell spot: 100.00 * (1 + r * tau) - 101.60
+    //   = -0.35 + 3e-27 + 1e-54, to 28 places: -0.3499999999999999999999999970.
+    assert_eq!(
+        numbers(&ev.short_near).0,
+        dec!(-0.3499999999999999999999999970)
+    );
+}
+
+#[test]
+fn linear_gross_is_exact_when_only_intermediates_overflow() {
+    // Spot and future at MAX, carry 2 over 0.5: package * spot * rate is
+    // 2 * MAX, not a Decimal, but the carry term MAX and the gross fit.
+    let max = Decimal::MAX;
+    let mut i = cash_and_carry((max, max));
+    i.spot.book = book(max, max, dec!(10));
+    i.spot.fee = FeeRate::zero();
+    i.future.fee = FeeRate::zero();
+    i.carry_rate = dec!(2);
+    i.time_to_expiry = dec!(0.5);
+    let ev = evaluate_cash_and_carry(&i).unwrap();
+    // Buy spot: MAX - MAX - MAX * 2 * 0.5 = -MAX.
+    assert_eq!(ev.long_near.edge().unwrap().expected_net.amount(), -max);
+    // Sell spot: MAX + MAX * 1 - MAX = MAX.
+    assert_eq!(ev.short_near.edge().unwrap().expected_net.amount(), max);
+}
