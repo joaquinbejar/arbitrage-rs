@@ -5,7 +5,14 @@
 //! three factors is below `2^288` at a scale of at most 84, and aligning it
 //! to a common scale multiplies it by at most `10^84 < 2^280`, so a sum of
 //! such products stays far below 768 bits. A product of four factors where
-//! one is a power of ten (a basis-point divisor) fits as well. The
+//! one is a power of ten (a basis-point divisor) fits as well. So does
+//! the four-factor carry term of `linear` (package, price, rate, time:
+//! below `2^384` at a scale of at most 112) next to its funding term
+//! (package, mark, rate and a `u32` count: below `2^320`): aligning either
+//! to the common scale (at most 112) multiplies it by at most
+//! `10^112 < 2^373`, and the carry term is shifted only up to another
+//! term's scale (at most 84, so by at most `10^84 < 2^280`). Every aligned
+//! term is then below `2^693` and the four-term sum below `2^695`. The
 //! operations still check and report overflow instead of wrapping.
 
 use crate::error::{ArbitrageError, Result};

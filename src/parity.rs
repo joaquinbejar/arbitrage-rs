@@ -431,7 +431,7 @@ fn level(
 }
 
 /// `1 / 10_000`: basis points to a fraction, as an exact factor.
-const BPS: Decimal = Decimal::from_parts(1, 0, 0, false, 4);
+pub(crate) const BPS: Decimal = Decimal::from_parts(1, 0, 0, false, 4);
 
 /// An option leg's fee: the candidates are exact products, compared exactly,
 /// and the chosen one is rounded once.
@@ -473,7 +473,11 @@ fn rounded_fee(input: &ParityInput, factors: &[Decimal]) -> Result<Decimal> {
 
 /// `package / contract_size` contracts, which must be a whole multiple of
 /// `lot`.
-fn contracts(package: Quantity, contract_size: Quantity, lot: Quantity) -> Result<Quantity> {
+pub(crate) fn contracts(
+    package: Quantity,
+    contract_size: Quantity,
+    lot: Quantity,
+) -> Result<Quantity> {
     let not_whole = ArbitrageError::InvalidInput {
         reason: "the package is not a whole multiple of a leg's lot in contracts",
     };

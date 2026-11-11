@@ -96,6 +96,7 @@ Two principles hold everywhere:
 | `legs` | `TwoLegPlan`: two-leg execution state machine |
 | `venues` | venue views, budgets and two-leg admission |
 | `parity` | `evaluate_parity`: put-call parity edge against a future |
+| `linear` | `evaluate_cash_and_carry`, `evaluate_perp_basis`, `evaluate_calendar`: linear relation edges |
 | `package` | `PackagePlan`: multi-leg package execution on a common lot grid |
 | `error` | `ArbitrageError`, the crate's typed error |
 
