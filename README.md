@@ -335,8 +335,9 @@ and translates its prices, inventory and ledgers into these types.
 
 ### Status
 
-`0.3.3` is the current release. It adds the `linear` module (cash and carry,
-perpetual basis and calendar edges); `0.3.2` added the optional `instruments`
+`0.3.4` is the current release. It adds the option relations (an option pair
+against a dated or perpetual hedge, and the box); `0.3.3` added the `linear`
+module (cash and carry, perpetual basis and calendar edges); `0.3.2` added the optional `instruments`
 feature;
 `0.3.1` changed no library code; `0.3.0` added budget gating for two-leg plans,
 unwind admission and inverse perpetual funding, with breaking changes to
