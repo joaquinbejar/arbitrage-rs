@@ -1,4 +1,6 @@
-//! Executable edge of put-call parity against a same-expiry future.
+//! Executable edge of put-call parity against a same-expiry future, and of
+//! the options' synthetic future against a perpetual
+//! ([`evaluate_synthetic`]).
 //!
 //! For a strike `K`, a call, a put and a future that all expire at `T`, and
 //! the discount factor `D = D(t, T)` published for that expiry, the relation
@@ -15,10 +17,14 @@
 //! all three legs. Each leg trades `package / contract_size` contracts, which
 //! must be a whole multiple of its lot.
 //!
+//! In [`evaluate_synthetic`] the hedge ([`ParityFuture`], the `future` leg
+//! of the edge) may instead be a perpetual, with a funding forecast to the
+//! options' expiry; see that function for the formula and its assumptions.
+//!
 //! Option fees follow one of two bases ([`OptionFee`]): basis points of the
 //! underlying notional at the index, capped at a fraction of the premium
 //! (the usual exchange rule), or basis points of the premium. The future
-//! pays basis points of its notional; a negative future rate is a rebate
+//! (or perpetual) pays basis points of its notional; a negative future rate is a rebate
 //! and gives a negative fee.
 //!
 //! ## Rounding
@@ -27,7 +33,7 @@
 //! an intermediate never fails when the result is representable:
 //!
 //! - the gross edge `package * (D * F - D * K - C + P)` (negated for a
-//!   conversion) is one exact sum of products, rounded **once** to
+//!   conversion; with a perpetual, plus the discounted funding term) is one exact sum of products, rounded **once** to
 //!   [`ParityInput::edge_dp`] with [`ParityInput::edge_rounding`];
 //! - each leg's fee is an exact product (the two candidates of the capped
 //!   basis are compared exactly), rounded **once** to
@@ -85,10 +91,12 @@ pub struct ParityOption {
     pub fee: OptionFee,
 }
 
-/// The future of the parity package.
+/// The hedge of the parity package: a dated future, or a perpetual in
+/// [`evaluate_synthetic`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParityFuture {
-    /// The future, dated at the common expiry.
+    /// The future, dated at the common expiry; or, in
+    /// [`evaluate_synthetic`], an undated perpetual.
     pub instrument: Instrument,
     /// Its top of book. Prices are per unit of underlying and sizes are in
     /// contracts.
@@ -119,7 +127,7 @@ pub struct ParityInput {
     pub call: ParityOption,
     /// The put.
     pub put: ParityOption,
-    /// The future.
+    /// The hedge: a dated future (a perpetual in [`evaluate_synthetic`]).
     pub future: ParityFuture,
     /// Underlying per package, the same on every leg.
     pub package: Quantity,
@@ -305,9 +313,10 @@ pub struct SyntheticInput {
     /// The package. With a perpetual hedge, `parity.future` is the
     /// perpetual (undated) and the options' expiry is the horizon.
     pub parity: ParityInput,
-    /// The perpetual's funding from `as_of` to the options' expiry, as
-    /// published by the venue; required if and only if the hedge is
-    /// undated.
+    /// The caller's forecast of the perpetual's funding from `as_of` to
+    /// the options' expiry: one rate and one mark for `intervals` future
+    /// funding intervals (the venue publishes each rate only as it comes).
+    /// Required if and only if the hedge is undated.
     pub funding: Option<PerpFunding>,
 }
 
@@ -326,6 +335,16 @@ pub struct SyntheticInput {
 /// reversal (short perpetual) and costs the conversion. The funding is
 /// treated as paid at expiry: discounting each payment at its own date is
 /// the caller's refinement.
+///
+/// Against a perpetual the edge is not locked in as it is against a dated
+/// future:
+///
+/// - closing the perpetual at expiry is a trade whose exit fee and spread
+///   are not counted here;
+/// - the funding is the caller's forecast (one rate and one mark for `n`
+///   future intervals), not a known cashflow;
+/// - the perpetual may trade at a basis to the settlement index at expiry,
+///   which this formula takes as zero.
 ///
 /// # Errors
 ///
@@ -491,8 +510,6 @@ pub(crate) fn level(
 /// `1 / 10_000`: basis points to a fraction, as an exact factor.
 pub(crate) const BPS: Decimal = Decimal::from_parts(1, 0, 0, false, 4);
 
-/// An option leg's fee: the candidates are exact products, compared exactly,
-/// and the chosen one is rounded once.
 /// What an option or future fee needs besides its rate and price.
 #[derive(Clone, Copy)]
 pub(crate) struct FeeTerms {
@@ -513,6 +530,8 @@ impl FeeTerms {
     }
 }
 
+/// An option leg's fee: the candidates are exact products, compared exactly,
+/// and the chosen one is rounded once.
 pub(crate) fn option_fee(input: FeeTerms, fee: &OptionFee, price: Price) -> Result<Decimal> {
     let (q, premium_price) = (input.package.value(), price.value());
     match *fee {
@@ -613,7 +632,12 @@ fn validate(input: &ParityInput, funding: Option<PerpFunding>) -> Result<()> {
     positive_discount(input.discount)?;
     validate_option_fee(&input.call.fee)?;
     validate_option_fee(&input.put.fee)?;
-    c.ensure_live(input.as_of)
+    // The dated hedge expires with the options; a perpetual never does.
+    if f.expiry.is_some() {
+        f.ensure_live(input.as_of)
+    } else {
+        c.ensure_live(input.as_of)
+    }
 }
 
 pub(crate) fn positive_discount(discount: Decimal) -> Result<()> {

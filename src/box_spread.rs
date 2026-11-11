@@ -26,6 +26,9 @@
 //! [`BoxInput::fee_rounding`]; the fee total and the net edge are exact
 //! sums of the rounded figures.
 //!
+//! The options are assumed European and cash settled at the index; exercise
+//! or settlement fees at expiry are not counted.
+//!
 //! Everything is an estimate at the top of book. An edge is an intent to
 //! trade, not an executed or guaranteed profit: the four legs are not
 //! executed atomically and can fill partially.

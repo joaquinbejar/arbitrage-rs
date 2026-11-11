@@ -95,7 +95,7 @@ Two principles hold everywhere:
 | `basis` | `evaluate_spot_perp`: the net edge of a spot-perpetual basis trade |
 | `legs` | `TwoLegPlan`: two-leg execution state machine |
 | `venues` | venue views, budgets and two-leg admission |
-| `parity` | `evaluate_parity`: put-call parity edge against a future |
+| `parity` | `evaluate_parity`: put-call parity edge against a future; `evaluate_synthetic`: the same against a future or a perpetual with funding |
 | `linear` | `evaluate_cash_and_carry`, `evaluate_perp_basis`, `evaluate_calendar`: linear relation edges |
 | `box_spread` | `evaluate_box`: box spread edge (two strikes, one expiry) |
 | `package` | `PackagePlan`: multi-leg package execution on a common lot grid |

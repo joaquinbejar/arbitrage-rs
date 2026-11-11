@@ -62,11 +62,11 @@ Already under the rule when they were written:
 - `linear` (#56): gross (with the four-factor carry and funding terms), fees,
   fee total and net; tests `linear_carry_with_28_places` and
   `linear_gross_is_exact_when_only_intermediates_overflow`;
-- `parity::evaluate_synthetic`: the gross with the discounted funding term of
+- `parity::evaluate_synthetic` (#58): the gross with the discounted funding term of
   a perpetual hedge, fees, fee total and net; tests
   `synthetic_discount_with_28_places` and
   `synthetic_gross_is_exact_when_only_intermediates_overflow`;
-- `box_spread`: gross, the four fees, fee total and net; tests
+- `box_spread` (#58): gross, the four fees, fee total and net; tests
   `box_discount_with_28_places` and
   `box_gross_is_exact_when_only_intermediates_overflow`;
 - `package` (#19): executed, remaining, excess, fees, net cash and filled

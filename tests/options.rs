@@ -578,25 +578,37 @@ fn synthetic_input_validation() {
             ..
         })
     ));
-    // Expired options, with a perpetual hedge that never expires.
+    // Expired options, with a perpetual hedge that never expires: the
+    // error names the call.
     let mut i = synth_fixture();
     i.parity.as_of = Timestamp::from_millis(EXPIRY);
-    assert!(matches!(
-        evaluate_synthetic(&i),
-        Err(ArbitrageError::Expired { .. })
-    ));
+    match evaluate_synthetic(&i) {
+        Err(ArbitrageError::Expired { instrument, .. }) => assert_eq!(instrument, "XYZ-100-C"),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]
 fn synthetic_plan_has_the_three_legs() {
-    let i = synth_fixture();
+    // Quotes at 500: the plan is created at the edge's as_of, so a
+    // deadline at 500 is refused and one at 501 accepted.
+    let mut i = synth_fixture();
+    set_as_of(&mut i, 500);
     let ev = evaluate_synthetic(&i).unwrap();
     let edge = ev.executable().unwrap();
+    assert_eq!(edge.as_of, Timestamp::from_millis(500));
+    invalid_input(&PackagePlan::from_synthetic(
+        &i,
+        edge,
+        &VenueId::new("V1").unwrap(),
+        Some(Timestamp::from_millis(500)),
+        FailurePolicy::Abort,
+    ));
     let plan = PackagePlan::from_synthetic(
         &i,
         edge,
         &VenueId::new("V1").unwrap(),
-        None,
+        Some(Timestamp::from_millis(501)),
         FailurePolicy::Abort,
     )
     .unwrap();
@@ -1023,14 +1035,25 @@ fn box_input_validation() {
 
 #[test]
 fn box_plan_has_four_legs_in_order() {
-    let i = long_box();
+    // Quotes at 500: the plan is created at the edge's as_of, so a
+    // deadline at 500 is refused and one at 501 accepted.
+    let mut i = long_box();
+    set_as_of(&mut i, 500);
     let ev = evaluate_box(&i).unwrap();
     let edge = ev.executable().unwrap();
+    assert_eq!(edge.as_of, Timestamp::from_millis(500));
+    invalid_input(&PackagePlan::from_box(
+        &i,
+        edge,
+        &VenueId::new("V1").unwrap(),
+        Some(Timestamp::from_millis(500)),
+        FailurePolicy::Abort,
+    ));
     let plan = PackagePlan::from_box(
         &i,
         edge,
         &VenueId::new("V1").unwrap(),
-        None,
+        Some(Timestamp::from_millis(501)),
         FailurePolicy::Abort,
     )
     .unwrap();
@@ -1041,4 +1064,141 @@ fn box_plan_has_four_legs_in_order() {
     assert_eq!(legs[BOX_HIGH_CALL_LEG].spec.spec.leg, edge.legs.high_call);
     assert_eq!(legs[BOX_HIGH_PUT_LEG].spec.spec.leg, edge.legs.high_put);
     assert_eq!(plan.package(), q(dec!(1)));
+}
+
+trait AsOf {
+    fn as_of_mut(&mut self) -> &mut Timestamp;
+}
+impl AsOf for SyntheticInput {
+    fn as_of_mut(&mut self) -> &mut Timestamp {
+        &mut self.parity.as_of
+    }
+}
+impl AsOf for BoxInput {
+    fn as_of_mut(&mut self) -> &mut Timestamp {
+        &mut self.as_of
+    }
+}
+fn set_as_of(i: &mut impl AsOf, ms: i64) {
+    *i.as_of_mut() = Timestamp::from_millis(ms);
+}
+
+/// The long box with a distinct contract size, lot and fee on every leg:
+///
+/// | leg | size | lot | contracts | fee | price | fee amount |
+/// |---|---|---|---|---|---|---|
+/// | low call | 0.1 | 1 | 10 | 3 bps of 100, cap 12.5 % | buy 11.50 | 0.03 |
+/// | low put | 0.5 | 2 | 2 | 10 bps of premium | sell 1.50 | 0.0015 |
+/// | high call | 0.25 | 1 | 4 | 3 bps of 100, cap 1 % (binds) | sell 1.80 | 0.018 |
+/// | high put | 1 | 1 | 1 | 20 bps of premium | buy 11.30 | 0.0226 |
+fn distinct_box() -> BoxInput {
+    let mut i = long_box();
+    i.low_put.contract_size = q(dec!(0.5));
+    i.low_put.lot = q(dec!(2));
+    i.low_put.fee = OptionFee::Premium {
+        rate: FeeRate::from_bps(dec!(10)).unwrap(),
+    };
+    i.high_call.contract_size = q(dec!(0.25));
+    i.high_call.fee = OptionFee::UnderlyingCapped {
+        rate: FeeRate::from_bps(dec!(3)).unwrap(),
+        cap: dec!(0.01),
+    };
+    i.high_put.contract_size = q(dec!(1));
+    i.high_put.fee = OptionFee::Premium {
+        rate: FeeRate::from_bps(dec!(20)).unwrap(),
+    };
+    i
+}
+
+#[test]
+fn box_legs_keep_their_own_size_lot_and_fee() {
+    let i = distinct_box();
+    let ev = evaluate_box(&i).unwrap();
+    let e = ev.long.edge().unwrap();
+    // gross 0.30 as in the long fixture; fees
+    //   low call  min(3e-4 * 100, 0.125 * 11.50) = 0.03
+    //   low put   10e-4 * 1.50 = 0.0015
+    //   high call min(0.03, 0.01 * 1.80 = 0.018) = 0.018
+    //   high put  20e-4 * 11.30 = 0.0226
+    //   total 0.0721; net 0.30 - 0.0721 = 0.2279
+    let f = &e.expected_fees;
+    assert_eq!(
+        [f.low_call, f.low_put, f.high_call, f.high_put, f.total].map(|c| c.money().amount()),
+        [
+            dec!(0.03),
+            dec!(0.0015),
+            dec!(0.018),
+            dec!(0.0226),
+            dec!(0.0721)
+        ]
+    );
+    assert_eq!(e.expected_net.amount(), dec!(0.2279));
+    let l = &e.legs;
+    assert_eq!(
+        [
+            l.low_call.quantity,
+            l.low_put.quantity,
+            l.high_call.quantity,
+            l.high_put.quantity
+        ],
+        [q(dec!(10)), q(dec!(2)), q(dec!(4)), q(dec!(1))]
+    );
+    let plan = PackagePlan::from_box(
+        &i,
+        e,
+        &VenueId::new("V1").unwrap(),
+        None,
+        FailurePolicy::Abort,
+    )
+    .unwrap();
+    let terms = plan
+        .legs()
+        .iter()
+        .map(|s| (s.spec.contract_size, s.spec.lot, s.spec.spec.leg.quantity))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        terms,
+        vec![
+            (q(dec!(0.1)), q(dec!(1)), q(dec!(10))),
+            (q(dec!(0.5)), q(dec!(2)), q(dec!(2))),
+            (q(dec!(0.25)), q(dec!(1)), q(dec!(4))),
+            (q(dec!(1)), q(dec!(1)), q(dec!(1))),
+        ]
+    );
+}
+
+#[test]
+fn box_fee_validation_covers_every_leg() {
+    type Fee = fn(&mut BoxInput) -> &mut OptionFee;
+    let legs: [Fee; 4] = [
+        |i| &mut i.low_call.fee,
+        |i| &mut i.low_put.fee,
+        |i| &mut i.high_call.fee,
+        |i| &mut i.high_put.fee,
+    ];
+    for fee in legs {
+        let mut i = long_box();
+        *fee(&mut i) = OptionFee::Premium {
+            rate: FeeRate::from_bps(dec!(-1)).unwrap(),
+        };
+        assert!(matches!(
+            evaluate_box(&i),
+            Err(ArbitrageError::InvalidValue {
+                field: "option fee rate (bps)",
+                ..
+            })
+        ));
+        let mut i = long_box();
+        *fee(&mut i) = OptionFee::UnderlyingCapped {
+            rate: FeeRate::from_bps(dec!(3)).unwrap(),
+            cap: dec!(1.5),
+        };
+        assert!(matches!(
+            evaluate_box(&i),
+            Err(ArbitrageError::InvalidValue {
+                field: "option fee cap",
+                ..
+            })
+        ));
+    }
 }
