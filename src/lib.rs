@@ -26,6 +26,11 @@
 //! - [`parity::evaluate_parity`] (#18): the executable edge of
 //!   put-call parity against a same-expiry future, in both directions, after
 //!   the fees of all three legs;
+//! - [`parity::evaluate_synthetic`]: the options' synthetic future against a
+//!   dated future or a perpetual (with its funding);
+//! - [`box_spread::evaluate_box`]: the executable edge of a box (two strikes,
+//!   one expiry) in both directions, after the fees of all four legs, with
+//!   [`package::PackagePlan::from_box`] to execute it;
 //! - [`linear`]: the executable edges of cash and carry (spot against a
 //!   dated future), the perpetual basis against funding, and calendar
 //!   spreads (future against future, or perpetual against future), in both
@@ -125,6 +130,7 @@
 //! ```
 
 pub mod basis;
+pub mod box_spread;
 pub mod error;
 pub mod exact;
 pub mod funding;

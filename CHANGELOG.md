@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Option relations: `parity::evaluate_synthetic` (call minus put at one strike against a dated future, where it equals `evaluate_parity`, or against a perpetual with the venue's funding to expiry, discounted with the strike), the module `box_spread` with `evaluate_box` (two strikes, one expiry, four legs, both directions, each leg's option fee), and `PackagePlan::from_synthetic` and `PackagePlan::from_box` with the leg positions `BOX_LOW_CALL_LEG` to `BOX_HIGH_PUT_LEG`.
+
 ## [0.3.3] - 2026-11-11
 
 ### Added

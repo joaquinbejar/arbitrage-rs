@@ -12,8 +12,18 @@
 //! to the common scale (at most 112) multiplies it by at most
 //! `10^112 < 2^373`, and the carry term is shifted only up to another
 //! term's scale (at most 84, so by at most `10^84 < 2^280`). Every aligned
-//! term is then below `2^693` and the four-term sum below `2^695`. The
-//! operations still check and report overflow instead of wrapping.
+//! term is then below `2^693` and the four-term sum below `2^695`.
+//!
+//! The synthetic future of `parity` adds a six-factor funding term (sign,
+//! package, discount, mark, rate and a `u32` count: below `2^416` at a
+//! scale of at most 112) to terms below `2^288` at a scale of at most 84:
+//! those are shifted by at most `10^112 < 2^373` (below `2^661`), the
+//! funding term by at most `10^84 < 2^280` (below `2^696`), and the
+//! five-term sum stays below `2^699`. The six terms of `box_spread` have at
+//! most four factors (below `2^288` at a scale of at most 84), so aligned
+//! they are below `2^568` and their sum below `2^571`.
+//!
+//! The operations still check and report overflow instead of wrapping.
 
 use crate::error::{ArbitrageError, Result};
 use crate::exact::MAX_SCALE;

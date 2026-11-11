@@ -43,6 +43,7 @@ use crate::cost::{Cost, FeeRate};
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
 use crate::instrument::{Action, Instrument, Leg, Timestamp, TopOfBook};
+use crate::linear::PerpFunding;
 use crate::money::{Currency, Money, Rounding};
 use crate::units::{Price, Quantity};
 use crate::wide;
@@ -286,15 +287,62 @@ impl ParityEvaluation {
 ///   a [`Decimal`] (or `edge_dp` or `fee_dp` is above 28); see the module
 ///   rounding rules.
 pub fn evaluate_parity(input: &ParityInput) -> Result<ParityEvaluation> {
-    validate(input)?;
+    validate(input, None)?;
     let contracts = Contracts {
         call: contracts(input.package, input.call.contract_size, input.call.lot)?,
         put: contracts(input.package, input.put.contract_size, input.put.lot)?,
         future: contracts(input.package, input.future.contract_size, input.future.lot)?,
     };
     Ok(ParityEvaluation {
-        reversal: direction(input, &contracts, ParityDirection::Reversal)?,
-        conversion: direction(input, &contracts, ParityDirection::Conversion)?,
+        reversal: direction(input, &contracts, ParityDirection::Reversal, None)?,
+        conversion: direction(input, &contracts, ParityDirection::Conversion, None)?,
+    })
+}
+/// Input to [`evaluate_synthetic`]: a parity package whose hedge is a dated
+/// future (no funding) or a perpetual (with its funding).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntheticInput {
+    /// The package. With a perpetual hedge, `parity.future` is the
+    /// perpetual (undated) and the options' expiry is the horizon.
+    pub parity: ParityInput,
+    /// The perpetual's funding from `as_of` to the options' expiry, as
+    /// published by the venue; required if and only if the hedge is
+    /// undated.
+    pub funding: Option<PerpFunding>,
+}
+
+/// Evaluates both directions of the options' synthetic future (call minus
+/// put at one strike) against a dated future or a perpetual.
+///
+/// With a dated future and no funding it is [`evaluate_parity`]. With a
+/// perpetual, the perpetual is held to the options' expiry and assumed to
+/// close at the settlement index, and its funding `M * rate * n` is added
+/// to the hedge price and discounted with the strike:
+///
+/// - reversal: `Q * (D * (bid_H - K + M * rate * n) - ask_C + bid_P)`;
+/// - conversion: `Q * (bid_C - ask_P - D * (ask_H - K + M * rate * n))`.
+///
+/// Longs pay shorts when the rate is positive, so a positive rate helps the
+/// reversal (short perpetual) and costs the conversion. The funding is
+/// treated as paid at expiry: discounting each payment at its own date is
+/// the caller's refinement.
+///
+/// # Errors
+///
+/// As [`evaluate_parity`], plus [`ArbitrageError::InvalidInput`] if funding
+/// is given with a dated hedge, missing with an undated one, or the options
+/// are undated.
+pub fn evaluate_synthetic(input: &SyntheticInput) -> Result<ParityEvaluation> {
+    let p = &input.parity;
+    validate(p, input.funding)?;
+    let contracts = Contracts {
+        call: contracts(p.package, p.call.contract_size, p.call.lot)?,
+        put: contracts(p.package, p.put.contract_size, p.put.lot)?,
+        future: contracts(p.package, p.future.contract_size, p.future.lot)?,
+    };
+    Ok(ParityEvaluation {
+        reversal: direction(p, &contracts, ParityDirection::Reversal, input.funding)?,
+        conversion: direction(p, &contracts, ParityDirection::Conversion, input.funding)?,
     })
 }
 
@@ -308,6 +356,7 @@ fn direction(
     input: &ParityInput,
     contracts: &Contracts,
     dir: ParityDirection,
+    funding: Option<PerpFunding>,
 ) -> Result<DirectionEvaluation> {
     let call_side = dir.call_side();
     let other_side = call_side.opposite();
@@ -348,21 +397,30 @@ fn direction(
         ParityDirection::Conversion => Decimal::NEGATIVE_ONE,
     };
     let neg = exact::neg(sign);
+    // Funding of a perpetual hedge, discounted like the strike: the short
+    // perpetual of a reversal receives `M * rate * n` when the rate is
+    // positive, the long one of a conversion pays it.
+    let (f_mark, f_rate, f_n) = funding
+        .map_or((Decimal::ZERO, Decimal::ZERO, Decimal::ZERO), |f| {
+            (f.mark.value(), f.rate, Decimal::from(f.intervals))
+        });
     let gross = wide::sum_products_round(
         &[
             &[sign, qty, disc, fut],
             &[neg, qty, disc, strike],
             &[neg, qty, call_px],
             &[sign, qty, put_px],
+            &[sign, qty, disc, f_mark, f_rate, f_n],
         ],
         input.edge_dp,
         input.edge_rounding,
         "parity gross",
     )?;
 
-    let call_fee = option_fee(input, &input.call.fee, call)?;
-    let put_fee = option_fee(input, &input.put.fee, put)?;
-    let future_fee = rounded_fee(input, &[input.future.fee.bps(), BPS, fut, qty])?;
+    let ft = FeeTerms::of(input);
+    let call_fee = option_fee(ft, &input.call.fee, call)?;
+    let put_fee = option_fee(ft, &input.put.fee, put)?;
+    let future_fee = rounded_fee(ft, &[input.future.fee.bps(), BPS, fut, qty])?;
     let total = wide::sum_products_exact(&[&[call_fee], &[put_fee], &[future_fee]], "parity fees")?;
     let net = wide::sum_products_exact(
         &[
@@ -408,7 +466,7 @@ fn direction(
 
 /// The executable price of `side`, if quoted with at least `required`
 /// contracts; the inner error says why it is unavailable.
-fn level(
+pub(crate) fn level(
     instrument: &Instrument,
     book: &TopOfBook,
     side: Action,
@@ -435,7 +493,27 @@ pub(crate) const BPS: Decimal = Decimal::from_parts(1, 0, 0, false, 4);
 
 /// An option leg's fee: the candidates are exact products, compared exactly,
 /// and the chosen one is rounded once.
-fn option_fee(input: &ParityInput, fee: &OptionFee, price: Price) -> Result<Decimal> {
+/// What an option or future fee needs besides its rate and price.
+#[derive(Clone, Copy)]
+pub(crate) struct FeeTerms {
+    pub(crate) index: Price,
+    pub(crate) package: Quantity,
+    pub(crate) fee_dp: u32,
+    pub(crate) fee_rounding: Rounding,
+}
+
+impl FeeTerms {
+    fn of(input: &ParityInput) -> Self {
+        Self {
+            index: input.index,
+            package: input.package,
+            fee_dp: input.fee_dp,
+            fee_rounding: input.fee_rounding,
+        }
+    }
+}
+
+pub(crate) fn option_fee(input: FeeTerms, fee: &OptionFee, price: Price) -> Result<Decimal> {
     let (q, premium_price) = (input.package.value(), price.value());
     match *fee {
         OptionFee::UnderlyingCapped { rate, cap } => {
@@ -467,7 +545,7 @@ fn option_fee(input: &ParityInput, fee: &OptionFee, price: Price) -> Result<Deci
 }
 
 /// The exact product `factors`, rounded once to the fee quantum.
-fn rounded_fee(input: &ParityInput, factors: &[Decimal]) -> Result<Decimal> {
+pub(crate) fn rounded_fee(input: FeeTerms, factors: &[Decimal]) -> Result<Decimal> {
     wide::sum_products_round(&[factors], input.fee_dp, input.fee_rounding, "fee")
 }
 
@@ -500,7 +578,7 @@ pub(crate) fn contracts(
     }
 }
 
-fn validate(input: &ParityInput) -> Result<()> {
+fn validate(input: &ParityInput, funding: Option<PerpFunding>) -> Result<()> {
     let (c, p, f) = (
         &input.call.instrument,
         &input.put.instrument,
@@ -511,44 +589,64 @@ fn validate(input: &ParityInput) -> Result<()> {
             reason: "two parity legs are the same instrument",
         });
     }
-    let Some(expiry) = f.expiry else {
-        return Err(ArbitrageError::InvalidInput {
-            reason: "parity legs must be dated",
-        });
+    let expiry = match (f.expiry, funding) {
+        (Some(e), None) => e,
+        (None, Some(_)) => c.expiry.ok_or(ArbitrageError::InvalidInput {
+            reason: "parity options must be dated",
+        })?,
+        (Some(_), Some(_)) => {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "funding applies only to a perpetual hedge",
+            });
+        }
+        (None, None) => {
+            return Err(ArbitrageError::InvalidInput {
+                reason: "parity legs must be dated",
+            });
+        }
     };
     if c.expiry != Some(expiry) || p.expiry != Some(expiry) {
         return Err(ArbitrageError::InvalidInput {
             reason: "parity legs must share one expiry",
         });
     }
-    if input.discount <= Decimal::ZERO {
+    positive_discount(input.discount)?;
+    validate_option_fee(&input.call.fee)?;
+    validate_option_fee(&input.put.fee)?;
+    c.ensure_live(input.as_of)
+}
+
+pub(crate) fn positive_discount(discount: Decimal) -> Result<()> {
+    if discount <= Decimal::ZERO {
         return Err(ArbitrageError::InvalidValue {
             field: "discount factor",
-            value: input.discount,
+            value: discount,
             reason: "must be positive",
         });
     }
-    for fee in [&input.call.fee, &input.put.fee] {
-        let (rate, cap) = match *fee {
-            OptionFee::UnderlyingCapped { rate, cap } => (rate, Some(cap)),
-            OptionFee::Premium { rate } => (rate, None),
-        };
-        if rate.bps() < Decimal::ZERO {
-            return Err(ArbitrageError::InvalidValue {
-                field: "option fee rate (bps)",
-                value: rate.bps(),
-                reason: "must not be negative",
-            });
-        }
-        if let Some(cap) = cap
-            && (cap < Decimal::ZERO || cap > Decimal::ONE)
-        {
-            return Err(ArbitrageError::InvalidValue {
-                field: "option fee cap",
-                value: cap,
-                reason: "must be within [0, 1]",
-            });
-        }
+    Ok(())
+}
+
+pub(crate) fn validate_option_fee(fee: &OptionFee) -> Result<()> {
+    let (rate, cap) = match *fee {
+        OptionFee::UnderlyingCapped { rate, cap } => (rate, Some(cap)),
+        OptionFee::Premium { rate } => (rate, None),
+    };
+    if rate.bps() < Decimal::ZERO {
+        return Err(ArbitrageError::InvalidValue {
+            field: "option fee rate (bps)",
+            value: rate.bps(),
+            reason: "must not be negative",
+        });
     }
-    f.ensure_live(input.as_of)
+    if let Some(cap) = cap
+        && (cap < Decimal::ZERO || cap > Decimal::ONE)
+    {
+        return Err(ArbitrageError::InvalidValue {
+            field: "option fee cap",
+            value: cap,
+            reason: "must be within [0, 1]",
+        });
+    }
+    Ok(())
 }
