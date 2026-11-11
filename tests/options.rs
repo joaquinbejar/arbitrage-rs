@@ -1087,12 +1087,15 @@ fn set_as_of(i: &mut impl AsOf, ms: i64) {
 ///
 /// | leg | size | lot | contracts | fee | price | fee amount |
 /// |---|---|---|---|---|---|---|
-/// | low call | 0.1 | 1 | 10 | 3 bps of 100, cap 12.5 % | buy 11.50 | 0.03 |
+/// | low call | 0.1 | 1 | 10 | 5 bps of premium | buy 11.50 | 0.00575 |
 /// | low put | 0.5 | 2 | 2 | 10 bps of premium | sell 1.50 | 0.0015 |
 /// | high call | 0.25 | 1 | 4 | 3 bps of 100, cap 1 % (binds) | sell 1.80 | 0.018 |
 /// | high put | 1 | 1 | 1 | 20 bps of premium | buy 11.30 | 0.0226 |
 fn distinct_box() -> BoxInput {
     let mut i = long_box();
+    i.low_call.fee = OptionFee::Premium {
+        rate: FeeRate::from_bps(dec!(5)).unwrap(),
+    };
     i.low_put.contract_size = q(dec!(0.5));
     i.low_put.lot = q(dec!(2));
     i.low_put.fee = OptionFee::Premium {
@@ -1116,23 +1119,24 @@ fn box_legs_keep_their_own_size_lot_and_fee() {
     let ev = evaluate_box(&i).unwrap();
     let e = ev.long.edge().unwrap();
     // gross 0.30 as in the long fixture; fees
-    //   low call  min(3e-4 * 100, 0.125 * 11.50) = 0.03
+    //   low call  5e-4 * 11.50 = 0.00575
     //   low put   10e-4 * 1.50 = 0.0015
     //   high call min(0.03, 0.01 * 1.80 = 0.018) = 0.018
     //   high put  20e-4 * 11.30 = 0.0226
-    //   total 0.0721; net 0.30 - 0.0721 = 0.2279
+    //   total 0.00575 + 0.0015 + 0.018 + 0.0226 = 0.04785;
+    //   net 0.30 - 0.04785 = 0.25215
     let f = &e.expected_fees;
     assert_eq!(
         [f.low_call, f.low_put, f.high_call, f.high_put, f.total].map(|c| c.money().amount()),
         [
-            dec!(0.03),
+            dec!(0.00575),
             dec!(0.0015),
             dec!(0.018),
             dec!(0.0226),
-            dec!(0.0721)
+            dec!(0.04785)
         ]
     );
-    assert_eq!(e.expected_net.amount(), dec!(0.2279));
+    assert_eq!(e.expected_net.amount(), dec!(0.25215));
     let l = &e.legs;
     assert_eq!(
         [
