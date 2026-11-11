@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-11
+
 ### Added
 
 - Module `linear`: `evaluate_cash_and_carry`, `evaluate_perp_basis` and `evaluate_calendar`, the executable edges of the linear relations in both directions, net of each leg's fee, with legs sized in contracts by the contract multiplier. The carry rate, time to expiry and the venue's funding rate are inputs; longs pay funding when the rate is positive (#56).
@@ -293,7 +295,8 @@ First release.
   `"div_pow10"`).
 - A complete README with examples that run as doctests (#23).
 
-[Unreleased]: https://github.com/joaquinbejar/arbitrage-rs/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/joaquinbejar/arbitrage-rs/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/joaquinbejar/arbitrage-rs/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/joaquinbejar/arbitrage-rs/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/joaquinbejar/arbitrage-rs/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/joaquinbejar/arbitrage-rs/compare/v0.2.0...v0.3.0
