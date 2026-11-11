@@ -476,3 +476,15 @@ fn future_rebate_is_a_negative_fee() {
     // 0.285 - (0.030421 + 0.030421 - 0.01015).
     assert_eq!(r.expected_net.amount(), dec!(0.234308));
 }
+
+#[test]
+fn expired_error_names_the_future() {
+    // Call, put and future all expire at EXPIRY; the error names the
+    // future, the dated hedge.
+    let mut i = k100();
+    i.as_of = Timestamp::from_millis(EXPIRY);
+    match evaluate_parity(&i) {
+        Err(ArbitrageError::Expired { instrument, .. }) => assert_eq!(instrument, "XYZ-F"),
+        other => panic!("{other:?}"),
+    }
+}

@@ -49,7 +49,16 @@ pub const CALL_LEG: usize = 0;
 pub const PUT_LEG: usize = 1;
 /// Position of the future in a plan built by [`PackagePlan::from_parity`].
 pub const FUTURE_LEG: usize = 2;
+/// Position of the low-strike call in a plan built by [`PackagePlan::from_box`].
+pub const BOX_LOW_CALL_LEG: usize = 0;
+/// Position of the low-strike put in a plan built by [`PackagePlan::from_box`].
+pub const BOX_LOW_PUT_LEG: usize = 1;
+/// Position of the high-strike call in a plan built by [`PackagePlan::from_box`].
+pub const BOX_HIGH_CALL_LEG: usize = 2;
+/// Position of the high-strike put in a plan built by [`PackagePlan::from_box`].
+pub const BOX_HIGH_PUT_LEG: usize = 3;
 
+use crate::box_spread::{BoxEdge, BoxInput};
 use crate::cost::Cost;
 use crate::error::{ArbitrageError, Result};
 use crate::exact;
@@ -58,7 +67,7 @@ use crate::legs::{
     AttemptOutcome, AttemptState, ExecId, FailurePolicy, Fallback, LegSpec, LegStatus, PlanState,
 };
 use crate::money::{Currency, Money};
-use crate::parity::{ParityEdge, ParityInput};
+use crate::parity::{ParityEdge, ParityInput, SyntheticInput};
 use crate::units::{Price, Quantity};
 use crate::venues::VenueId;
 use crate::wide;
@@ -458,6 +467,77 @@ impl PackagePlan {
                     &edge.legs.future,
                     input.future.contract_size,
                     input.future.lot,
+                ),
+            ],
+            input.package,
+            policy,
+            input.quote_currency,
+            edge.as_of,
+        )
+    }
+
+    /// A plan for one package of an edge from
+    /// [`evaluate_synthetic`](crate::parity::evaluate_synthetic): the same
+    /// legs as [`PackagePlan::from_parity`], with the dated future or the
+    /// perpetual at [`FUTURE_LEG`].
+    ///
+    /// # Errors
+    ///
+    /// As [`PackagePlan::new`].
+    pub fn from_synthetic(
+        input: &SyntheticInput,
+        edge: &ParityEdge,
+        venue: &VenueId,
+        deadline: Option<Timestamp>,
+        policy: FailurePolicy,
+    ) -> Result<Self> {
+        Self::from_parity(&input.parity, edge, venue, deadline, policy)
+    }
+
+    /// A plan for one package of a box edge from
+    /// [`evaluate_box`](crate::box_spread::evaluate_box): legs in the order
+    /// [`BOX_LOW_CALL_LEG`], [`BOX_LOW_PUT_LEG`], [`BOX_HIGH_CALL_LEG`],
+    /// [`BOX_HIGH_PUT_LEG`], sized and priced as the edge, with the
+    /// contract sizes and lots of `input`, all on `venue` and with
+    /// `deadline`, created at the edge's `as_of`.
+    ///
+    /// # Errors
+    ///
+    /// As [`PackagePlan::new`].
+    pub fn from_box(
+        input: &BoxInput,
+        edge: &BoxEdge,
+        venue: &VenueId,
+        deadline: Option<Timestamp>,
+        policy: FailurePolicy,
+    ) -> Result<Self> {
+        let leg = |leg: &Leg, contract_size, lot| PackageLegSpec {
+            spec: LegSpec {
+                leg: leg.clone(),
+                deadline,
+                venue: venue.clone(),
+            },
+            contract_size,
+            lot,
+        };
+        let l = &edge.legs;
+        Self::new(
+            vec![
+                leg(
+                    &l.low_call,
+                    input.low_call.contract_size,
+                    input.low_call.lot,
+                ),
+                leg(&l.low_put, input.low_put.contract_size, input.low_put.lot),
+                leg(
+                    &l.high_call,
+                    input.high_call.contract_size,
+                    input.high_call.lot,
+                ),
+                leg(
+                    &l.high_put,
+                    input.high_put.contract_size,
+                    input.high_put.lot,
                 ),
             ],
             input.package,
