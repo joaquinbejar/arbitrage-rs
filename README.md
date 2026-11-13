@@ -396,12 +396,14 @@ Repositories by the same author that this project depends on, and repositories t
 
 ### Depends on
 
-[financial_types](https://github.com/joaquinbejar/financial_types): the shared `Action` enum and, with the `instruments` feature, its instrument specifications.
+| Repository | Description |
+|------------|-------------|
+| [financial_types](https://github.com/joaquinbejar/financial_types) | Provides the shared `Action` enum and, with the `instruments` feature, the instrument specifications the arbitrage models price against. |
 
 ### Used by
 
 | Repository | Description |
 |------------|-------------|
-| [market-maker-rs](https://github.com/joaquinbejar/market-maker-rs) | Quantitative market making strategies, starting with the Avellaneda-Stoikov model. Planned integration: it does not depend on arbitrage-rs yet. |
+| [market-maker-rs](https://github.com/joaquinbejar/market-maker-rs) | Quantitative market making in Rust (Avellaneda-Stoikov and GLFT quoting, risk controls, backtesting); uses arbitrage-rs for cross-venue arbitrage detection. |
 
 <!-- related-projects:end -->
